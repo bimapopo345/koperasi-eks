@@ -43,7 +43,7 @@ api.interceptors.response.use(
 // Auth API functions
 export const signUp = async (data) => {
   try {
-    const response = await api.post("/api/auth/register", data);
+    const response = await api.post("/api/admin/auth/register", data);
     return response.data;
   } catch (error) {
     console.error("Sign up error:", error);
@@ -55,7 +55,7 @@ export const signUp = async (data) => {
 
 export const logIn = async (data) => {
   try {
-    const response = await api.post("/api/auth/login", data);
+    const response = await api.post("/api/admin/auth/login", data);
 
     // Store token and user data
     if (response.data.success && response.data.data.token) {
@@ -74,7 +74,7 @@ export const logIn = async (data) => {
 
 export const getCurrentUser = async () => {
   try {
-    const response = await api.get("/api/auth/me");
+    const response = await api.get("/api/admin/auth/me");
     return response.data;
   } catch (error) {
     console.error("Get current user error:", error);
@@ -86,7 +86,7 @@ export const getCurrentUser = async () => {
 
 export const logoutUser = async () => {
   try {
-    const response = await api.post("/api/auth/logout");
+    const response = await api.post("/api/admin/auth/logout");
     // Clear stored data
     localStorage.removeItem("token");
     localStorage.removeItem("user");

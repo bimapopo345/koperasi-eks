@@ -1,8 +1,7 @@
 {
   "info": {
-    "name": "MERN Koperasi API 233",
-    "description": "Complete Postman collection for MERN Koperasi project",
-    "version": "1.0.0",
+    "name": "MERN Koperasi API",
+    "description": "API Collection for MERN Koperasi with Admin and Member endpoints",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -10,7 +9,7 @@
     "bearer": [
       {
         "key": "token",
-        "value": "{{token}}",
+        "value": "{{auth_token}}",
         "type": "string"
       }
     ]
@@ -22,697 +21,461 @@
       "type": "string"
     },
     {
-      "key": "token",
+      "key": "auth_token",
       "value": "",
       "type": "string"
     },
     {
-      "key": "test_uuid_puspita",
-      "value": "JPSB37142",
-      "type": "string"
-    },
-    {
-      "key": "test_uuid_alu",
-      "value": "JPTG34817",
+      "key": "created_member_uuid",
+      "value": "",
       "type": "string"
     }
   ],
   "item": [
     {
-      "name": "0. Public API (No Auth Required)",
+      "name": "Admin API",
       "item": [
         {
-          "name": "0.1 Get All Savings (Public)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/public/savings",
-              "host": ["{{base_url}}"],
-              "path": ["api", "public", "savings"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "0.2 Get All Members (Public)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/public/members",
-              "host": ["{{base_url}}"],
-              "path": ["api", "public", "members"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "0.3 Get All Products (Public)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/public/products",
-              "host": ["{{base_url}}"],
-              "path": ["api", "public", "products"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "0.4 Get Summary (Public)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/public/summary",
-              "host": ["{{base_url}}"],
-              "path": ["api", "public", "summary"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "0.5 Get Member by UUID - Puspita (Public)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/public/member/{{test_uuid_puspita}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "public", "member", "{{test_uuid_puspita}}"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "0.6 Get Member by UUID - ALU (Public)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/public/member/{{test_uuid_alu}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "public", "member", "{{test_uuid_alu}}"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "0.7 Get Student Dashboard Savings by UUID (Public)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/public/student-dashboard/:uuid",
-              "host": ["{{base_url}}"],
-              "path": ["api", "public", "student-dashboard", ":uuid"]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/public/student-dashboard/{{test_uuid_puspita}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "public", "student-dashboard", "{{test_uuid_puspita}}"]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "1. Authentication",
-      "item": [
-        {
-          "name": "1.1 Login",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/auth/login",
-              "host": ["{{base_url}}"],
-              "path": ["api", "auth", "login"]
-            }
-          },
-          "response": [],
-          "event": [
+          "name": "Authentication",
+          "item": [
             {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "const response = pm.response.json();",
-                  "if (response.success && response.data.token) {",
-                  "    pm.environment.set(\"token\", response.data.token);",
-                  "    console.log(\"Token saved to environment:\", response.data.token);",
-                  "} else {",
-                  "    console.log(\"Login failed:\", response.message);",
-                  "}"
+              "name": "Admin Login",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    if (jsonData.success && jsonData.data.token) {",
+                      "        pm.collectionVariables.set('auth_token', jsonData.data.token);",
+                      "        console.log('Token saved:', jsonData.data.token.substring(0, 20) + '...');",
+                      "    }",
+                      "} else {",
+                      "    console.log('Login failed:', pm.response.text());",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
                 ],
-                "type": "text/javascript"
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin/auth/login",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "auth", "login"]
+                }
+              }
+            },
+            {
+              "name": "Admin Register",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\",\n  \"name\": \"Administrator\",\n  \"role\": \"admin\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin/auth/register",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "auth", "register"]
+                }
+              }
+            },
+            {
+              "name": "Get Current Admin User",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/auth/me",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "auth", "me"]
+                }
+              }
+            },
+            {
+              "name": "Admin Logout",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/auth/logout",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "auth", "logout"]
+                }
               }
             }
           ]
         },
         {
-          "name": "1.2 Get Current User",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/auth/me",
-              "host": ["{{base_url}}"],
-              "path": ["api", "auth", "me"]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "2. Members",
-      "item": [
-        {
-          "name": "2.1 Get All Members",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/members",
-              "host": ["{{base_url}}"],
-              "path": ["api", "members"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "2.2 Get Member by UUID",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/members/:uuid",
-              "host": ["{{base_url}}"],
-              "path": ["api", "members", ":uuid"]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/members/JERMAN-123",
-              "host": ["{{base_url}}"],
-              "path": ["api", "members", "JERMAN-123"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "2.3 Create Member",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"John Doe\",\n  \"gender\": \"L\",\n  \"phone\": \"081234567890\",\n  \"city\": \"Jakarta\",\n  \"completeAddress\": \"Jl. Contoh No. 123\",\n  \"username\": \"johndoe\",\n  \"password\": \"password123\",\n  \"uuid\": \"MEMBER_CUSTOM_123\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/members",
-              "host": ["{{base_url}}"],
-              "path": ["api", "members"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "2.4 Update Member",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"John Updated\",\n  \"gender\": \"L\",\n  \"phone\": \"081234567890\",\n  \"city\": \"Jakarta\",\n  \"completeAddress\": \"Jl. Updated No. 123\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/members/:uuid",
-              "host": ["{{base_url}}"],
-              "path": ["api", "members", ":uuid"]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/members/JERMAN-123",
-              "host": ["{{base_url}}"],
-              "path": ["api", "members", "JERMAN-123"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "2.5 Delete Member",
-          "request": {
-            "method": "DELETE",
-            "url": {
-              "raw": "{{base_url}}/api/members/:uuid",
-              "host": ["{{base_url}}"],
-              "path": ["api", "members", ":uuid"]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/members/JERMAN-123",
-              "host": ["{{base_url}}"],
-              "path": ["api", "members", "JERMAN-123"]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "3. Products",
-      "item": [
-        {
-          "name": "3.1 Get All Products",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/products",
-              "host": ["{{base_url}}"],
-              "path": ["api", "products"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "3.2 Get Product by ID",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/products/:id",
-              "host": ["{{base_url}}"],
-              "path": ["api", "products", ":id"]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/products/6895b413c2f18af6fe73ea31",
-              "host": ["{{base_url}}"],
-              "path": ["api", "products", "6895b413c2f18af6fe73ea31"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "3.3 Create Product",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"Simpanan Harian\",\n  \"description\": \"Simpanan harian dengan bunga tinggi\",\n  \"depositAmount\": 100000,\n  \"returnProfit\": 12,\n  \"termDuration\": 12\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/products",
-              "host": ["{{base_url}}"],
-              "path": ["api", "products"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "3.4 Update Product",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"title\": \"Simpanan Harian Updated\",\n  \"description\": \"Simpanan harian dengan bunga tinggi updated\",\n  \"depositAmount\": 150000,\n  \"returnProfit\": 15,\n  \"termDuration\": 12\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/products/:id",
-              "host": ["{{base_url}}"],
-              "path": ["api", "products", ":id"]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/products/6895b413c2f18af6fe73ea31",
-              "host": ["{{base_url}}"],
-              "path": ["api", "products", "6895b413c2f18af6fe73ea31"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "3.5 Delete Product",
-          "request": {
-            "method": "DELETE",
-            "url": {
-              "raw": "{{base_url}}/api/products/:id",
-              "host": ["{{base_url}}"],
-              "path": ["api", "products", ":id"]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/products/6895b413c2f18af6fe73ea31",
-              "host": ["{{base_url}}"],
-              "path": ["api", "products", "6895b413c2f18af6fe73ea31"]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "4. Savings",
-      "item": [
-        {
-          "name": "4.1 Get All Savings",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/savings",
-              "host": ["{{base_url}}"],
-              "path": ["api", "savings"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "4.2 Get Savings by ID",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/savings/:id",
-              "host": ["{{base_url}}"],
-              "path": ["api", "savings", ":id"]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/savings/6896cb8b71cb5a5f0e4cc20d",
-              "host": ["{{base_url}}"],
-              "path": ["api", "savings", "6896cb8b71cb5a5f0e4cc20d"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "4.3 Create Savings",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "multipart/form-data"
-              }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "installmentPeriod",
-                  "value": "1",
-                  "type": "text"
-                },
-                {
-                  "key": "memberId",
-                  "value": "6896b2a3490eaf37d328786e",
-                  "type": "text"
-                },
-                {
-                  "key": "productId",
-                  "value": "6895b413c2f18af6fe73ea31",
-                  "type": "text"
-                },
-                {
-                  "key": "amount",
-                  "value": "1000000",
-                  "type": "text"
-                },
-                {
-                  "key": "savingsDate",
-                  "value": "2024-01-01",
-                  "type": "text"
-                },
-                {
-                  "key": "type",
-                  "value": "Setoran",
-                  "type": "text"
-                },
-                {
-                  "key": "description",
-                  "value": "Simpanan awal",
-                  "type": "text"
-                },
-                {
-                  "key": "proofFile",
-                  "type": "file",
-                  "src": []
+          "name": "Members Management",
+          "item": [
+            {
+              "name": "Get All Members",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/members",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "members"]
                 }
-              ]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/savings",
-              "host": ["{{base_url}}"],
-              "path": ["api", "savings"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "4.4 Update Savings",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "multipart/form-data"
               }
-            ],
-            "body": {
-              "mode": "formdata",
-              "formdata": [
-                {
-                  "key": "installmentPeriod",
-                  "value": "2",
-                  "type": "text"
-                },
-                {
-                  "key": "amount",
-                  "value": "2000000",
-                  "type": "text"
-                },
-                {
-                  "key": "status",
-                  "value": "Approved",
-                  "type": "text"
+            },
+            {
+              "name": "Get Member By UUID",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/members/MEMBER_1234567890_ABCDE",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "members", "MEMBER_1234567890_ABCDE"],
+                  "variable": [
+                    {
+                      "key": "uuid",
+                      "value": "MEMBER_1234567890_ABCDE",
+                      "description": "Member UUID"
+                    }
+                  ]
                 }
-              ]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/savings/:id",
-              "host": ["{{base_url}}"],
-              "path": ["api", "savings", ":id"]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/savings/6896cb8b71cb5a5f0e4cc20d",
-              "host": ["{{base_url}}"],
-              "path": ["api", "savings", "6896cb8b71cb5a5f0e4cc20d"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "4.5 Delete Savings",
-          "request": {
-            "method": "DELETE",
-            "url": {
-              "raw": "{{base_url}}/api/savings/:id",
-              "host": ["{{base_url}}"],
-              "path": ["api", "savings", ":id"]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/savings/6896cb8b71cb5a5f0e4cc20d",
-              "host": ["{{base_url}}"],
-              "path": ["api", "savings", "6896cb8b71cb5a5f0e4cc20d"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "4.6 Get Savings by Member",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/savings/member/:memberId",
-              "host": ["{{base_url}}"],
-              "path": ["api", "savings", "member", ":memberId"]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/savings/member/6896b2a3490eaf37d328786e",
-              "host": ["{{base_url}}"],
-              "path": ["api", "savings", "member", "6896b2a3490eaf37d328786e"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "4.7 Get Savings Summary",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/savings/summary",
-              "host": ["{{base_url}}"],
-              "path": ["api", "savings", "summary"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "4.8 Get Last Installment Period",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/savings/check-period/:memberId/:productId",
-              "host": ["{{base_url}}"],
-              "path": [
-                "api",
-                "savings",
-                "check-period",
-                ":memberId",
-                ":productId"
-              ]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/savings/check-period/6896b2a3490eaf37d328786e/6895b413c2f18af6fe73ea31",
-              "host": ["{{base_url}}"],
-              "path": [
-                "api",
-                "savings",
-                "check-period",
-                "6896b2a3490eaf37d328786e",
-                "6895b413c2f18af6fe73ea31"
-              ]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "4.9 Get Student Dashboard Savings by UUID",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/savings/student-dashboard/:memberUuid",
-              "host": ["{{base_url}}"],
-              "path": [
-                "api",
-                "savings",
-                "student-dashboard",
-                ":memberUuid"
-              ]
-            },
-            "url": {
-              "raw": "{{base_url}}/api/savings/student-dashboard/{{test_uuid_puspita}}",
-              "host": ["{{base_url}}"],
-              "path": [
-                "api",
-                "savings",
-                "student-dashboard",
-                "{{test_uuid_puspita}}"
-              ]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "5. Dashboard",
-      "item": [
-        {
-          "name": "5.1 Get Dashboard Stats",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/dashboard/stats",
-              "host": ["{{base_url}}"],
-              "path": ["api", "dashboard", "stats"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "5.2 Get Dashboard Charts",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/dashboard/charts",
-              "host": ["{{base_url}}"],
-              "path": ["api", "dashboard", "charts"]
-            }
-          },
-          "response": []
-        }
-      ]
-    },
-    {
-      "name": "6. Admin",
-      "item": [
-        {
-          "name": "6.1 Get All Users",
-          "request": {
-            "method": "GET",
-            "url": {
-              "raw": "{{base_url}}/api/admin/users",
-              "host": ["{{base_url}}"],
-              "path": ["api", "admin", "users"]
-            }
-          },
-          "response": []
-        },
-        {
-          "name": "6.2 Update User Role",
-          "request": {
-            "method": "PUT",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
               }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"role\": \"admin\"\n}"
             },
-            "url": {
-              "raw": "{{base_url}}/api/admin/users/:id/role",
-              "host": ["{{base_url}}"],
-              "path": ["api", "admin", "users", ":id", "role"]
+            {
+              "name": "Create Member",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    var jsonData = pm.response.json();",
+                      "    if (jsonData.success && jsonData.data.uuid) {",
+                      "        pm.collectionVariables.set('created_member_uuid', jsonData.data.uuid);",
+                      "        console.log('Member created with UUID:', jsonData.data.uuid);",
+                      "    }",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{ \n  \"uuid\": \"MEMBER_1234567890_ABCDE\",\n  \"name\": \"John Doe\",\n  \"gender\": \"L\",\n  \"phone\": \"08123456789\",\n  \"city\": \"Jakarta\",\n  \"completeAddress\": \"Jl. Contoh No. 123\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin/members",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "members"]
+                }
+              }
             },
-            "url": {
-              "raw": "{{base_url}}/api/admin/users/6895689f658cbcb0a0987d64/role",
-              "host": ["{{base_url}}"],
-              "path": [
-                "api",
-                "admin",
-                "users",
-                "6895689f658cbcb0a0987d64",
-                "role"
-              ]
+            {
+              "name": "Update Member By UUID",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"name\": \"John Doe Updated\",\n  \"phone\": \"08123456780\",\n  \"city\": \"Bandung\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin/members/{{created_member_uuid}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "members", "{{created_member_uuid}}"]
+                }
+              }
+            },
+            {
+              "name": "Delete Member By UUID",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/members/{{created_member_uuid}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "members", "{{created_member_uuid}}"]
+                }
+              }
             }
-          },
-          "response": []
+          ]
+        },
+        {
+          "name": "Savings Management",
+          "item": [
+            {
+              "name": "Get All Savings",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/savings",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "savings"]
+                }
+              }
+            },
+            {
+              "name": "Create Saving",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"memberUuid\": \"MEMBER_123\",\n  \"amount\": 100000,\n  \"description\": \"Tabungan rutin\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin/savings",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "savings"]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Member API",
+      "item": [
+        {
+          "name": "Authentication",
+          "item": [
+            {
+              "name": "Member Login",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 200) {",
+                      "    var jsonData = pm.response.json();",
+                      "    if (jsonData.success && jsonData.data.token) {",
+                      "        pm.collectionVariables.set('auth_token', jsonData.data.token);",
+                      "        console.log('Member token saved:', jsonData.data.token.substring(0, 20) + '...');",
+                      "    }",
+                      "} else {",
+                      "    console.log('Member login failed:', pm.response.text());",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"uuid\": \"MEMBER_1234567890_ABCDE\",\n  \"password\": \"MEMBER_1234567890_ABCDE-1234\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/member/auth/login",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "auth", "login"]
+                }
+              }
+            },
+            {
+              "name": "Get Current Member",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/member/auth/me",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "auth", "me"]
+                }
+              }
+            },
+            {
+              "name": "Member Logout",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/member/auth/logout",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "auth", "logout"]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Savings",
+          "item": [
+            {
+              "name": "Get My Savings",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/member/savings",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "savings"]
+                }
+              }
+            },
+            {
+              "name": "Create My Saving",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"amount\": 50000,\n  \"description\": \"Tabungan bulanan\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/member/savings",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "savings"]
+                }
+              }
+            },
+            {
+              "name": "Get My Savings Summary",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/member/savings/summary",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "savings", "summary"]
+                }
+              }
+            },
+            {
+              "name": "Get My Saving By ID",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/member/savings/:id",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "savings", ":id"]
+                }
+              }
+            }
+          ]
         }
       ]
     }

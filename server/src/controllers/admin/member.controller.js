@@ -1,7 +1,7 @@
-import { Member } from "../models/member.model.js";
-import { User } from "../models/user.model.js";
-import { Savings } from "../models/savings.model.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
+import { Member } from "../../models/member.model.js";
+import { User } from "../../models/user.model.js";
+import { Savings } from "../../models/savings.model.js";
+import { asyncHandler } from "../../utils/asyncHandler.js";
 
 // Get all members
 const getAllMembers = asyncHandler(async (req, res) => {
@@ -81,17 +81,14 @@ const createMember = asyncHandler(async (req, res) => {
     phone,
     city,
     completeAddress,
-    username,
-    password,
     productId,
   } = req.body;
 
-  // Check if username already exists
-  const existingUser = await User.findOne({ username });
-  if (existingUser) {
+  // Validate required fields
+  if (!name || !gender) {
     return res.status(400).json({
       success: false,
-      message: "Username sudah digunakan",
+      message: "Nama dan jenis kelamin harus diisi",
     });
   }
 
@@ -107,19 +104,27 @@ const createMember = asyncHandler(async (req, res) => {
   }
 
   // Generate UUID for user
-  const generateUUID = () => {
+  const generateUserUUID = () => {
     const timestamp = Date.now().toString();
     const random = Math.random().toString(36).substring(2, 8);
     return `USER_${timestamp}_${random}`;
   };
 
-  // Create user account
+  // Generate username based on name
+  const generateUsername = (name) => {
+    const cleanName = name.toLowerCase().replace(/\s+/g, '');
+    const timestamp = Date.now().toString().slice(-6);
+    return `${cleanName}_${timestamp}`;
+  };
+
+  // Create user account for the member
+  const username = generateUsername(name);
   const user = new User({
     username,
-    password: password || "default123", // Provide default password if not provided
+    password: "member123", // Default password for all members
     name,
     role: "staff",
-    uuid: generateUUID(),
+    uuid: generateUserUUID(),
   });
 
   await user.save();

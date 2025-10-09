@@ -1,14 +1,14 @@
-import { Savings } from "../models/savings.model.js";
-import { Member } from "../models/member.model.js";
-import { Product } from "../models/product.model.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
-import { ApiResponse } from "../utils/ApiResponse.js";
-import { ApiError } from "../utils/ApiError.js";
+import { Savings } from "../../models/savings.model.js";
+import { Member } from "../../models/member.model.js";
+import { Product } from "../../models/product.model.js";
+import { asyncHandler } from "../../utils/asyncHandler.js";
+import { ApiResponse } from "../../utils/ApiResponse.js";
+import { ApiError } from "../../utils/ApiError.js";
 import {
   createSavingsSchema,
   updateSavingsSchema,
   querySavingsSchema,
-} from "../validations/savings.validation.js";
+} from "../../validations/savings.validation.js";
 
 // Get all savings
 const getAllSavings = asyncHandler(async (req, res) => {

@@ -27,7 +27,7 @@ const Members = () => {
 
   const fetchProducts = async () => {
     try {
-      const response = await api.get("/api/products");
+      const response = await api.get("/api/admin/products");
       if (response.data.success) {
         setProducts(response.data.data.filter(product => product.isActive));
       }
@@ -38,7 +38,7 @@ const Members = () => {
 
   const fetchMembers = async () => {
     try {
-      const response = await api.get("/api/members");
+      const response = await api.get("/api/admin/members");
       if (response.data.success) {
         setMembers(response.data.data);
       }
@@ -55,7 +55,7 @@ const Members = () => {
     try {
       if (editingMember) {
         const response = await api.put(
-          `/api/members/${editingMember.uuid}`,
+          `/api/admin/members/${editingMember.uuid}`,
           formData
         );
         if (response.data.success) {
@@ -69,7 +69,7 @@ const Members = () => {
           ...formData,
           password: formData.password || "default123",
         };
-        const response = await api.post("/api/members", memberData);
+        const response = await api.post("/api/admin/members", memberData);
         if (response.data.success) {
           fetchMembers();
           setShowModal(false);
@@ -110,7 +110,7 @@ const Members = () => {
   const handleDelete = async (uuid) => {
     if (window.confirm("Apakah Anda yakin ingin menghapus anggota ini?")) {
       try {
-        const response = await api.delete(`/api/members/${uuid}`);
+        const response = await api.delete(`/api/admin/members/${uuid}`);
         if (response.data.success) {
           fetchMembers();
         }

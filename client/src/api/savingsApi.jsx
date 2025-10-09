@@ -1,7 +1,7 @@
 import axios from "axios";
 import conf from "../conf/conf";
 
-const API_URL = `${conf.server_url}/savings`;
+const API_URL = `${conf.server_url}/api/admin/savings`;
 
 // Create axios instance
 const api = axios.create({

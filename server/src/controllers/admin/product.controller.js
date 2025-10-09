@@ -1,5 +1,5 @@
-import { Product } from "../models/product.model.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
+import { Product } from "../../models/product.model.js";
+import { asyncHandler } from "../../utils/asyncHandler.js";
 
 // Get all products
 const getAllProducts = asyncHandler(async (req, res) => {
