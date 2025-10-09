@@ -79,16 +79,42 @@ export const createMemberSaving = asyncHandler(async (req, res) => {
       });
     }
 
+    // Get product info for deposit amount comparison
+    const Product = (await import("../../models/product.model.js")).Product;
+    const product = await Product.findById(productId || member.productId);
+    
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product tidak ditemukan",
+      });
+    }
+
+    // Calculate partial sequence for this period
+    const existingSavingsCount = await Savings.countDocuments({
+      memberId: member._id,
+      productId: product._id,
+      installmentPeriod: 1,
+    });
+
+    const partialSequence = existingSavingsCount + 1;
+
+    // Auto-detect payment type
+    const calculatedPaymentType = amount < product.depositAmount ? "Partial" : "Full";
+
     // Buat saving baru
     const newSaving = new Savings({
       memberId: member._id,
-      productId: productId || member.productId || null,
+      productId: product._id,
       amount: amount,
       savingsDate: new Date(),
-      installmentPeriod: 1, // Default installment period
-      description: description || `Saving oleh ${member.name}`,
+      installmentPeriod: 1,
+      description: description || `Pembayaran Simpanan Periode - 1 ${partialSequence > 1 ? `(#${partialSequence})` : ''}`,
       type: "Setoran",
-      status: "Approved", // Auto approve untuk member API
+      status: "Pending", // Member API creates pending, needs admin approval
+      paymentType: calculatedPaymentType,
+      partialSequence: partialSequence,
+      notes: notes || "",
     });
 
     await newSaving.save();

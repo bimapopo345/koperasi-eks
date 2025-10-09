@@ -39,6 +39,11 @@
       "key": "product_id",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "saving_id",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -298,7 +303,25 @@
               }
             },
             {
-              "name": "Create Saving",
+              "name": "Create Saving (Full Payment)",
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "exec": [
+                      "if (pm.response.code === 201) {",
+                      "    var jsonData = pm.response.json();",
+                      "    if (jsonData.success && jsonData.data._id) {",
+                      "        pm.collectionVariables.set('saving_id', jsonData.data._id);",
+                      "        console.log('Saving created with ID:', jsonData.data._id);",
+                      "        console.log('Payment Type:', jsonData.data.paymentType);",
+                      "    }",
+                      "}"
+                    ],
+                    "type": "text/javascript"
+                  }
+                }
+              ],
               "request": {
                 "method": "POST",
                 "header": [
@@ -313,12 +336,104 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"memberId\": \"{{created_member_id}}\",\n  \"productId\": \"{{product_id}}\",\n  \"amount\": 100000,\n  \"installmentPeriod\": 1,\n  \"savingsDate\": \"2024-12-09\",\n  \"type\": \"Setoran\",\n  \"description\": \"Pembayaran Simpanan Periode - 1\",\n  \"status\": \"Pending\",\n  \"paymentType\": \"Full\",\n  \"notes\": \"Pembayaran rutin bulanan\"\n}"
+                  "raw": "{\n  \"memberId\": \"{{created_member_id}}\",\n  \"productId\": \"{{product_id}}\",\n  \"amount\": 2500000,\n  \"installmentPeriod\": 1,\n  \"savingsDate\": \"2024-12-09\",\n  \"type\": \"Setoran\",\n  \"description\": \"Pembayaran Simpanan Periode - 1\",\n  \"status\": \"Pending\",\n  \"notes\": \"Pembayaran penuh periode 1\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/admin/savings",
                   "host": ["{{base_url}}"],
                   "path": ["api", "admin", "savings"]
+                }
+              }
+            },
+            {
+              "name": "Create Saving (Partial Payment)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"memberId\": \"{{created_member_id}}\",\n  \"productId\": \"{{product_id}}\",\n  \"amount\": 1000000,\n  \"installmentPeriod\": 1,\n  \"savingsDate\": \"2024-12-09\",\n  \"type\": \"Setoran\",\n  \"description\": \"Pembayaran Partial Periode - 1\",\n  \"status\": \"Pending\",\n  \"notes\": \"Pembayaran sebagian periode 1\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin/savings",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "savings"]
+                }
+              }
+            },
+            {
+              "name": "Approve Saving",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"notes\": \"Approved by admin - payment verified\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin/savings/{{saving_id}}/approve",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "savings", "{{saving_id}}", "approve"]
+                }
+              }
+            },
+            {
+              "name": "Reject Saving",
+              "request": {
+                "method": "PATCH",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"rejectionReason\": \"Bukti pembayaran tidak valid\",\n  \"notes\": \"Mohon upload ulang bukti yang lebih jelas\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin/savings/{{saving_id}}/reject",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "savings", "{{saving_id}}", "reject"]
+                }
+              }
+            },
+            {
+              "name": "Get Period Summary",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/savings/period-summary/{{created_member_id}}/{{product_id}}/1",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "savings", "period-summary", "{{created_member_id}}", "{{product_id}}", "1"]
                 }
               }
             }
@@ -429,7 +544,7 @@
               }
             },
             {
-              "name": "Create My Saving",
+              "name": "Create My Saving (Full)",
               "request": {
                 "method": "POST",
                 "header": [
@@ -444,7 +559,32 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"amount\": 50000,\n  \"description\": \"Tabungan bulanan member\",\n  \"installmentPeriod\": 1,\n  \"paymentType\": \"Full\",\n  \"notes\": \"Pembayaran via mobile app\"\n}"
+                  "raw": "{\n  \"amount\": 2500000,\n  \"description\": \"Pembayaran Simpanan Periode - 1\",\n  \"installmentPeriod\": 1,\n  \"notes\": \"Pembayaran penuh via member API\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/member/savings",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "savings"]
+                }
+              }
+            },
+            {
+              "name": "Create My Saving (Partial)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"amount\": 1000000,\n  \"description\": \"Pembayaran Partial Periode - 1\",\n  \"installmentPeriod\": 1,\n  \"notes\": \"Pembayaran sebagian via member API\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/member/savings",
