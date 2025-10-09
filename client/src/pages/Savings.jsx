@@ -21,6 +21,8 @@ const Savings = () => {
     type: "Setoran",
     description: "",
     status: "Pending",
+    paymentType: "Full",
+    notes: "",
     proofFile: null,
   });
 
@@ -244,6 +246,8 @@ const Savings = () => {
       type: "Setoran",
       description: "",
       status: "Pending",
+      paymentType: "Full",
+      notes: "",
       proofFile: null,
     });
     setLastPeriod(0);
@@ -262,16 +266,70 @@ const Savings = () => {
 
   // Handle delete
   const handleDelete = async (id) => {
-    if (window.confirm("Apakah Anda yakin ingin menghapus data ini?")) {
+    if (window.confirm("Apakah Anda yakin ingin menghapus simpanan ini?\n\nFile bukti juga akan dihapus.")) {
       try {
         const token = localStorage.getItem("token");
         await axios.delete(`${API_URL}/api/admin/savings/${id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-        toast.success("Data berhasil dihapus");
+        toast.success("Simpanan dan bukti berhasil dihapus");
         fetchSavings();
       } catch {
-        toast.error("Gagal menghapus data");
+        toast.error("Gagal menghapus simpanan");
+      }
+    }
+  };
+
+  const handleApprove = async (id) => {
+    const notes = prompt("Catatan persetujuan (opsional):");
+    if (notes !== null) { // User didn't cancel
+      try {
+        const token = localStorage.getItem("token");
+        await axios.patch(`${API_URL}/api/admin/savings/${id}/approve`, 
+          { notes }, 
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        toast.success("Simpanan berhasil disetujui");
+        fetchSavings();
+      } catch {
+        toast.error("Gagal menyetujui simpanan");
+      }
+    }
+  };
+
+  const handleReject = async (id) => {
+    const rejectionReason = prompt("Alasan penolakan (wajib diisi):");
+    if (rejectionReason && rejectionReason.trim()) {
+      const notes = prompt("Catatan tambahan (opsional):");
+      try {
+        const token = localStorage.getItem("token");
+        await axios.patch(`${API_URL}/api/admin/savings/${id}/reject`, 
+          { rejectionReason: rejectionReason.trim(), notes }, 
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        toast.success("Simpanan berhasil ditolak");
+        fetchSavings();
+      } catch {
+        toast.error("Gagal menolak simpanan");
+      }
+    } else if (rejectionReason !== null) {
+      toast.error("Alasan penolakan wajib diisi");
+    }
+  };
+
+  const handlePartial = async (id) => {
+    const notes = prompt("Catatan pembayaran partial (opsional):");
+    if (notes !== null) { // User didn't cancel
+      try {
+        const token = localStorage.getItem("token");
+        await axios.patch(`${API_URL}/api/admin/savings/${id}/partial`, 
+          { notes }, 
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        toast.success("Simpanan ditandai sebagai pembayaran partial");
+        fetchSavings();
+      } catch {
+        toast.error("Gagal menandai sebagai partial");
       }
     }
   };
@@ -428,6 +486,9 @@ const Savings = () => {
                 <th className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
                   Keterangan
                 </th>
+                <th className="hidden md:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
+                  Bukti
+                </th>
                 <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
                   Status
                 </th>
@@ -470,6 +531,18 @@ const Savings = () => {
                   <td className="hidden lg:table-cell px-6 py-4 text-sm text-gray-900 max-w-xs truncate" title={saving.description}>
                     {saving.description || "-"}
                   </td>
+                  <td className="hidden md:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {saving.proofFile ? (
+                      <button
+                        onClick={() => window.open(`${API_URL}/uploads/simpanan/${saving.proofFile}`, '_blank')}
+                        className="text-blue-600 hover:text-blue-800 underline"
+                      >
+                        Lihat Bukti
+                      </button>
+                    ) : (
+                      <span className="text-gray-400">-</span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span
                       className={`px-2 py-1 text-xs rounded-full ${getStatusBadge(
@@ -477,21 +550,53 @@ const Savings = () => {
                       )}`}
                     >
                       {saving.status}
+                      {saving.paymentType === "Partial" && (
+                        <span className="ml-1 text-xs">(#{saving.partialSequence})</span>
+                      )}
                     </span>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => handleDelete(saving._id)}
-                      className="text-red-600 hover:text-red-900 mr-2"
-                    >
-                      Hapus
-                    </button>
-                    <button
-                      onClick={() => handleEdit(saving)}
-                      className="text-blue-600 hover:text-blue-900"
-                    >
-                      Edit
-                    </button>
+                    <div className="flex items-center space-x-1">
+                      {saving.status === "Pending" && (
+                        <>
+                          <button
+                            onClick={() => handleApprove(saving._id)}
+                            className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded hover:bg-green-200"
+                            title="Setujui"
+                          >
+                            ✓
+                          </button>
+                          <button
+                            onClick={() => handleReject(saving._id)}
+                            className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200"
+                            title="Tolak"
+                          >
+                            ✗
+                          </button>
+                          <button
+                            onClick={() => handlePartial(saving._id)}
+                            className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200"
+                            title="Partial"
+                          >
+                            ◐
+                          </button>
+                        </>
+                      )}
+                      <button
+                        onClick={() => handleEdit(saving)}
+                        className="px-2 py-1 text-xs bg-blue-100 text-blue-800 rounded hover:bg-blue-200"
+                        title="Edit"
+                      >
+                        ✎
+                      </button>
+                      <button
+                        onClick={() => handleDelete(saving._id)}
+                        className="px-2 py-1 text-xs bg-red-100 text-red-800 rounded hover:bg-red-200"
+                        title="Hapus"
+                      >
+                        🗑
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

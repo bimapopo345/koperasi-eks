@@ -100,6 +100,8 @@ const createSavings = asyncHandler(async (req, res) => {
     type,
     description,
     status,
+    paymentType,
+    notes,
   } = value;
 
   // Validate member exists
@@ -142,7 +144,9 @@ const createSavings = asyncHandler(async (req, res) => {
     type: type || "Setoran",
     description: description || `Pembayaran Simpanan Periode - ${installmentPeriod}`,
     status: status || "Pending",
-    proofFile: req.file ? req.file.path : null,
+    paymentType: paymentType || "Full",
+    notes: notes || "",
+    proofFile: req.file ? req.file.filename : null, // Only store filename, not full path
   });
 
   await savings.save();
@@ -246,15 +250,31 @@ const updateSavings = asyncHandler(async (req, res) => {
 const deleteSavings = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const savings = await Savings.findByIdAndDelete(id);
-
+  const savings = await Savings.findById(id);
   if (!savings) {
     throw new ApiError(404, "Data simpanan tidak ditemukan");
   }
 
-  res
-    .status(200)
-    .json(new ApiResponse(200, null, "Data simpanan berhasil dihapus"));
+  // Delete proof file if exists
+  if (savings.proofFile) {
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const filePath = path.join(process.cwd(), 'uploads', 'simpanan', savings.proofFile);
+      
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`File bukti deleted: ${filePath}`);
+      }
+    } catch (error) {
+      console.error("Error deleting proof file:", error);
+      // Continue with deletion even if file removal fails
+    }
+  }
+
+  await Savings.findByIdAndDelete(id);
+
+  res.status(200).json(new ApiResponse(200, null, "Simpanan dan bukti berhasil dihapus"));
 });
 
 // Get savings by member

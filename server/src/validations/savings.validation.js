@@ -57,12 +57,45 @@ const createSavingsSchema = Joi.object({
     "string.max": "Deskripsi maksimal 500 karakter",
   }),
   status: Joi.string()
-    .valid("Pending", "Approved", "Rejected")
+    .valid("Pending", "Approved", "Rejected", "Partial")
     .default("Pending")
     .optional()
     .messages({
       "string.base": "Status harus berupa string",
-      "any.only": "Status harus salah satu dari: Pending, Approved, Rejected",
+      "any.only": "Status harus salah satu dari: Pending, Approved, Rejected, Partial",
+    }),
+  paymentType: Joi.string()
+    .valid("Full", "Partial")
+    .default("Full")
+    .optional()
+    .messages({
+      "string.base": "Tipe pembayaran harus berupa string",
+      "any.only": "Tipe pembayaran harus salah satu dari: Full, Partial",
+    }),
+  notes: Joi.string()
+    .max(1000)
+    .optional()
+    .allow("")
+    .messages({
+      "string.base": "Catatan harus berupa string",
+      "string.max": "Catatan maksimal 1000 karakter",
+    }),
+  rejectionReason: Joi.string()
+    .max(500)
+    .optional()
+    .allow("")
+    .messages({
+      "string.base": "Alasan penolakan harus berupa string",
+      "string.max": "Alasan penolakan maksimal 500 karakter",
+    }),
+  partialSequence: Joi.number()
+    .integer()
+    .min(1)
+    .optional()
+    .messages({
+      "number.base": "Urutan partial harus berupa angka",
+      "number.integer": "Urutan partial harus berupa bilangan bulat",
+      "number.min": "Urutan partial minimal 1",
     }),
 });
 

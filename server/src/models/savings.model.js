@@ -47,8 +47,32 @@ const savingsSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["Pending", "Approved", "Rejected"],
+      enum: ["Pending", "Approved", "Rejected", "Partial"],
       default: "Pending",
+    },
+    paymentType: {
+      type: String,
+      enum: ["Full", "Partial"],
+      default: "Full",
+    },
+    notes: {
+      type: String,
+      default: "",
+    },
+    rejectionReason: {
+      type: String,
+      default: "",
+    },
+    approvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+    approvedAt: {
+      type: Date,
+    },
+    partialSequence: {
+      type: Number,
+      default: 1,
     },
   },
   {

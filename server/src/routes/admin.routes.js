@@ -29,15 +29,22 @@ import {
   deleteSavings,
   getLastInstallmentPeriod 
 } from "../controllers/admin/savings.controller.js";
+import { 
+  approveSavings, 
+  rejectSavings, 
+  markAsPartial,
+  getSavingsPeriodSummary 
+} from "../controllers/admin/savingsApproval.controller.js";
 import { verifyToken } from "../middlewares/auth.middleware.js";
 import multer from "multer";
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, 'uploads/savings/')
+    cb(null, 'uploads/simpanan/')
   },
   filename: function (req, file, cb) {
-    cb(null, Date.now() + '-' + file.originalname)
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'bukti-' + uniqueSuffix + '-' + file.originalname);
   }
 });
 
@@ -76,5 +83,11 @@ router.post("/savings", verifyToken, upload.single('proofFile'), createSavings);
 router.put("/savings/:id", verifyToken, updateSavings);
 router.delete("/savings/:id", verifyToken, deleteSavings);
 router.get("/savings/check-period/:memberId/:productId", verifyToken, getLastInstallmentPeriod);
+
+// Savings approval/rejection routes
+router.patch("/savings/:id/approve", verifyToken, approveSavings);
+router.patch("/savings/:id/reject", verifyToken, rejectSavings);
+router.patch("/savings/:id/partial", verifyToken, markAsPartial);
+router.get("/savings/period-summary/:memberId/:productId/:installmentPeriod", verifyToken, getSavingsPeriodSummary);
 
 export default router;

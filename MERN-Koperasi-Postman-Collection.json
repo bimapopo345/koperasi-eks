@@ -313,7 +313,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"memberId\": \"{{created_member_id}}\",\n  \"productId\": \"{{product_id}}\",\n  \"amount\": 100000,\n  \"installmentPeriod\": 1,\n  \"savingsDate\": \"2024-12-09\",\n  \"type\": \"Setoran\",\n  \"description\": \"Pembayaran Simpanan Periode - 1\",\n  \"status\": \"Pending\"\n}"
+                  "raw": "{\n  \"memberId\": \"{{created_member_id}}\",\n  \"productId\": \"{{product_id}}\",\n  \"amount\": 100000,\n  \"installmentPeriod\": 1,\n  \"savingsDate\": \"2024-12-09\",\n  \"type\": \"Setoran\",\n  \"description\": \"Pembayaran Simpanan Periode - 1\",\n  \"status\": \"Pending\",\n  \"paymentType\": \"Full\",\n  \"notes\": \"Pembayaran rutin bulanan\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/admin/savings",
@@ -444,7 +444,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"amount\": 50000,\n  \"description\": \"Tabungan bulanan\"\n}"
+                  "raw": "{\n  \"amount\": 50000,\n  \"description\": \"Tabungan bulanan member\",\n  \"installmentPeriod\": 1,\n  \"paymentType\": \"Full\",\n  \"notes\": \"Pembayaran via mobile app\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/member/savings",
