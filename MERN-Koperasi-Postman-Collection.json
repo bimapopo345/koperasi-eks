@@ -29,6 +29,16 @@
       "key": "created_member_uuid",
       "value": "",
       "type": "string"
+    },
+    {
+      "key": "created_member_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "product_id",
+      "value": "",
+      "type": "string"
     }
   ],
   "item": [
@@ -190,7 +200,9 @@
                       "    var jsonData = pm.response.json();",
                       "    if (jsonData.success && jsonData.data.uuid) {",
                       "        pm.collectionVariables.set('created_member_uuid', jsonData.data.uuid);",
+                      "        pm.collectionVariables.set('created_member_id', jsonData.data._id);",
                       "        console.log('Member created with UUID:', jsonData.data.uuid);",
+                      "        console.log('Member created with ID:', jsonData.data._id);",
                       "    }",
                       "}"
                     ],
@@ -301,7 +313,7 @@
                 ],
                 "body": {
                   "mode": "raw",
-                  "raw": "{\n  \"memberUuid\": \"MEMBER_123\",\n  \"amount\": 100000,\n  \"description\": \"Tabungan rutin\"\n}"
+                  "raw": "{\n  \"memberId\": \"{{created_member_id}}\",\n  \"productId\": \"{{product_id}}\",\n  \"amount\": 100000,\n  \"installmentPeriod\": 1,\n  \"savingsDate\": \"2024-12-09\",\n  \"type\": \"Setoran\",\n  \"description\": \"Pembayaran Simpanan Periode - 1\",\n  \"status\": \"Pending\"\n}"
                 },
                 "url": {
                   "raw": "{{base_url}}/api/admin/savings",

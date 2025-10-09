@@ -1,11 +1,21 @@
 import Joi from "joi";
 
 const createSavingsSchema = Joi.object({
-  installmentPeriod: Joi.number().integer().min(1).required().messages({
+  installmentPeriod: Joi.alternatives().try(
+    Joi.number().integer().min(1),
+    Joi.string().pattern(/^\d+$/).custom((value, helpers) => {
+      const parsed = parseInt(value, 10);
+      if (parsed < 1) {
+        return helpers.error('any.invalid');
+      }
+      return parsed;
+    })
+  ).required().messages({
     "number.base": "Periode cicilan harus berupa angka",
     "number.integer": "Periode cicilan harus berupa bilangan bulat",
     "number.min": "Periode minimal 1 bulan",
     "any.required": "Periode cicilan wajib diisi",
+    "any.invalid": "Periode minimal 1 bulan",
   }),
   memberId: Joi.string().hex().length(24).required().messages({
     "string.base": "ID anggota harus berupa string",
@@ -19,10 +29,20 @@ const createSavingsSchema = Joi.object({
     "string.length": "ID produk harus 24 karakter",
     "any.required": "ID produk wajib diisi",
   }),
-  amount: Joi.number().positive().required().messages({
+  amount: Joi.alternatives().try(
+    Joi.number().positive(),
+    Joi.string().pattern(/^\d+$/).custom((value, helpers) => {
+      const parsed = parseInt(value, 10);
+      if (parsed <= 0) {
+        return helpers.error('any.invalid');
+      }
+      return parsed;
+    })
+  ).required().messages({
     "number.base": "Jumlah simpanan harus berupa angka",
     "number.positive": "Jumlah simpanan harus positif",
     "any.required": "Jumlah simpanan wajib diisi",
+    "any.invalid": "Jumlah simpanan harus positif",
   }),
   savingsDate: Joi.date().required().messages({
     "date.base": "Tanggal simpanan harus berupa tanggal yang valid",
@@ -36,6 +56,14 @@ const createSavingsSchema = Joi.object({
     "string.base": "Deskripsi harus berupa string",
     "string.max": "Deskripsi maksimal 500 karakter",
   }),
+  status: Joi.string()
+    .valid("Pending", "Approved", "Rejected")
+    .default("Pending")
+    .optional()
+    .messages({
+      "string.base": "Status harus berupa string",
+      "any.only": "Status harus salah satu dari: Pending, Approved, Rejected",
+    }),
 });
 
 const updateSavingsSchema = Joi.object({

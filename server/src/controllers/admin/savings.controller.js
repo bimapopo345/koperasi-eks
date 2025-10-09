@@ -61,8 +61,33 @@ const getSavingsById = asyncHandler(async (req, res) => {
 
 // Create new savings
 const createSavings = asyncHandler(async (req, res) => {
-  const { error, value } = createSavingsSchema.validate(req.body);
+  // Parse body data (handle both JSON and FormData)
+  let bodyData = { ...req.body };
+  
+  console.log("Raw request body:", req.body);
+  console.log("Request file:", req.file);
+  console.log("Content-Type:", req.get('Content-Type'));
+  
+  // Convert string numbers to actual numbers (FormData sends everything as strings)
+  Object.keys(bodyData).forEach(key => {
+    if (key === 'amount' || key === 'installmentPeriod') {
+      if (bodyData[key] && typeof bodyData[key] === 'string') {
+        const num = Number(bodyData[key]);
+        if (!isNaN(num)) {
+          bodyData[key] = num;
+        }
+      }
+    }
+  });
+
+  console.log("Processed body data:", bodyData);
+  console.log("installmentPeriod:", bodyData.installmentPeriod, typeof bodyData.installmentPeriod);
+
+  const { error, value } = createSavingsSchema.validate(bodyData);
   if (error) {
+    console.log("Validation error:", error.details[0].message);
+    console.log("Failed validation for:", error.details[0].path);
+    console.log("Validation details:", error.details);
     throw new ApiError(400, error.details[0].message);
   }
 
@@ -113,9 +138,10 @@ const createSavings = asyncHandler(async (req, res) => {
     memberId,
     productId,
     amount,
-    savingsDate,
-    type,
-    description,
+    savingsDate: savingsDate || new Date(),
+    type: type || "Setoran",
+    description: description || `Pembayaran Simpanan Periode - ${installmentPeriod}`,
+    status: status || "Pending",
     proofFile: req.file ? req.file.path : null,
   });
 
@@ -329,25 +355,39 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
   const { memberId, productId } = req.params;
 
   if (!memberId || !productId) {
-    throw new ApiError(400, "Member ID dan Product ID wajib diisi");
+    return res.status(400).json({
+      success: false,
+      message: "Member ID dan Product ID wajib diisi"
+    });
   }
 
-  const lastSavings = await Savings.findOne({
-    memberId,
-    productId,
-  })
-    .sort({ installmentPeriod: -1 })
-    .select("installmentPeriod");
-
-  const lastPeriod = lastSavings ? lastSavings.installmentPeriod : 0;
-  const nextPeriod = lastPeriod + 1;
-
-  res.status(200).json(
-    new ApiResponse(200, {
-      lastPeriod,
-      nextPeriod,
+  try {
+    const lastSavings = await Savings.findOne({
+      memberId,
+      productId,
     })
-  );
+      .sort({ installmentPeriod: -1 })
+      .select("installmentPeriod");
+
+    const lastPeriod = lastSavings ? lastSavings.installmentPeriod : 0;
+    const nextPeriod = lastPeriod + 1;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        lastPeriod,
+        nextPeriod,
+      },
+      message: "Periode cicilan terakhir berhasil didapatkan"
+    });
+  } catch (error) {
+    console.error("Error in getLastInstallmentPeriod:", error);
+    res.status(500).json({
+      success: false,
+      message: "Gagal mendapatkan periode cicilan terakhir",
+      error: error.message
+    });
+  }
 });
 
 // Get student dashboard savings by member UUID

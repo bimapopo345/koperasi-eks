@@ -20,6 +20,7 @@ const Savings = () => {
     savingsDate: format(new Date(), "yyyy-MM-dd"),
     type: "Setoran",
     description: "",
+    status: "Pending",
     proofFile: null,
   });
 
@@ -33,7 +34,7 @@ const Savings = () => {
   const fetchSavings = async () => {
     try {
       const token = localStorage.getItem("token");
-      const response = await axios.get(`${API_URL}/api/savings`, {
+      const response = await axios.get(`${API_URL}/api/admin/savings`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data =
@@ -52,7 +53,7 @@ const Savings = () => {
   const fetchMembers = async () => {
     try {
       const token = localStorage.getItem("token");
-      const response = await axios.get(`${API_URL}/api/members`, {
+      const response = await axios.get(`${API_URL}/api/admin/members`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = response.data?.data || response.data || [];
@@ -66,7 +67,7 @@ const Savings = () => {
   const fetchProducts = async () => {
     try {
       const token = localStorage.getItem("token");
-      const response = await axios.get(`${API_URL}/api/products`, {
+      const response = await axios.get(`${API_URL}/api/admin/products`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = response.data?.data || response.data || [];
@@ -99,24 +100,19 @@ const Savings = () => {
     }
   }, [formData.memberId, members, editingId]);
 
-  // Auto-update installmentPeriod when member/product/type change
+  // Auto-update installmentPeriod when member/product change
   useEffect(() => {
-    if (formData.memberId && formData.productId) {
+    if (formData.memberId && formData.productId && products.length > 0) {
       checkLastInstallmentPeriod(formData.memberId, formData.productId);
     } else {
       // Reset when either field empty
       setLastPeriod(0);
-      setFormData((prev) => ({ ...prev, installmentPeriod: 1 }));
+      if (!editingId) {
+        setFormData((prev) => ({ ...prev, installmentPeriod: 1, description: "Pembayaran Simpanan Periode - 1" }));
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    formData.memberId,
-    formData.productId,
-    formData.type,
-    editingId,
-    originalSelection.memberId,
-    originalSelection.productId,
-  ]);
+  }, [formData.memberId, formData.productId, products.length, editingId]);
 
   // Format currency
   const formatCurrency = (amount) => {
@@ -132,27 +128,39 @@ const Savings = () => {
     try {
       const token = localStorage.getItem("token");
       const response = await axios.get(
-        `${API_URL}/api/savings/check-period/${memberId}/${productId}`,
+        `${API_URL}/api/admin/savings/check-period/${memberId}/${productId}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = response.data?.data || response.data || {};
       const last = data.lastPeriod ?? 0;
       const next = (last || 0) + 1;
       setLastPeriod(last);
-      const selectionChanged =
-        originalSelection.memberId !== formData.memberId ||
-        originalSelection.productId !== formData.productId;
-      if (!editingId || selectionChanged) {
-        setFormData((prev) => ({ ...prev, installmentPeriod: next }));
+      
+      // Auto-fill amount berdasarkan deposit amount produk
+      const selectedProduct = products.find(p => p._id === productId);
+      if (selectedProduct && selectedProduct.depositAmount && !editingId) {
+        setFormData((prev) => ({ 
+          ...prev, 
+          amount: selectedProduct.depositAmount,
+          installmentPeriod: next,
+          description: `Pembayaran Simpanan Periode - ${next}`
+        }));
+      } else if (!editingId) {
+        setFormData((prev) => ({ 
+          ...prev, 
+          installmentPeriod: next,
+          description: `Pembayaran Simpanan Periode - ${next}`
+        }));
       }
     } catch (error) {
       console.error("Error checking last period:", error);
       setLastPeriod(0);
-      const selectionChanged =
-        originalSelection.memberId !== formData.memberId ||
-        originalSelection.productId !== formData.productId;
-      if (!editingId || selectionChanged) {
-        setFormData((prev) => ({ ...prev, installmentPeriod: 1 }));
+      if (!editingId) {
+        setFormData((prev) => ({ 
+          ...prev, 
+          installmentPeriod: 1,
+          description: "Pembayaran Simpanan Periode - 1"
+        }));
       }
     }
   };
@@ -161,34 +169,56 @@ const Savings = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    const formDataToSend = new FormData();
+    // Debug: log form data before sending
+    console.log("Form data being submitted:", formData);
 
-    // Kirim semua field untuk create dan update
-    Object.keys(formData).forEach((key) => {
-      if (formData[key] !== null && formData[key] !== undefined) {
-        formDataToSend.append(key, formData[key]);
-      }
-    });
+    // Get token first
+    const token = localStorage.getItem("token");
+    
+    // Check if we have a file to upload
+    const hasFile = formData.proofFile && formData.proofFile instanceof File;
+    
+    let formDataToSend;
+    let headers = {
+      Authorization: `Bearer ${token}`,
+    };
+
+    if (hasFile) {
+      // Use FormData for file upload
+      formDataToSend = new FormData();
+      Object.keys(formData).forEach((key) => {
+        if (formData[key] !== null && formData[key] !== undefined && formData[key] !== "") {
+          formDataToSend.append(key, formData[key]);
+        }
+      });
+      headers["Content-Type"] = "multipart/form-data";
+    } else {
+      // Use JSON for non-file submissions
+      const dataToSend = { ...formData };
+      delete dataToSend.proofFile; // Remove file field if null/undefined
+      
+      // Ensure numeric fields are numbers
+      dataToSend.amount = Number(dataToSend.amount);
+      dataToSend.installmentPeriod = Number(dataToSend.installmentPeriod);
+      
+      formDataToSend = dataToSend;
+      headers["Content-Type"] = "application/json";
+    }
+
+    console.log("Data being sent:", formDataToSend);
+    console.log("Headers:", headers);
 
     try {
-      const token = localStorage.getItem("token");
-
       if (editingId) {
         // Update existing savings
-        await axios.put(`${API_URL}/api/savings/${editingId}`, formDataToSend, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-          },
+        await axios.put(`${API_URL}/api/admin/savings/${editingId}`, formDataToSend, {
+          headers: headers,
         });
         toast.success("Data simpanan berhasil diperbarui");
       } else {
         // Create new savings
-        await axios.post(`${API_URL}/api/savings`, formDataToSend, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-          },
+        await axios.post(`${API_URL}/api/admin/savings`, formDataToSend, {
+          headers: headers,
         });
         toast.success("Data simpanan berhasil ditambahkan");
       }
@@ -198,7 +228,9 @@ const Savings = () => {
       resetForm();
       fetchSavings();
     } catch (error) {
-      toast.error(error.response?.data?.message || "Gagal menyimpan data");
+      console.error("Submit error:", error);
+      console.error("Error response:", error.response?.data);
+      toast.error(error.response?.data?.message || error.message || "Gagal menyimpan data");
     }
   };
 
@@ -211,6 +243,7 @@ const Savings = () => {
       savingsDate: format(new Date(), "yyyy-MM-dd"),
       type: "Setoran",
       description: "",
+      status: "Pending",
       proofFile: null,
     });
     setLastPeriod(0);
@@ -232,7 +265,7 @@ const Savings = () => {
     if (window.confirm("Apakah Anda yakin ingin menghapus data ini?")) {
       try {
         const token = localStorage.getItem("token");
-        await axios.delete(`${API_URL}/api/savings/${id}`, {
+        await axios.delete(`${API_URL}/api/admin/savings/${id}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         toast.success("Data berhasil dihapus");
@@ -254,6 +287,7 @@ const Savings = () => {
       savingsDate: format(new Date(saving.savingsDate), "yyyy-MM-dd"),
       type: saving.type || "Setoran",
       description: saving.description || "",
+      status: saving.status || "Pending",
       proofFile: null,
     });
     setOriginalSelection({
@@ -391,6 +425,9 @@ const Savings = () => {
                 <th className="hidden sm:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
                   Tipe
                 </th>
+                <th className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
+                  Keterangan
+                </th>
                 <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
                   Status
                 </th>
@@ -410,16 +447,16 @@ const Savings = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {getMemberName(saving.memberId)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="hidden md:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {getProductName(saving.productId)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {saving.installmentPeriod || 1} bulan
+                  <td className="hidden lg:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {saving.installmentPeriod || 1}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {formatCurrency(saving.amount)}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <span
                       className={`px-2 py-1 text-xs rounded-full ${
                         saving.type === "Setoran"
@@ -429,6 +466,9 @@ const Savings = () => {
                     >
                       {saving.type}
                     </span>
+                  </td>
+                  <td className="hidden lg:table-cell px-6 py-4 text-sm text-gray-900 max-w-xs truncate" title={saving.description}>
+                    {saving.description || "-"}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span

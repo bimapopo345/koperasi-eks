@@ -26,9 +26,22 @@ import {
   getSavingsById, 
   createSavings, 
   updateSavings, 
-  deleteSavings 
+  deleteSavings,
+  getLastInstallmentPeriod 
 } from "../controllers/admin/savings.controller.js";
 import { verifyToken } from "../middlewares/auth.middleware.js";
+import multer from "multer";
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/savings/')
+  },
+  filename: function (req, file, cb) {
+    cb(null, Date.now() + '-' + file.originalname)
+  }
+});
+
+const upload = multer({ storage: storage });
 
 const router = express.Router();
 
@@ -59,8 +72,9 @@ router.delete("/members/:uuid", verifyToken, deleteMember);
 // Savings management routes
 router.get("/savings", verifyToken, getAllSavings);
 router.get("/savings/:id", verifyToken, getSavingsById);
-router.post("/savings", verifyToken, createSavings);
+router.post("/savings", verifyToken, upload.single('proofFile'), createSavings);
 router.put("/savings/:id", verifyToken, updateSavings);
 router.delete("/savings/:id", verifyToken, deleteSavings);
+router.get("/savings/check-period/:memberId/:productId", verifyToken, getLastInstallmentPeriod);
 
 export default router;
