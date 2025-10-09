@@ -138,15 +138,25 @@ const Savings = () => {
       const next = (last || 0) + 1;
       setLastPeriod(last);
       
-      // Auto-fill amount berdasarkan deposit amount produk
+      // Auto-fill amount berdasarkan deposit amount produk atau remaining amount
       const selectedProduct = products.find(p => p._id === productId);
-      if (selectedProduct && selectedProduct.depositAmount && !editingId) {
-        setFormData((prev) => ({ 
-          ...prev, 
-          amount: selectedProduct.depositAmount,
-          installmentPeriod: next,
-          description: `Pembayaran Simpanan Periode - ${next}`
-        }));
+      if (selectedProduct && !editingId) {
+        // Check if this is partial payment continuation
+        if (data.isPartialPayment && data.remainingAmount > 0) {
+          setFormData((prev) => ({ 
+            ...prev, 
+            amount: data.remainingAmount,
+            installmentPeriod: next,
+            description: `Pembayaran Sisa Periode - ${next} (Rp ${data.remainingAmount.toLocaleString()})`
+          }));
+        } else {
+          setFormData((prev) => ({ 
+            ...prev, 
+            amount: selectedProduct.depositAmount,
+            installmentPeriod: next,
+            description: `Pembayaran Simpanan Periode - ${next}`
+          }));
+        }
       } else if (!editingId) {
         setFormData((prev) => ({ 
           ...prev, 
@@ -317,22 +327,6 @@ const Savings = () => {
     }
   };
 
-  const handlePartial = async (id) => {
-    const notes = prompt("Catatan pembayaran partial (opsional):");
-    if (notes !== null) { // User didn't cancel
-      try {
-        const token = localStorage.getItem("token");
-        await axios.patch(`${API_URL}/api/admin/savings/${id}/partial`, 
-          { notes }, 
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        toast.success("Simpanan ditandai sebagai pembayaran partial");
-        fetchSavings();
-      } catch {
-        toast.error("Gagal menandai sebagai partial");
-      }
-    }
-  };
 
   // Handle edit
   const handleEdit = (saving) => {
@@ -544,16 +538,20 @@ const Savings = () => {
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span
-                      className={`px-2 py-1 text-xs rounded-full ${getStatusBadge(
-                        saving.status
-                      )}`}
-                    >
-                      {saving.status}
+                    <div className="flex flex-col space-y-1">
+                      <span
+                        className={`px-2 py-1 text-xs rounded-full ${getStatusBadge(
+                          saving.status
+                        )}`}
+                      >
+                        {saving.status}
+                      </span>
                       {saving.paymentType === "Partial" && (
-                        <span className="ml-1 text-xs">(#{saving.partialSequence})</span>
+                        <span className="px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded-full">
+                          Partial #{saving.partialSequence}
+                        </span>
                       )}
-                    </span>
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                     <div className="flex items-center space-x-1">
@@ -572,13 +570,6 @@ const Savings = () => {
                             title="Tolak"
                           >
                             ✗
-                          </button>
-                          <button
-                            onClick={() => handlePartial(saving._id)}
-                            className="px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded hover:bg-yellow-200"
-                            title="Partial"
-                          >
-                            ◐
                           </button>
                         </>
                       )}

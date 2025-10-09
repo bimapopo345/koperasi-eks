@@ -1,6 +1,7 @@
 import { Savings } from "../../models/savings.model.js";
 import { Member } from "../../models/member.model.js";
 import { Product } from "../../models/product.model.js";
+import mongoose from "mongoose";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
@@ -116,24 +117,36 @@ const createSavings = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Produk tidak ditemukan");
   }
 
-  // Validate amount against product limits
-  if (amount < product.depositAmount) {
-    throw new ApiError(400, `Jumlah simpanan minimal ${product.depositAmount}`);
-  }
+  // Allow flexible amounts for partial payments
+  // Validation removed to support partial payment system
+  // if (amount < product.depositAmount) {
+  //   throw new ApiError(400, `Jumlah simpanan minimal ${product.depositAmount}`);
+  // }
 
-  // Check for duplicate installment period for same member and product
-  const existingSavings = await Savings.findOne({
+  // Allow multiple submissions per period for partial/rejected payments
+  // Check for existing approved savings for same period
+  const existingApprovedSavings = await Savings.findOne({
+    memberId,
+    productId,
+    installmentPeriod,
+    status: "Approved"
+  });
+
+  // Calculate partial sequence for this period
+  const existingSavingsCount = await Savings.countDocuments({
     memberId,
     productId,
     installmentPeriod,
   });
 
-  if (existingSavings) {
-    throw new ApiError(
-      400,
-      `Kamu sudah pernah menambahkan data periode ${installmentPeriod} untuk produk ini`
-    );
-  }
+  const partialSequence = existingSavingsCount + 1;
+
+  // Determine payment type based on amount vs product deposit
+  const calculatedPaymentType = amount < product.depositAmount ? "Partial" : "Full";
+  
+  console.log("Product deposit amount:", product.depositAmount);
+  console.log("Payment amount:", amount);
+  console.log("Calculated payment type:", calculatedPaymentType);
 
   const savings = new Savings({
     installmentPeriod,
@@ -142,9 +155,10 @@ const createSavings = asyncHandler(async (req, res) => {
     amount,
     savingsDate: savingsDate || new Date(),
     type: type || "Setoran",
-    description: description || `Pembayaran Simpanan Periode - ${installmentPeriod}`,
+    description: description || `Pembayaran Simpanan Periode - ${installmentPeriod} ${partialSequence > 1 ? `(#${partialSequence})` : ''}`,
     status: status || "Pending",
-    paymentType: paymentType || "Full",
+    paymentType: calculatedPaymentType, // Always use calculated payment type
+    partialSequence: partialSequence,
     notes: notes || "",
     proofFile: req.file ? req.file.filename : null, // Only store filename, not full path
   });
@@ -382,23 +396,80 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
   }
 
   try {
-    const lastSavings = await Savings.findOne({
-      memberId,
-      productId,
-    })
-      .sort({ installmentPeriod: -1 })
-      .select("installmentPeriod");
+    // Get product info for deposit amount
+    const product = await Product.findById(productId);
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        message: "Product tidak ditemukan"
+      });
+    }
 
-    const lastPeriod = lastSavings ? lastSavings.installmentPeriod : 0;
-    const nextPeriod = lastPeriod + 1;
+    // Check for incomplete periods (partial payments)
+    const incompletePeriods = await Savings.aggregate([
+      {
+        $match: {
+          memberId: mongoose.Types.ObjectId(memberId),
+          productId: mongoose.Types.ObjectId(productId),
+          status: { $in: ["Approved", "Partial"] }
+        }
+      },
+      {
+        $group: {
+          _id: "$installmentPeriod",
+          totalAmount: { $sum: "$amount" },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $match: {
+          totalAmount: { $lt: product.depositAmount }
+        }
+      },
+      {
+        $sort: { _id: 1 }
+      }
+    ]);
+
+    let suggestedPeriod;
+    let isPartialPayment = false;
+    let remainingAmount = 0;
+
+    if (incompletePeriods.length > 0) {
+      // Use the first incomplete period
+      const incompletePeriod = incompletePeriods[0];
+      suggestedPeriod = incompletePeriod._id;
+      isPartialPayment = true;
+      remainingAmount = product.depositAmount - incompletePeriod.totalAmount;
+    } else {
+      // Get the highest completed period
+      const lastCompletedSavings = await Savings.findOne({
+        memberId,
+        productId,
+        status: "Approved"
+      })
+        .sort({ installmentPeriod: -1 })
+        .select("installmentPeriod");
+
+      const lastPeriod = lastCompletedSavings ? lastCompletedSavings.installmentPeriod : 0;
+      suggestedPeriod = lastPeriod + 1;
+    }
 
     res.status(200).json({
       success: true,
       data: {
-        lastPeriod,
-        nextPeriod,
+        lastPeriod: suggestedPeriod - 1,
+        nextPeriod: suggestedPeriod,
+        isPartialPayment,
+        remainingAmount,
+        depositAmount: product.depositAmount,
+        incompletePeriods: incompletePeriods.map(p => ({
+          period: p._id,
+          paidAmount: p.totalAmount,
+          remainingAmount: product.depositAmount - p.totalAmount
+        }))
       },
-      message: "Periode cicilan terakhir berhasil didapatkan"
+      message: "Periode cicilan berhasil didapatkan"
     });
   } catch (error) {
     console.error("Error in getLastInstallmentPeriod:", error);
