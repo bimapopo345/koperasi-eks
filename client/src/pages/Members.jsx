@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "../api/index.jsx";
+import Pagination from "../components/Pagination.jsx";
 
 const Members = () => {
   const [members, setMembers] = useState([]);
@@ -8,6 +9,10 @@ const Members = () => {
   const [error, setError] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
   const [formData, setFormData] = useState({
     uuid: "",
     name: "",
@@ -140,6 +145,17 @@ const Members = () => {
     setShowModal(true);
   };
 
+  // Pagination logic
+  const totalPages = Math.ceil(members.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentMembers = members.slice(startIndex, endIndex);
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen p-4">
@@ -215,7 +231,7 @@ const Members = () => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {members.map((member) => (
+            {currentMembers.map((member) => (
               <tr key={member._id} className="hover:bg-pink-50 transition-colors">
                 <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900 font-mono">
                   {member.uuid}
@@ -275,6 +291,15 @@ const Members = () => {
           </tbody>
           </table>
         </div>
+        
+        {/* Pagination */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={handlePageChange}
+          itemsPerPage={itemsPerPage}
+          totalItems={members.length}
+        />
       </div>
 
       {/* Modal Form */}

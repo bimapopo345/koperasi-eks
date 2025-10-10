@@ -4,6 +4,7 @@ import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { toast } from "react-toastify";
 import { API_URL } from "../api/config";
+import Pagination from "../components/Pagination.jsx";
 
 const Savings = () => {
   const [savings, setSavings] = useState([]);
@@ -41,6 +42,10 @@ const Savings = () => {
     memberId: "",
     productId: "",
   });
+
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
 
   // Fetch data
   const fetchSavings = async () => {
@@ -446,6 +451,17 @@ const Savings = () => {
     return badges[status] || "bg-gray-100 text-gray-800";
   };
 
+  // Pagination logic
+  const totalPages = Math.ceil(savings.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentSavings = savings.slice(startIndex, endIndex);
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-64">
@@ -548,7 +564,7 @@ const Savings = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {savings.map((saving) => (
+              {currentSavings.map((saving) => (
                 <tr key={saving._id}>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {format(new Date(saving.savingsDate), "dd MMM yyyy", {
@@ -659,6 +675,15 @@ const Savings = () => {
             </tbody>
           </table>
         </div>
+        
+        {/* Pagination */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={handlePageChange}
+          itemsPerPage={itemsPerPage}
+          totalItems={savings.length}
+        />
       </div>
 
       {/* Modal */}
