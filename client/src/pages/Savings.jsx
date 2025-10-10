@@ -36,7 +36,9 @@ const Savings = () => {
     nextPeriod: 1,
     suggestedAmount: 0,
     isPartialPayment: false,
-    remainingAmount: 0
+    remainingAmount: 0,
+    hasUpgrade: false,
+    upgradeInfo: null
   });
   const [originalSelection, setOriginalSelection] = useState({
     memberId: "",
@@ -150,16 +152,24 @@ const Savings = () => {
       );
       const data = response.data?.data || response.data || {};
       
+      console.log("=== Check Period Response ===", data);
+      console.log("Next Period:", data.nextPeriod);
+      console.log("Expected Amount:", data.expectedAmount);
+      console.log("Has Upgrade:", data.hasUpgrade);
+      console.log("Upgrade Info:", data.upgradeInfo);
+      
       // Update period info state
       setPeriodInfo({
         incompletePeriods: data.incompletePeriods || [],
         pendingTransactions: data.pendingTransactions || [],
         transactionsByPeriod: data.transactionsByPeriod || {},
         nextPeriod: data.nextPeriod || 1,
-        suggestedAmount: data.remainingAmount || data.depositAmount || 0,
+        suggestedAmount: data.expectedAmount || data.remainingAmount || data.depositAmount || 0,
         isPartialPayment: data.isPartialPayment || false,
         remainingAmount: data.remainingAmount || 0,
-        depositAmount: data.depositAmount || 0
+        depositAmount: data.depositAmount || 0,
+        hasUpgrade: data.hasUpgrade || false,
+        upgradeInfo: data.upgradeInfo || null
       });
 
       const last = data.lastPeriod ?? 0;
@@ -171,29 +181,35 @@ const Savings = () => {
       
       // Auto-fill based on intelligent detection
       const selectedProduct = products.find(p => p._id === productId);
-      if (selectedProduct && !editingId) {
-        let suggestedAmount = selectedProduct.depositAmount;
-        let description = `Pembayaran Simpanan Periode - ${next}`;
-        
-        // Check if this is partial payment continuation
-        if (data.isPartialPayment && data.remainingAmount > 0) {
-          suggestedAmount = data.remainingAmount;
-          description = `Pembayaran Sisa Periode - ${next} (Rp ${data.remainingAmount.toLocaleString()})`;
+      
+      // Use setTimeout to ensure state updates properly
+      setTimeout(() => {
+        if (!editingId) {
+          let suggestedAmount = data.expectedAmount || selectedProduct?.depositAmount || 0;
+          let description = `Pembayaran Simpanan Periode - ${next}`;
+          
+          // Check if member has upgraded
+          if (data.hasUpgrade && data.upgradeInfo) {
+            // IMPORTANT: Use expectedAmount from API which already includes compensation
+            suggestedAmount = data.expectedAmount || data.upgradeInfo.newPaymentWithCompensation;
+            description = `Pembayaran Simpanan Periode - ${next} (Upgrade: Rp ${data.upgradeInfo.newMonthlyDeposit?.toLocaleString()} + Kompensasi: Rp ${data.upgradeInfo.compensationPerMonth?.toLocaleString()})`;
+            
+            console.log("Setting amount for upgraded member:", suggestedAmount);
+          }
+          // Check if this is partial payment continuation
+          else if (data.isPartialPayment && data.remainingAmount > 0) {
+            suggestedAmount = data.remainingAmount;
+            description = `Pembayaran Sisa Periode - ${next} (Rp ${data.remainingAmount.toLocaleString()})`;
+          }
+          
+          setFormData((prev) => ({ 
+            ...prev, 
+            amount: suggestedAmount,
+            installmentPeriod: next,
+            description: description
+          }));
         }
-        
-        setFormData((prev) => ({ 
-          ...prev, 
-          amount: suggestedAmount,
-          installmentPeriod: next,
-          description: description
-        }));
-      } else if (!editingId) {
-        setFormData((prev) => ({ 
-          ...prev, 
-          installmentPeriod: next,
-          description: `Pembayaran Simpanan Periode - ${next}`
-        }));
-      }
+      }, 100);
     } catch (error) {
       console.error("Error checking last period:", error);
       setLastPeriod(0);
@@ -219,15 +235,28 @@ const Savings = () => {
 
   const fetchRejectedPeriods = async (memberId, productId) => {
     try {
+      if (!memberId || !productId) {
+        return; // Skip if params are missing
+      }
+      
       const token = localStorage.getItem("token");
       const response = await axios.get(
-        `${API_URL}/api/admin/savings?memberId=${memberId}&productId=${productId}&status=Rejected`,
-        { headers: { Authorization: `Bearer ${token}` } }
+        `${API_URL}/api/admin/savings`,
+        { 
+          headers: { Authorization: `Bearer ${token}` }
+        }
       );
       
-      if (response.data.success) {
-        const rejectedSavings = response.data.data || [];
-        const rejectedPeriods = [...new Set(rejectedSavings.map(s => s.installmentPeriod))];
+      if (response.data) {
+        const savingsData = response.data.data?.savings || response.data.data || response.data.savings || [];
+        const rejectedPeriods = [...new Set(savingsData
+          .filter(s => 
+            s.status === 'Rejected' && 
+            (s.memberId?._id === memberId || s.memberId === memberId) &&
+            (s.productId?._id === productId || s.productId === productId)
+          )
+          .map(s => s.installmentPeriod)
+        )];
         setPeriodInfo(prev => ({
           ...prev,
           rejectedPeriods: rejectedPeriods
@@ -797,6 +826,23 @@ const Savings = () => {
                                 <span className="text-orange-600 text-xs"> (Sisa)</span>
                               )}
                             </p>
+
+                            {/* Upgrade Info */}
+                            {periodInfo.hasUpgrade && periodInfo.upgradeInfo && (
+                              <div className="mt-2 pt-2 border-t border-gray-200">
+                                <p className="text-xs text-purple-800 font-semibold">
+                                  ✨ Member Sudah Upgrade
+                                </p>
+                                <div className="text-xs text-gray-600 mt-1 space-y-1">
+                                  <p>Produk Lama: Rp {periodInfo.upgradeInfo.oldMonthlyDeposit?.toLocaleString()}/bulan</p>
+                                  <p>Produk Baru: Rp {periodInfo.upgradeInfo.newMonthlyDeposit?.toLocaleString()}/bulan</p>
+                                  <p>Kompensasi: Rp {periodInfo.upgradeInfo.compensationPerMonth?.toLocaleString()}/bulan</p>
+                                  <p className="font-semibold text-purple-700">
+                                    Total: Rp {periodInfo.upgradeInfo.newPaymentWithCompensation?.toLocaleString()}/bulan
+                                  </p>
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {/* Right: Transaction History + Alerts + Actions */}
@@ -903,19 +949,26 @@ const Savings = () => {
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    let description = '';
+                                    if (periodInfo.isPartialPayment) {
+                                      description = `Pembayaran Sisa Periode - ${periodInfo.nextPeriod} (Rp ${periodInfo.remainingAmount?.toLocaleString() || '0'})`;
+                                    } else if (periodInfo.hasUpgrade && periodInfo.upgradeInfo) {
+                                      description = `Pembayaran Simpanan Periode - ${periodInfo.nextPeriod} (Upgrade: Rp ${periodInfo.upgradeInfo.newMonthlyDeposit?.toLocaleString()} + Kompensasi: Rp ${periodInfo.upgradeInfo.compensationPerMonth?.toLocaleString()})`;
+                                    } else {
+                                      description = `Pembayaran Simpanan Periode - ${periodInfo.nextPeriod}`;
+                                    }
+                                    
                                     setFormData(prev => ({
                                       ...prev,
                                       installmentPeriod: periodInfo.nextPeriod,
                                       amount: periodInfo.suggestedAmount || 0,
-                                      description: periodInfo.isPartialPayment 
-                                        ? `Pembayaran Sisa Periode - ${periodInfo.nextPeriod} (Rp ${periodInfo.remainingAmount?.toLocaleString() || '0'})`
-                                        : `Pembayaran Simpanan Periode - ${periodInfo.nextPeriod}`
+                                      description
                                     }));
                                   }}
                                   className="px-2 py-1 text-xs bg-green-100 text-green-800 border border-green-300 rounded hover:bg-green-200 transition-colors"
                                 >
                                   📍 P{periodInfo.nextPeriod}
-                                  {periodInfo.isPartialPayment ? ' (Sisa)' : ''}
+                                  {periodInfo.isPartialPayment ? ' (Sisa)' : periodInfo.hasUpgrade ? ' (Upgrade)' : ''}
                                 </button>
                                 
                                 {/* Rejected Period Buttons */}
@@ -968,6 +1021,12 @@ const Savings = () => {
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                       required
                     />
+                    {periodInfo.suggestedAmount > 0 && !editingId && (
+                      <p className="mt-1 text-sm text-blue-600">
+                        💡 Jumlah yang diharapkan: Rp {periodInfo.suggestedAmount.toLocaleString()}
+                        {periodInfo.hasUpgrade && ' (termasuk kompensasi)'}
+                      </p>
+                    )}
                   </div>
                 </div>
 

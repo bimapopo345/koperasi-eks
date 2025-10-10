@@ -8,6 +8,8 @@ const SavingsModal = ({ isOpen, onClose, onSuccess, savingsData }) => {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [lastPeriod, setLastPeriod] = useState(0);
+  const [upgradeInfo, setUpgradeInfo] = useState(null);
+  const [expectedAmount, setExpectedAmount] = useState(0);
   const originalSelectionRef = useRef({ memberId: "", productId: "" });
 
   const {
@@ -113,12 +115,29 @@ const SavingsModal = ({ isOpen, onClose, onSuccess, savingsData }) => {
 
   const checkLastInstallmentPeriod = async () => {
     try {
-      const response = await api.get(`/api/savings/check-period/${memberId}/${productId}`);
-      const last = response.data.data.lastPeriod || 0;
+      const response = await api.get(`/api/admin/savings/check-period/${memberId}/${productId}`);
+      const data = response.data.data;
+      const last = data.lastPeriod || 0;
       setLastPeriod(last);
 
+      // Handle upgrade info
+      if (data.hasUpgrade && data.upgradeInfo) {
+        setUpgradeInfo(data.upgradeInfo);
+        setExpectedAmount(data.expectedAmount);
+        
+        // Auto-fill amount and description for upgraded members
+        if (!savingsData) {
+          setValue("amount", data.expectedAmount);
+          const nextPeriod = data.nextPeriod || (last + 1);
+          setValue("description", `Setoran periode ${nextPeriod} (Upgrade: ${data.upgradeInfo.newMonthlyDeposit} + Kompensasi: ${data.upgradeInfo.compensationPerMonth})`);
+        }
+      } else {
+        setUpgradeInfo(null);
+        setExpectedAmount(data.depositAmount || 0);
+      }
+
       // Auto-set next period, but don't override when editing with same original selection
-      const nextPeriod = last + 1;
+      const nextPeriod = data.nextPeriod || (last + 1);
       const isOriginal =
         originalSelectionRef.current.memberId === memberId &&
         originalSelectionRef.current.productId === productId;
@@ -129,6 +148,8 @@ const SavingsModal = ({ isOpen, onClose, onSuccess, savingsData }) => {
     } catch (error) {
       console.error("Error checking last period:", error);
       setLastPeriod(0);
+      setUpgradeInfo(null);
+      setExpectedAmount(0);
       const isOriginal =
         originalSelectionRef.current.memberId === memberId &&
         originalSelectionRef.current.productId === productId;
@@ -277,6 +298,26 @@ const SavingsModal = ({ isOpen, onClose, onSuccess, savingsData }) => {
             )}
           </div>
 
+          {/* Upgrade Info Alert */}
+          {upgradeInfo && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <div className="flex items-start">
+                <span className="text-blue-600 mr-2">✨</span>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-blue-800">Anggota Sudah Upgrade Produk</p>
+                  <div className="mt-2 text-xs text-blue-700 space-y-1">
+                    <p>Produk Lama: Rp {upgradeInfo.oldMonthlyDeposit?.toLocaleString('id-ID')}/bulan</p>
+                    <p>Produk Baru: Rp {upgradeInfo.newMonthlyDeposit?.toLocaleString('id-ID')}/bulan</p>
+                    <p>Kompensasi: Rp {upgradeInfo.compensationPerMonth?.toLocaleString('id-ID')}/bulan</p>
+                    <p className="font-semibold text-blue-900">
+                      Total Setoran: Rp {upgradeInfo.newPaymentWithCompensation?.toLocaleString('id-ID')}/bulan
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -291,6 +332,11 @@ const SavingsModal = ({ isOpen, onClose, onSuccess, savingsData }) => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Masukkan jumlah"
               />
+              {expectedAmount > 0 && !savingsData && (
+                <p className="text-sm text-blue-600 mt-1">
+                  💡 Jumlah yang diharapkan: Rp {expectedAmount.toLocaleString('id-ID')}
+                </p>
+              )}
               {errors.amount && (
                 <p className="text-red-500 text-sm mt-1">
                   {errors.amount.message}

@@ -8,6 +8,13 @@ const getAllMembers = asyncHandler(async (req, res) => {
   const members = await Member.find()
     .populate("user", "username email isActive")
     .populate("product", "title depositAmount termDuration returnProfit description")
+    .populate({
+      path: "currentUpgradeId",
+      populate: [
+        { path: "oldProductId", select: "title depositAmount" },
+        { path: "newProductId", select: "title depositAmount" }
+      ]
+    })
     .sort({ createdAt: -1 });
 
   // Calculate total savings for each member
@@ -57,7 +64,14 @@ const getMemberByUuid = asyncHandler(async (req, res) => {
 
   const member = await Member.findOne({ uuid })
     .populate("user", "username email isActive")
-    .populate("product", "title depositAmount termDuration returnProfit description");
+    .populate("product", "title depositAmount termDuration returnProfit description")
+    .populate({
+      path: "currentUpgradeId",
+      populate: [
+        { path: "oldProductId", select: "title depositAmount" },
+        { path: "newProductId", select: "title depositAmount" }
+      ]
+    });
 
   if (!member) {
     return res.status(404).json({
@@ -66,9 +80,15 @@ const getMemberByUuid = asyncHandler(async (req, res) => {
     });
   }
 
+  // Add upgrade info if member has upgraded
+  const memberData = member.toObject();
+  if (member.hasUpgraded && member.currentUpgradeId) {
+    memberData.upgradeInfo = member.currentUpgradeId;
+  }
+
   res.status(200).json({
     success: true,
-    data: member,
+    data: memberData,
   });
 });
 

@@ -27,10 +27,19 @@ const MemberDetail = () => {
   const [currentProofImage, setCurrentProofImage] = useState(null);
   const [currentTransactionInfo, setCurrentTransactionInfo] = useState(null);
 
+  // Product upgrade state
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [upgradeStep, setUpgradeStep] = useState(1);
+  const [selectedNewProduct, setSelectedNewProduct] = useState(null);
+  const [upgradeCalculation, setUpgradeCalculation] = useState(null);
+  const [products, setProducts] = useState([]);
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
+
   useEffect(() => {
     if (uuid) {
       fetchMemberDetail();
       fetchMemberSavings();
+      fetchProducts();
     }
   }, [uuid]);
 
@@ -71,6 +80,75 @@ const MemberDetail = () => {
       console.error("Savings fetch error:", err);
       setSavings([]); // Set empty array on error
     }
+  };
+
+  const fetchProducts = async () => {
+    try {
+      const response = await api.get("/api/admin/products");
+      if (response.data.success) {
+        setProducts(response.data.data || []);
+      }
+    } catch (err) {
+      console.error("Products fetch error:", err);
+    }
+  };
+
+  const handleUpgradeCalculation = async () => {
+    if (!selectedNewProduct || !member) return;
+    
+    setUpgradeLoading(true);
+    try {
+      const response = await api.post("/api/admin/product-upgrade/calculate", {
+        memberId: member._id,
+        newProductId: selectedNewProduct._id
+      });
+      
+      if (response.data.success) {
+        setUpgradeCalculation(response.data.data);
+        setUpgradeStep(2);
+      }
+    } catch (err) {
+      console.error("Upgrade calculation error:", err);
+      alert(err.response?.data?.message || "Gagal menghitung kompensasi upgrade");
+    } finally {
+      setUpgradeLoading(false);
+    }
+  };
+
+  const handleUpgradeExecution = async () => {
+    if (!upgradeCalculation) return;
+    
+    setUpgradeLoading(true);
+    try {
+      const response = await api.post("/api/admin/product-upgrade/execute", {
+        memberId: member._id,
+        newProductId: selectedNewProduct._id,
+        calculationResult: upgradeCalculation
+      });
+      
+      if (response.data.success) {
+        alert("Upgrade produk berhasil dilakukan!");
+        setShowUpgradeModal(false);
+        setUpgradeStep(1);
+        setSelectedNewProduct(null);
+        setUpgradeCalculation(null);
+        // Refresh member data
+        fetchMemberDetail();
+        fetchMemberSavings();
+      }
+    } catch (err) {
+      console.error("Upgrade execution error:", err);
+      alert(err.response?.data?.message || "Gagal melakukan upgrade produk");
+    } finally {
+      setUpgradeLoading(false);
+    }
+  };
+
+  const handleCloseUpgradeModal = () => {
+    setShowUpgradeModal(false);
+    setUpgradeStep(1);
+    setSelectedNewProduct(null);
+    setUpgradeCalculation(null);
   };
 
   // Re-fetch savings when member data is loaded
@@ -154,13 +232,31 @@ const MemberDetail = () => {
     totalPeriods = totalPeriods || 36;
     const periodStatus = [];
     
+    // Get upgrade info if exists
+    const upgradeInfo = member.upgradeInfo || member.currentUpgradeId;
+    const hasUpgraded = member.hasUpgraded;
+    
     for (let period = 1; period <= totalPeriods; period++) {
       // Find all transactions for this period
       const periodTransactions = savings.filter(s => s.installmentPeriod === period);
       
       let status = 'belum_bayar';
       let totalPaid = 0;
+      
+      // Calculate required amount based on upgrade status
       let requiredAmount = member.product.depositAmount || 0;
+      
+      // If member has upgraded, adjust required amount based on period
+      if (hasUpgraded && upgradeInfo) {
+        if (period <= upgradeInfo.completedPeriodsAtUpgrade) {
+          // Periods completed before upgrade use old amount
+          requiredAmount = upgradeInfo.oldMonthlyDeposit || requiredAmount;
+        } else {
+          // Periods after upgrade use new amount + compensation
+          requiredAmount = upgradeInfo.newPaymentWithCompensation || requiredAmount;
+        }
+      }
+      
       let transactions = [];
       
       if (periodTransactions.length > 0) {
@@ -366,16 +462,46 @@ const MemberDetail = () => {
             <div className="space-y-3">
               <div>
                 <label className="text-sm font-medium text-gray-500">Produk Simpanan</label>
-                <p className="text-sm text-gray-900">
-                  {member.product ? (
-                    <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs">
-                      🌸 {member.product.title}
-                    </span>
-                  ) : (
-                    <span className="text-gray-400">Belum memilih produk</span>
+                <div className="flex items-center justify-between">
+                  <p className="text-sm text-gray-900">
+                    {member.product ? (
+                      <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs">
+                        🌸 {member.product.title}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">Belum memilih produk</span>
+                    )}
+                  </p>
+                  {member.product && (
+                    <div className="flex items-center space-x-2">
+                      {member.hasUpgraded ? (
+                        <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
+                          ✨ Sudah Upgrade
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => setShowUpgradeModal(true)}
+                          className="px-3 py-1 bg-blue-500 text-white rounded-lg text-xs hover:bg-blue-600"
+                        >
+                          🚀 Upgrade Produk
+                        </button>
+                      )}
+                    </div>
                   )}
-                </p>
+                </div>
               </div>
+              {member.hasUpgraded && member.upgradeInfo && (
+                <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
+                  <p className="text-xs font-semibold text-blue-800 mb-1">Detail Upgrade:</p>
+                  <div className="space-y-1 text-xs text-blue-700">
+                    <p>Produk Lama: {member.upgradeInfo.oldProductId?.title} ({formatCurrency(member.upgradeInfo.oldMonthlyDeposit)}/bulan)</p>
+                    <p>Produk Baru: {member.upgradeInfo.newProductId?.title} ({formatCurrency(member.upgradeInfo.newMonthlyDeposit)}/bulan)</p>
+                    <p>Periode Lunas Saat Upgrade: {member.upgradeInfo.completedPeriodsAtUpgrade} periode</p>
+                    <p>Kompensasi/Bulan: {formatCurrency(member.upgradeInfo.compensationPerMonth)}</p>
+                    <p className="font-semibold">Total Setoran Baru: {formatCurrency(member.upgradeInfo.newPaymentWithCompensation)}/bulan</p>
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="text-sm font-medium text-gray-500">Total Saldo Simpanan</label>
                 <p className="text-lg font-bold text-green-600">{formatCurrency(saldoSimpanan)}</p>
@@ -720,6 +846,176 @@ const MemberDetail = () => {
           )}
         </div>
       </div>
+
+      {/* Product Upgrade Modal */}
+      {showUpgradeModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-purple-50">
+              <h2 className="text-xl font-bold text-gray-800">🚀 Upgrade Produk Simpanan</h2>
+              <button
+                onClick={handleCloseUpgradeModal}
+                className="text-gray-400 hover:text-gray-600 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              {upgradeStep === 1 && (
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Pilih Produk Baru</h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Produk saat ini: <span className="font-semibold">{member.product?.title}</span> 
+                    ({formatCurrency(member.product?.depositAmount)}/bulan)
+                  </p>
+                  
+                  <div className="space-y-3">
+                    {products
+                      .filter(p => p.depositAmount > (member.product?.depositAmount || 0))
+                      .map(product => (
+                        <div
+                          key={product._id}
+                          className={`border rounded-lg p-4 cursor-pointer transition-all ${
+                            selectedNewProduct?._id === product._id
+                              ? 'border-blue-500 bg-blue-50'
+                              : 'border-gray-200 hover:border-blue-300'
+                          }`}
+                          onClick={() => setSelectedNewProduct(product)}
+                        >
+                          <div className="flex justify-between items-center">
+                            <div>
+                              <h4 className="font-semibold">{product.title}</h4>
+                              <p className="text-sm text-gray-600">
+                                Setoran: {formatCurrency(product.depositAmount)}/bulan
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-sm text-gray-500">Durasi: {product.termDuration} bulan</p>
+                              <p className="text-sm text-gray-500">Return: {product.returnProfit}%</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                  
+                  {products.filter(p => p.depositAmount > (member.product?.depositAmount || 0)).length === 0 && (
+                    <p className="text-center text-gray-500 py-8">
+                      Tidak ada produk dengan setoran lebih tinggi yang tersedia
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {upgradeStep === 2 && upgradeCalculation && (
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Review Kalkulasi Upgrade</h3>
+                  
+                  <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600">Produk Lama:</p>
+                        <p className="font-semibold">{upgradeCalculation.oldProductTitle}</p>
+                        <p className="text-sm">{formatCurrency(upgradeCalculation.oldMonthlyDeposit)}/bulan</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Produk Baru:</p>
+                        <p className="font-semibold">{upgradeCalculation.newProductTitle}</p>
+                        <p className="text-sm">{formatCurrency(upgradeCalculation.newMonthlyDeposit)}/bulan</p>
+                      </div>
+                    </div>
+                    
+                    <div className="border-t pt-3">
+                      <p className="text-sm text-gray-600">Periode yang sudah lunas:</p>
+                      <p className="font-semibold">{upgradeCalculation.completedPeriodsAtUpgrade} dari {upgradeCalculation.totalPeriods} periode</p>
+                    </div>
+                    
+                    <div className="border-t pt-3">
+                      <p className="text-sm text-gray-600">Sisa periode:</p>
+                      <p className="font-semibold">{upgradeCalculation.remainingPeriods} periode</p>
+                    </div>
+                    
+                    <div className="border-t pt-3 bg-blue-50 -m-4 mt-3 p-4 rounded-b-lg">
+                      <p className="text-sm text-blue-800 font-semibold">Hasil Perhitungan:</p>
+                      <div className="mt-2 space-y-1">
+                        {upgradeCalculation.compensationPerMonth > 0 ? (
+                          <>
+                            <p className="text-sm">Kompensasi per bulan: {formatCurrency(upgradeCalculation.compensationPerMonth)}</p>
+                            <p className="text-lg font-bold text-blue-900">
+                              Total pembayaran baru: {formatCurrency(upgradeCalculation.newPaymentWithCompensation)}/bulan
+                            </p>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-sm text-orange-700">Tidak ada kompensasi (produk baru lebih mahal)</p>
+                            <p className="text-lg font-bold text-blue-900">
+                              Pembayaran baru: {formatCurrency(upgradeCalculation.newMonthlyDeposit)}/bulan
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="mt-4 p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                    <p className="text-sm text-yellow-800">
+                      <strong>⚠️ Perhatian:</strong> Setelah upgrade, pembayaran untuk sisa periode akan menggunakan
+                      {upgradeCalculation.compensationPerMonth > 0 
+                        ? ` nominal baru + kompensasi sebesar ${formatCurrency(upgradeCalculation.newPaymentWithCompensation)} per bulan.`
+                        : ` nominal produk baru sebesar ${formatCurrency(upgradeCalculation.newMonthlyDeposit)} per bulan (tanpa kompensasi).`
+                      }
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-between p-6 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={handleCloseUpgradeModal}
+                className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+                disabled={upgradeLoading}
+              >
+                Batal
+              </button>
+              
+              <div className="space-x-3">
+                {upgradeStep === 1 && (
+                  <button
+                    onClick={handleUpgradeCalculation}
+                    className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-300"
+                    disabled={!selectedNewProduct || upgradeLoading}
+                  >
+                    {upgradeLoading ? 'Menghitung...' : 'Hitung Kompensasi'}
+                  </button>
+                )}
+                
+                {upgradeStep === 2 && (
+                  <>
+                    <button
+                      onClick={() => setUpgradeStep(1)}
+                      className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600"
+                      disabled={upgradeLoading}
+                    >
+                      Kembali
+                    </button>
+                    <button
+                      onClick={handleUpgradeExecution}
+                      className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:bg-gray-300"
+                      disabled={upgradeLoading}
+                    >
+                      {upgradeLoading ? 'Memproses...' : 'Konfirmasi Upgrade'}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Proof Image Modal */}
       {showProofModal && (

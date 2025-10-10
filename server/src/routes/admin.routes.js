@@ -37,6 +37,7 @@ import {
 } from "../controllers/admin/savingsApproval.controller.js";
 import { verifyToken } from "../middlewares/auth.middleware.js";
 import multer from "multer";
+import productUpgradeRoutes from "./admin/productUpgrade.routes.js";
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -89,5 +90,8 @@ router.patch("/savings/:id/approve", verifyToken, approveSavings);
 router.patch("/savings/:id/reject", verifyToken, rejectSavings);
 router.patch("/savings/:id/partial", verifyToken, markAsPartial);
 router.get("/savings/period-summary/:memberId/:productId/:installmentPeriod", verifyToken, getSavingsPeriodSummary);
+
+// Product upgrade routes
+router.use("/product-upgrade", productUpgradeRoutes);
 
 export default router;

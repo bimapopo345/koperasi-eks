@@ -46,6 +46,20 @@ const memberSchema = new Schema(
       ref: "Product",
       required: false,
     },
+    hasUpgraded: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    currentUpgradeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ProductUpgrade",
+      default: null,
+    },
+    upgradeHistory: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "ProductUpgrade",
+    }],
   },
   {
     timestamps: true,
@@ -58,6 +72,14 @@ const memberSchema = new Schema(
 memberSchema.virtual("product", {
   ref: "Product",
   localField: "productId",
+  foreignField: "_id",
+  justOne: true,
+});
+
+// Virtual untuk mengakses data upgrade saat ini
+memberSchema.virtual("currentUpgrade", {
+  ref: "ProductUpgrade",
+  localField: "currentUpgradeId",
   foreignField: "_id",
   justOne: true,
 });

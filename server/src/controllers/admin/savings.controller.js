@@ -396,6 +396,23 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
   }
 
   try {
+    // Get member with upgrade info
+    const member = await Member.findById(memberId)
+      .populate({
+        path: "currentUpgradeId",
+        populate: [
+          { path: "oldProductId", select: "title depositAmount" },
+          { path: "newProductId", select: "title depositAmount" }
+        ]
+      });
+
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: "Member tidak ditemukan"
+      });
+    }
+
     // Get product info for deposit amount
     const product = await Product.findById(productId);
     if (!product) {
@@ -405,14 +422,37 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
       });
     }
 
+    // Determine the expected amount first based on upgrade status
+    let baseExpectedAmount = product.depositAmount;
+    
+    // Check if member has upgraded
+    if (member.hasUpgraded && member.currentUpgradeId) {
+      // For upgraded members, we need to check period-specific amounts
+      baseExpectedAmount = product.depositAmount; // Will be adjusted per period
+    }
+    
     // Check for incomplete periods (partial payments and pending)
+    // For upgraded members, we need to check both old and new productId
+    let matchQuery = {
+      memberId: new mongoose.Types.ObjectId(memberId),
+      status: { $in: ["Approved", "Partial"] }
+    };
+    
+    // If member has upgraded, include both old and new product IDs
+    if (member.hasUpgraded && member.currentUpgradeId) {
+      matchQuery.productId = {
+        $in: [
+          new mongoose.Types.ObjectId(productId),
+          member.currentUpgradeId.oldProductId
+        ]
+      };
+    } else {
+      matchQuery.productId = new mongoose.Types.ObjectId(productId);
+    }
+    
     const incompletePeriods = await Savings.aggregate([
       {
-        $match: {
-          memberId: new mongoose.Types.ObjectId(memberId),
-          productId: new mongoose.Types.ObjectId(productId),
-          status: { $in: ["Approved", "Partial"] }
-        }
+        $match: matchQuery
       },
       {
         $group: {
@@ -422,28 +462,45 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
         }
       },
       {
-        $match: {
-          totalAmount: { $lt: product.depositAmount }
-        }
-      },
-      {
         $sort: { _id: 1 }
       }
     ]);
+    
+    // Filter incomplete periods based on the correct required amount for each period
+    const actualIncompletePeriods = [];
+    for (const period of incompletePeriods) {
+      let requiredForThisPeriod = product.depositAmount;
+      
+      if (member.hasUpgraded && member.currentUpgradeId) {
+        if (period._id <= member.currentUpgradeId.completedPeriodsAtUpgrade) {
+          requiredForThisPeriod = member.currentUpgradeId.oldMonthlyDeposit;
+        } else {
+          requiredForThisPeriod = member.currentUpgradeId.newPaymentWithCompensation;
+        }
+      }
+      
+      if (period.totalAmount < requiredForThisPeriod) {
+        actualIncompletePeriods.push({
+          ...period,
+          requiredAmount: requiredForThisPeriod
+        });
+      }
+    }
 
     let suggestedPeriod;
     let isPartialPayment = false;
     let remainingAmount = 0;
 
-    if (incompletePeriods.length > 0) {
+    if (actualIncompletePeriods.length > 0) {
       // Use the first incomplete period
-      const incompletePeriod = incompletePeriods[0];
+      const incompletePeriod = actualIncompletePeriods[0];
       suggestedPeriod = incompletePeriod._id;
       isPartialPayment = true;
-      remainingAmount = product.depositAmount - incompletePeriod.totalAmount;
+      remainingAmount = incompletePeriod.requiredAmount - incompletePeriod.totalAmount;
     } else {
       // Get the highest completed period
-      const lastCompletedSavings = await Savings.findOne({
+      // First try with current productId
+      let lastCompletedSavings = await Savings.findOne({
         memberId: new mongoose.Types.ObjectId(memberId),
         productId: new mongoose.Types.ObjectId(productId),
         status: "Approved"
@@ -451,29 +508,72 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
         .sort({ installmentPeriod: -1 })
         .select("installmentPeriod");
 
+      // If not found and member has upgraded, also check with old product
+      if (!lastCompletedSavings && member.hasUpgraded && member.currentUpgradeId) {
+        // Try to find with old product ID
+        lastCompletedSavings = await Savings.findOne({
+          memberId: new mongoose.Types.ObjectId(memberId),
+          productId: member.currentUpgradeId.oldProductId,
+          status: "Approved"
+        })
+          .sort({ installmentPeriod: -1 })
+          .select("installmentPeriod");
+      }
+
+      // If still not found, check all approved savings for this member
+      if (!lastCompletedSavings) {
+        lastCompletedSavings = await Savings.findOne({
+          memberId: new mongoose.Types.ObjectId(memberId),
+          status: "Approved"
+        })
+          .sort({ installmentPeriod: -1 })
+          .select("installmentPeriod");
+      }
+
       const lastPeriod = lastCompletedSavings ? lastCompletedSavings.installmentPeriod : 0;
       suggestedPeriod = lastPeriod + 1;
+      
+      console.log("=== Period Calculation Debug ===");
+      console.log("Member ID:", memberId);
+      console.log("Product ID:", productId);
+      console.log("Has Upgraded:", member.hasUpgraded);
+      console.log("Last Completed Savings:", lastCompletedSavings);
+      console.log("Last Period:", lastPeriod);
+      console.log("Suggested Period:", suggestedPeriod);
+    }
+
+    // Build query for transactions (include both old and new productId for upgraded members)
+    let transactionQuery = {
+      memberId: new mongoose.Types.ObjectId(memberId)
+    };
+    
+    if (member.hasUpgraded && member.currentUpgradeId) {
+      transactionQuery.productId = {
+        $in: [
+          new mongoose.Types.ObjectId(productId),
+          member.currentUpgradeId.oldProductId
+        ]
+      };
+    } else {
+      transactionQuery.productId = new mongoose.Types.ObjectId(productId);
     }
 
     // Get pending transactions for this member/product
     const pendingTransactions = await Savings.find({
-      memberId: new mongoose.Types.ObjectId(memberId),
-      productId: new mongoose.Types.ObjectId(productId),
+      ...transactionQuery,
       status: "Pending"
     }).select("installmentPeriod amount description createdAt").sort({ installmentPeriod: 1 });
 
     // Get rejected transactions with reasons
     const rejectedTransactions = await Savings.find({
-      memberId: new mongoose.Types.ObjectId(memberId),
-      productId: new mongoose.Types.ObjectId(productId),
+      ...transactionQuery,
       status: "Rejected"
     }).select("installmentPeriod rejectionReason createdAt").sort({ installmentPeriod: 1 });
 
     // Get all transactions summary for tooltip
-    const allTransactions = await Savings.find({
-      memberId: new mongoose.Types.ObjectId(memberId),
-      productId: new mongoose.Types.ObjectId(productId)
-    }).select("installmentPeriod amount status createdAt").sort({ installmentPeriod: 1, createdAt: 1 });
+    const allTransactions = await Savings.find(transactionQuery)
+      .select("installmentPeriod amount status createdAt rejectionReason")
+      .sort({ installmentPeriod: 1, createdAt: 1 });
 
     // Group transactions by period for tooltip
     const transactionsByPeriod = {};
@@ -489,6 +589,35 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
       });
     });
 
+    // Calculate expected amount based on upgrade status
+    let expectedAmount = product.depositAmount;
+    let hasUpgrade = false;
+    let upgradeInfo = null;
+
+    if (member.hasUpgraded && member.currentUpgradeId) {
+      hasUpgrade = true;
+      upgradeInfo = member.currentUpgradeId;
+      
+      console.log("Calculating expected amount for upgraded member:");
+      console.log("Suggested Period:", suggestedPeriod);
+      console.log("Completed Periods at Upgrade:", upgradeInfo.completedPeriodsAtUpgrade);
+      
+      // If the next period is within the completed periods at upgrade, use old amount
+      // Otherwise, use new amount with compensation
+      if (suggestedPeriod <= upgradeInfo.completedPeriodsAtUpgrade) {
+        expectedAmount = upgradeInfo.oldMonthlyDeposit;
+        console.log("Using old amount:", expectedAmount);
+      } else {
+        expectedAmount = upgradeInfo.newPaymentWithCompensation;
+        console.log("Using new amount with compensation:", expectedAmount);
+      }
+      
+      // Recalculate remaining amount if partial payment
+      if (isPartialPayment) {
+        remainingAmount = expectedAmount - (actualIncompletePeriods[0]?.totalAmount || 0);
+      }
+    }
+
     res.status(200).json({
       success: true,
       data: {
@@ -497,10 +626,19 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
         isPartialPayment,
         remainingAmount,
         depositAmount: product.depositAmount,
-        incompletePeriods: incompletePeriods.map(p => ({
+        expectedAmount,
+        hasUpgrade,
+        upgradeInfo: hasUpgrade ? {
+          oldMonthlyDeposit: upgradeInfo.oldMonthlyDeposit,
+          newMonthlyDeposit: upgradeInfo.newMonthlyDeposit,
+          compensationPerMonth: upgradeInfo.compensationPerMonth,
+          newPaymentWithCompensation: upgradeInfo.newPaymentWithCompensation,
+          completedPeriodsAtUpgrade: upgradeInfo.completedPeriodsAtUpgrade
+        } : null,
+        incompletePeriods: actualIncompletePeriods.map(p => ({
           period: p._id,
           paidAmount: p.totalAmount,
-          remainingAmount: product.depositAmount - p.totalAmount
+          remainingAmount: p.requiredAmount - p.totalAmount
         })),
         pendingTransactions: pendingTransactions,
         rejectedTransactions: rejectedTransactions,
