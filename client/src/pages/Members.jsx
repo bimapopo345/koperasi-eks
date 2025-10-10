@@ -13,6 +13,9 @@ const Members = () => {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  
+  // Search state
+  const [searchTerm, setSearchTerm] = useState("");
   const [formData, setFormData] = useState({
     uuid: "",
     name: "",
@@ -145,15 +148,37 @@ const Members = () => {
     setShowModal(true);
   };
 
+  // Search and filter logic
+  const filteredMembers = members.filter(member => {
+    if (!searchTerm) return true;
+    
+    const searchLower = searchTerm.toLowerCase();
+    const nameMatch = member.name.toLowerCase().includes(searchLower);
+    const uuidMatch = member.uuid.toLowerCase().includes(searchLower);
+    
+    return nameMatch || uuidMatch;
+  });
+
   // Pagination logic
-  const totalPages = Math.ceil(members.length / itemsPerPage);
+  const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const currentMembers = members.slice(startIndex, endIndex);
+  const currentMembers = filteredMembers.slice(startIndex, endIndex);
 
   const handlePageChange = (page) => {
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Handle search
+  const handleSearchChange = (e) => {
+    setSearchTerm(e.target.value);
+    setCurrentPage(1); // Reset to first page when searching
+  };
+
+  const clearSearch = () => {
+    setSearchTerm("");
+    setCurrentPage(1);
   };
 
   if (loading) {
@@ -191,6 +216,55 @@ const Members = () => {
         >
           ➕ Tambah Anggota
         </button>
+      </div>
+
+      {/* Search Section */}
+      <div className="bg-white rounded-lg shadow-sm p-4 mb-6 border border-pink-100">
+        <div className="flex flex-col sm:flex-row gap-4 items-center">
+          <div className="flex-1 relative">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="🔍 Cari berdasarkan nama atau UUID..."
+                value={searchTerm}
+                onChange={handleSearchChange}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
+              />
+              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+              </div>
+              {searchTerm && (
+                <button
+                  onClick={clearSearch}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center"
+                >
+                  <svg className="h-5 w-5 text-gray-400 hover:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+          
+          {/* Search Results Info */}
+          <div className="text-sm text-gray-600">
+            {searchTerm ? (
+              <span className="flex items-center">
+                <span className="font-medium text-pink-600">{filteredMembers.length}</span>
+                <span className="ml-1">dari {members.length} anggota ditemukan</span>
+                {searchTerm && (
+                  <span className="ml-2 px-2 py-1 bg-pink-100 text-pink-800 rounded-full text-xs">
+                    "{searchTerm}"
+                  </span>
+                )}
+              </span>
+            ) : (
+              <span>Total: <span className="font-medium">{members.length}</span> anggota</span>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-pink-100">
@@ -231,7 +305,36 @@ const Members = () => {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {currentMembers.map((member) => (
+            {currentMembers.length === 0 ? (
+              <tr>
+                <td colSpan="10" className="px-6 py-12 text-center">
+                  <div className="flex flex-col items-center">
+                    <div className="text-6xl mb-4">🔍</div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">
+                      {searchTerm ? 'Tidak ada hasil ditemukan' : 'Belum ada data anggota'}
+                    </h3>
+                    <p className="text-gray-500 mb-4">
+                      {searchTerm 
+                        ? `Tidak ada anggota yang cocok dengan pencarian "${searchTerm}"`
+                        : 'Mulai dengan menambahkan anggota baru'
+                      }
+                    </p>
+                    {searchTerm && (
+                      <button
+                        onClick={clearSearch}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-pink-600 hover:bg-pink-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500"
+                      >
+                        <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        Hapus Filter
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              currentMembers.map((member) => (
               <tr key={member._id} className="hover:bg-pink-50 transition-colors">
                 <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-900 font-mono">
                   {member.uuid}
@@ -287,7 +390,8 @@ const Members = () => {
                   </div>
                 </td>
               </tr>
-            ))}
+            ))
+            )}
           </tbody>
           </table>
         </div>
@@ -298,7 +402,7 @@ const Members = () => {
           totalPages={totalPages}
           onPageChange={handlePageChange}
           itemsPerPage={itemsPerPage}
-          totalItems={members.length}
+          totalItems={filteredMembers.length}
         />
       </div>
 
