@@ -22,6 +22,11 @@ const MemberDetail = () => {
   const [currentPeriodPage, setCurrentPeriodPage] = useState(1);
   const itemsPerPage = 10;
 
+  // Modal state for proof image
+  const [showProofModal, setShowProofModal] = useState(false);
+  const [currentProofImage, setCurrentProofImage] = useState(null);
+  const [currentTransactionInfo, setCurrentTransactionInfo] = useState(null);
+
   useEffect(() => {
     if (uuid) {
       fetchMemberDetail();
@@ -215,6 +220,27 @@ const MemberDetail = () => {
       'belum_bayar': { label: 'Belum Bayar', class: 'bg-gray-100 text-gray-600', icon: '⭕' }
     };
     return statusMap[status] || statusMap['belum_bayar'];
+  };
+
+  // Handle proof image modal
+  const handleShowProof = (transaction) => {
+    if (transaction.proofFile) {
+      setCurrentProofImage(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/uploads/simpanan/${transaction.proofFile}`);
+      setCurrentTransactionInfo({
+        amount: transaction.amount,
+        date: transaction.savingsDate,
+        status: transaction.status,
+        description: transaction.description,
+        rejectionReason: transaction.rejectionReason
+      });
+      setShowProofModal(true);
+    }
+  };
+
+  const closeProofModal = () => {
+    setShowProofModal(false);
+    setCurrentProofImage(null);
+    setCurrentTransactionInfo(null);
   };
 
   if (loading) {
@@ -532,6 +558,9 @@ const MemberDetail = () => {
                             Periode
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
+                            Tanggal
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
                             Status
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
@@ -558,6 +587,15 @@ const MemberDetail = () => {
                             <tr key={period.period} className="hover:bg-pink-50">
                               <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
                                 Periode {period.period}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                {(() => {
+                                  if (period.transactions.length === 0) return "-";
+                                  
+                                  // Get latest transaction date
+                                  const latestTx = period.transactions.sort((a, b) => new Date(b.savingsDate) - new Date(a.savingsDate))[0];
+                                  return format(new Date(latestTx.savingsDate), "dd/MM/yyyy", { locale: id });
+                                })()}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
                                 <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${statusInfo.class}`}>
@@ -597,18 +635,39 @@ const MemberDetail = () => {
                                 {period.transactions.length > 0 ? (
                                   <div className="space-y-1">
                                     {period.transactions.map((tx, idx) => (
-                                      <div key={idx} className="text-xs">
-                                        <span className={`inline-block px-1 py-0.5 rounded text-white text-xs ${
-                                          tx.status === 'Approved' ? 'bg-green-500' :
-                                          tx.status === 'Pending' ? 'bg-yellow-500' :
-                                          'bg-red-500'
-                                        }`}>
-                                          {tx.status}
-                                        </span>
-                                        <span className="ml-1">{formatCurrency(tx.amount)}</span>
+                                      <div key={idx} className="text-xs mb-2 p-2 bg-gray-50 rounded border">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center space-x-2">
+                                            <button
+                                              onClick={tx.proofFile ? () => handleShowProof(tx) : undefined}
+                                              className={`inline-flex items-center px-1 py-0.5 rounded text-white text-xs ${
+                                                tx.status === 'Approved' ? 'bg-green-500' :
+                                                tx.status === 'Pending' ? 'bg-yellow-500' :
+                                                'bg-red-500'
+                                              } ${tx.proofFile ? 'hover:opacity-80 cursor-pointer' : 'cursor-default'}`}
+                                              title={tx.proofFile ? 'Klik untuk lihat bukti pembayaran' : tx.status}
+                                            >
+                                              {tx.status}
+                                              {tx.proofFile && (
+                                                <span className="ml-1">📷</span>
+                                              )}
+                                            </button>
+                                            <span className="font-semibold">{formatCurrency(tx.amount)}</span>
+                                          </div>
+                                          <div className="flex items-center space-x-1">
+                                            <span className="text-gray-500 text-xs">
+                                              {format(new Date(tx.savingsDate), "dd/MM", { locale: id })}
+                                            </span>
+                                          </div>
+                                        </div>
                                         {tx.status === 'Rejected' && tx.rejectionReason && (
                                           <div className="text-red-600 text-xs italic mt-1">
                                             💬 "{tx.rejectionReason}"
+                                          </div>
+                                        )}
+                                        {tx.description && (
+                                          <div className="text-gray-600 text-xs mt-1 truncate" title={tx.description}>
+                                            📝 {tx.description}
                                           </div>
                                         )}
                                       </div>
@@ -661,6 +720,109 @@ const MemberDetail = () => {
           )}
         </div>
       </div>
+
+      {/* Proof Image Modal */}
+      {showProofModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl max-h-[90vh] overflow-hidden shadow-2xl">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-4 border-b border-gray-200">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">Bukti Pembayaran</h3>
+                {currentTransactionInfo && (
+                  <div className="text-sm text-gray-600 mt-1">
+                    <span className="font-semibold">{formatCurrency(currentTransactionInfo.amount)}</span>
+                    <span className="mx-2">•</span>
+                    <span>{format(new Date(currentTransactionInfo.date), "dd MMM yyyy", { locale: id })}</span>
+                    <span className="mx-2">•</span>
+                    <span className={`px-2 py-1 rounded text-xs ${
+                      currentTransactionInfo.status === 'Approved' ? 'bg-green-100 text-green-800' :
+                      currentTransactionInfo.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {currentTransactionInfo.status}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={closeProofModal}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4">
+              {currentProofImage && (
+                <div className="text-center">
+                  <img
+                    src={currentProofImage}
+                    alt="Bukti Pembayaran"
+                    className="max-w-full max-h-[60vh] object-contain mx-auto rounded-lg shadow-lg"
+                    onError={(e) => {
+                      e.target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2' ry='2'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'/%3E%3Cpolyline points='21,15 16,10 5,21'/%3E%3C/svg%3E";
+                      e.target.className = "max-w-full max-h-[60vh] object-contain mx-auto rounded-lg shadow-lg opacity-50";
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Transaction Details */}
+              {currentTransactionInfo && (
+                <div className="mt-4 bg-gray-50 rounded-lg p-4">
+                  <h4 className="font-semibold text-gray-900 mb-2">Detail Transaksi</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="text-gray-600">Jumlah:</span>
+                      <span className="ml-2 font-semibold">{formatCurrency(currentTransactionInfo.amount)}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Tanggal:</span>
+                      <span className="ml-2">{format(new Date(currentTransactionInfo.date), "dd MMMM yyyy", { locale: id })}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-600">Status:</span>
+                      <span className={`ml-2 px-2 py-1 rounded text-xs ${
+                        currentTransactionInfo.status === 'Approved' ? 'bg-green-100 text-green-800' :
+                        currentTransactionInfo.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {currentTransactionInfo.status}
+                      </span>
+                    </div>
+                    {currentTransactionInfo.description && (
+                      <div className="md:col-span-2">
+                        <span className="text-gray-600">Keterangan:</span>
+                        <span className="ml-2">{currentTransactionInfo.description}</span>
+                      </div>
+                    )}
+                    {currentTransactionInfo.rejectionReason && (
+                      <div className="md:col-span-2">
+                        <span className="text-gray-600">Alasan Penolakan:</span>
+                        <span className="ml-2 text-red-600 italic">"{currentTransactionInfo.rejectionReason}"</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-end p-4 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={closeProofModal}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
