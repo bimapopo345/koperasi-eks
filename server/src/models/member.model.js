@@ -30,6 +30,12 @@ const memberSchema = new Schema(
       type: String,
       trim: true,
     },
+    accountNumber: {
+      type: String,
+      required: false,
+      trim: true,
+      default: "",
+    },
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

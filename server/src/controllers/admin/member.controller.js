@@ -81,6 +81,7 @@ const createMember = asyncHandler(async (req, res) => {
     phone,
     city,
     completeAddress,
+    accountNumber,
     productId,
   } = req.body;
 
@@ -145,6 +146,7 @@ const createMember = asyncHandler(async (req, res) => {
     phone,
     city,
     completeAddress,
+    accountNumber: accountNumber || "",
     user: user._id,
     uuid: memberUUID,
     productId: productId || null,
@@ -174,6 +176,7 @@ const updateMember = asyncHandler(async (req, res) => {
     phone,
     city,
     completeAddress,
+    accountNumber,
     productId,
   } = req.body;
 
@@ -204,6 +207,7 @@ const updateMember = asyncHandler(async (req, res) => {
   member.phone = phone || member.phone;
   member.city = city || member.city;
   member.completeAddress = completeAddress || member.completeAddress;
+  member.accountNumber = accountNumber !== undefined ? accountNumber : member.accountNumber;
   if (productId !== undefined) {
     member.productId = productId || null;
   }

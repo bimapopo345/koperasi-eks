@@ -15,6 +15,7 @@ const Members = () => {
     phone: "",
     city: "",
     completeAddress: "",
+    accountNumber: "",
     username: "",
     password: "",
     productId: "",
@@ -79,6 +80,7 @@ const Members = () => {
             phone: "",
             city: "",
             completeAddress: "",
+            accountNumber: "",
             username: "",
             password: "",
             productId: "",
@@ -100,6 +102,7 @@ const Members = () => {
       phone: member.phone || "",
       city: member.city || "",
       completeAddress: member.completeAddress || "",
+      accountNumber: member.accountNumber || "",
       username: member.user.username,
       password: "",
       productId: member.productId || "",
@@ -129,6 +132,7 @@ const Members = () => {
       phone: "",
       city: "",
       completeAddress: "",
+      accountNumber: "",
       username: "",
       password: "",
       productId: "",
@@ -196,6 +200,9 @@ const Members = () => {
               <th className="hidden lg:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
                 City
               </th>
+              <th className="hidden xl:table-cell px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
+                No Rekening
+              </th>
               <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
                 Produk
               </th>
@@ -229,6 +236,9 @@ const Members = () => {
                 </td>
                 <td className="hidden lg:table-cell px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500">
                   {member.city || "-"}
+                </td>
+                <td className="hidden xl:table-cell px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500 font-mono">
+                  {member.accountNumber || "-"}
                 </td>
                 <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500">
                   {member.product ? (
@@ -427,6 +437,20 @@ const Members = () => {
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={3}
+                  />
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    No Rekening
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.accountNumber}
+                    onChange={(e) =>
+                      setFormData({ ...formData, accountNumber: e.target.value })
+                    }
+                    placeholder="Contoh: 1234567890"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
                 <div className="flex justify-end space-x-3">
