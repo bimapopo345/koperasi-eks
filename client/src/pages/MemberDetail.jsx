@@ -500,12 +500,17 @@ const MemberDetail = () => {
                       <div>
                         <div className="text-2xl font-bold text-red-600">
                           {(() => {
-                            // Count periods that have rejected transactions (most recent status is rejected)
-                            return periodStatusData.filter(p => {
+                            // Count periods that have ANY rejected transactions
+                            const rejectedCount = periodStatusData.filter(p => {
                               if (p.transactions.length === 0) return false;
-                              const latestTx = p.transactions.sort((a, b) => new Date(b.savingsDate) - new Date(a.savingsDate))[0];
-                              return latestTx.status === 'Rejected';
-                            }).length;
+                              
+                              // Check if ANY transaction in this period is rejected
+                              const hasRejected = p.transactions.some(tx => tx.status === 'Rejected');
+                              
+                              return hasRejected;
+                            });
+                            
+                            return rejectedCount.length;
                           })()}
                         </div>
                         <div className="text-gray-600">Ditolak</div>
