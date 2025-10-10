@@ -475,9 +475,96 @@ const MemberDetail = () => {
                   {member.product && (
                     <div className="flex items-center space-x-2">
                       {member.hasUpgraded ? (
-                        <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs">
-                          ✨ Sudah Upgrade
-                        </span>
+                        <div className="relative group">
+                          <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs cursor-help">
+                            ✨ Sudah Upgrade
+                          </span>
+                          
+                          {/* Upgrade History Tooltip Card */}
+                          {member.currentUpgradeId && (
+                            <div className="absolute right-0 top-6 w-96 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                              <div className="bg-gradient-to-br from-blue-50 to-purple-50 p-4 rounded-lg border border-blue-300 shadow-xl">
+                                <div className="flex items-start space-x-2 mb-3">
+                                  <span className="text-2xl">🎯</span>
+                                  <div className="flex-1">
+                                    <h4 className="font-semibold text-blue-900 mb-2">Riwayat Upgrade Produk</h4>
+                                    
+                                    {/* Previous Product */}
+                                    <div className="mb-3">
+                                      <p className="text-xs text-gray-600 mb-1">Produk Sebelumnya:</p>
+                                      <div className="flex items-center space-x-2">
+                                        <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs">
+                                          📦 {member.currentUpgradeId.oldProductId?.title || 'Produk Lama'}
+                                        </span>
+                                        <span className="text-xs text-gray-500">
+                                          (Rp {(member.currentUpgradeId.oldMonthlyDeposit || 0).toLocaleString('id-ID')}/bulan)
+                                        </span>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Current Product */}
+                                    <div className="mb-3">
+                                      <p className="text-xs text-gray-600 mb-1">Produk Saat Ini:</p>
+                                      <div className="flex items-center space-x-2">
+                                        <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs">
+                                          ✨ {member.currentUpgradeId.newProductId?.title || member.product.title}
+                                        </span>
+                                        <span className="text-xs text-gray-500">
+                                          (Rp {(member.currentUpgradeId.newMonthlyDeposit || 0).toLocaleString('id-ID')}/bulan)
+                                        </span>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Upgrade Details */}
+                                    <div className="grid grid-cols-2 gap-2 pt-2 border-t border-blue-200">
+                                      <div>
+                                        <p className="text-xs text-gray-600">Tanggal Upgrade:</p>
+                                        <p className="text-xs font-semibold text-gray-800">
+                                          {member.currentUpgradeId.upgradeDate ? 
+                                            new Date(member.currentUpgradeId.upgradeDate).toLocaleDateString('id-ID', {
+                                              day: 'numeric',
+                                              month: 'short',
+                                              year: 'numeric'
+                                            }) : 
+                                            'N/A'
+                                          }
+                                        </p>
+                                      </div>
+                                      
+                                      <div>
+                                        <p className="text-xs text-gray-600">Periode Selesai:</p>
+                                        <p className="text-xs font-semibold text-gray-800">
+                                          {member.currentUpgradeId.completedPeriodsAtUpgrade || 0} periode
+                                        </p>
+                                      </div>
+                                      
+                                      <div>
+                                        <p className="text-xs text-gray-600">Kompensasi/Bulan:</p>
+                                        <p className="text-xs font-semibold text-purple-700">
+                                          Rp {(member.currentUpgradeId.compensationPerMonth || 0).toLocaleString('id-ID')}
+                                        </p>
+                                      </div>
+                                      
+                                      <div>
+                                        <p className="text-xs text-gray-600">Total Bayar/Bulan:</p>
+                                        <p className="text-xs font-semibold text-green-700">
+                                          Rp {(member.currentUpgradeId.newPaymentWithCompensation || 0).toLocaleString('id-ID')}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* Info Badge */}
+                                    <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                                      <p className="text-xs text-yellow-800">
+                                        💡 <strong>Info:</strong> Kompensasi akan dibayarkan hingga periode ke-{member.product?.termDuration || 36} sebagai penyesuaian dari upgrade produk.
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <button
                           onClick={() => setShowUpgradeModal(true)}
@@ -490,6 +577,7 @@ const MemberDetail = () => {
                   )}
                 </div>
               </div>
+              
               {member.hasUpgraded && member.upgradeInfo && (
                 <div className="bg-blue-50 p-3 rounded-lg border border-blue-200">
                   <p className="text-xs font-semibold text-blue-800 mb-1">Detail Upgrade:</p>
