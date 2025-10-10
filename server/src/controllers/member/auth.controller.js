@@ -22,8 +22,10 @@ export const loginMember = asyncHandler(async (req, res) => {
   }
 
   try {
-    // Cari member berdasarkan UUID
-    const member = await Member.findOne({ uuid }).populate('user');
+    // Cari member berdasarkan UUID dan populate productId
+    const member = await Member.findOne({ uuid })
+      .populate('user')
+      .populate('productId'); // Populate product info
 
     if (!member) {
       return res.status(401).json({
@@ -45,7 +47,7 @@ export const loginMember = asyncHandler(async (req, res) => {
     // Generate JWT token
     const token = generateToken(member._id);
 
-    // Return success response
+    // Return success response with complete member data including productId
     res.status(200).json({
       success: true,
       message: "Login berhasil",
@@ -58,6 +60,9 @@ export const loginMember = asyncHandler(async (req, res) => {
           phone: member.phone,
           city: member.city,
           completeAddress: member.completeAddress,
+          productId: member.productId, // Include productId in response
+          hasUpgraded: member.hasUpgraded || false,
+          currentUpgradeId: member.currentUpgradeId || null
         },
         token,
       },
@@ -75,7 +80,9 @@ export const loginMember = asyncHandler(async (req, res) => {
 // Get Current Member
 export const getCurrentMember = asyncHandler(async (req, res) => {
   try {
-    const member = await Member.findById(req.member.memberId).populate('user');
+    const member = await Member.findById(req.member.memberId)
+      .populate('user')
+      .populate('productId'); // Populate product info
 
     if (!member) {
       return res.status(404).json({
@@ -95,6 +102,9 @@ export const getCurrentMember = asyncHandler(async (req, res) => {
           phone: member.phone,
           city: member.city,
           completeAddress: member.completeAddress,
+          productId: member.productId, // Include productId
+          hasUpgraded: member.hasUpgraded || false,
+          currentUpgradeId: member.currentUpgradeId || null
         },
       },
     });
