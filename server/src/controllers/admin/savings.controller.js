@@ -405,12 +405,12 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
       });
     }
 
-    // Check for incomplete periods (partial payments)
+    // Check for incomplete periods (partial payments and pending)
     const incompletePeriods = await Savings.aggregate([
       {
         $match: {
-          memberId: mongoose.Types.ObjectId(memberId),
-          productId: mongoose.Types.ObjectId(productId),
+          memberId: new mongoose.Types.ObjectId(memberId),
+          productId: new mongoose.Types.ObjectId(productId),
           status: { $in: ["Approved", "Partial"] }
         }
       },
@@ -444,8 +444,8 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
     } else {
       // Get the highest completed period
       const lastCompletedSavings = await Savings.findOne({
-        memberId,
-        productId,
+        memberId: new mongoose.Types.ObjectId(memberId),
+        productId: new mongoose.Types.ObjectId(productId),
         status: "Approved"
       })
         .sort({ installmentPeriod: -1 })
@@ -454,6 +454,32 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
       const lastPeriod = lastCompletedSavings ? lastCompletedSavings.installmentPeriod : 0;
       suggestedPeriod = lastPeriod + 1;
     }
+
+    // Get pending transactions for this member/product
+    const pendingTransactions = await Savings.find({
+      memberId: new mongoose.Types.ObjectId(memberId),
+      productId: new mongoose.Types.ObjectId(productId),
+      status: "Pending"
+    }).select("installmentPeriod amount description createdAt").sort({ installmentPeriod: 1 });
+
+    // Get all transactions summary for tooltip
+    const allTransactions = await Savings.find({
+      memberId: new mongoose.Types.ObjectId(memberId),
+      productId: new mongoose.Types.ObjectId(productId)
+    }).select("installmentPeriod amount status createdAt").sort({ installmentPeriod: 1, createdAt: 1 });
+
+    // Group transactions by period for tooltip
+    const transactionsByPeriod = {};
+    allTransactions.forEach(tx => {
+      if (!transactionsByPeriod[tx.installmentPeriod]) {
+        transactionsByPeriod[tx.installmentPeriod] = [];
+      }
+      transactionsByPeriod[tx.installmentPeriod].push({
+        amount: tx.amount,
+        status: tx.status,
+        date: tx.createdAt
+      });
+    });
 
     res.status(200).json({
       success: true,
@@ -467,7 +493,9 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
           period: p._id,
           paidAmount: p.totalAmount,
           remainingAmount: product.depositAmount - p.totalAmount
-        }))
+        })),
+        pendingTransactions: pendingTransactions,
+        transactionsByPeriod: transactionsByPeriod
       },
       message: "Periode cicilan berhasil didapatkan"
     });

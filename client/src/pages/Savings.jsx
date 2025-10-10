@@ -27,6 +27,16 @@ const Savings = () => {
   });
 
   const [lastPeriod, setLastPeriod] = useState(0);
+  const [periodInfo, setPeriodInfo] = useState({
+    incompletePeriods: [],
+    rejectedPeriods: [],
+    pendingTransactions: [],
+    transactionsByPeriod: {},
+    nextPeriod: 1,
+    suggestedAmount: 0,
+    isPartialPayment: false,
+    remainingAmount: 0
+  });
   const [originalSelection, setOriginalSelection] = useState({
     memberId: "",
     productId: "",
@@ -134,29 +144,44 @@ const Savings = () => {
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const data = response.data?.data || response.data || {};
+      
+      // Update period info state
+      setPeriodInfo({
+        incompletePeriods: data.incompletePeriods || [],
+        pendingTransactions: data.pendingTransactions || [],
+        transactionsByPeriod: data.transactionsByPeriod || {},
+        nextPeriod: data.nextPeriod || 1,
+        suggestedAmount: data.remainingAmount || data.depositAmount || 0,
+        isPartialPayment: data.isPartialPayment || false,
+        remainingAmount: data.remainingAmount || 0,
+        depositAmount: data.depositAmount || 0
+      });
+
       const last = data.lastPeriod ?? 0;
-      const next = (last || 0) + 1;
+      const next = data.nextPeriod || 1;
       setLastPeriod(last);
       
-      // Auto-fill amount berdasarkan deposit amount produk atau remaining amount
+      // Get rejected periods for this member/product
+      await fetchRejectedPeriods(memberId, productId);
+      
+      // Auto-fill based on intelligent detection
       const selectedProduct = products.find(p => p._id === productId);
       if (selectedProduct && !editingId) {
+        let suggestedAmount = selectedProduct.depositAmount;
+        let description = `Pembayaran Simpanan Periode - ${next}`;
+        
         // Check if this is partial payment continuation
         if (data.isPartialPayment && data.remainingAmount > 0) {
-          setFormData((prev) => ({ 
-            ...prev, 
-            amount: data.remainingAmount,
-            installmentPeriod: next,
-            description: `Pembayaran Sisa Periode - ${next} (Rp ${data.remainingAmount.toLocaleString()})`
-          }));
-        } else {
-          setFormData((prev) => ({ 
-            ...prev, 
-            amount: selectedProduct.depositAmount,
-            installmentPeriod: next,
-            description: `Pembayaran Simpanan Periode - ${next}`
-          }));
+          suggestedAmount = data.remainingAmount;
+          description = `Pembayaran Sisa Periode - ${next} (Rp ${data.remainingAmount.toLocaleString()})`;
         }
+        
+        setFormData((prev) => ({ 
+          ...prev, 
+          amount: suggestedAmount,
+          installmentPeriod: next,
+          description: description
+        }));
       } else if (!editingId) {
         setFormData((prev) => ({ 
           ...prev, 
@@ -167,6 +192,16 @@ const Savings = () => {
     } catch (error) {
       console.error("Error checking last period:", error);
       setLastPeriod(0);
+      setPeriodInfo({
+        incompletePeriods: [],
+        rejectedPeriods: [],
+        pendingTransactions: [],
+        transactionsByPeriod: {},
+        nextPeriod: 1,
+        suggestedAmount: 0,
+        isPartialPayment: false,
+        remainingAmount: 0
+      });
       if (!editingId) {
         setFormData((prev) => ({ 
           ...prev, 
@@ -174,6 +209,27 @@ const Savings = () => {
           description: "Pembayaran Simpanan Periode - 1"
         }));
       }
+    }
+  };
+
+  const fetchRejectedPeriods = async (memberId, productId) => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(
+        `${API_URL}/api/admin/savings?memberId=${memberId}&productId=${productId}&status=Rejected`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      
+      if (response.data.success) {
+        const rejectedSavings = response.data.data || [];
+        const rejectedPeriods = [...new Set(rejectedSavings.map(s => s.installmentPeriod))];
+        setPeriodInfo(prev => ({
+          ...prev,
+          rejectedPeriods: rejectedPeriods
+        }));
+      }
+    } catch (error) {
+      console.error("Error fetching rejected periods:", error);
     }
   };
 
@@ -674,11 +730,185 @@ const Savings = () => {
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                       required
                     />
-                    {lastPeriod > 0 && (
-                      <p className="mt-1 text-sm text-gray-500">
-                        Periode terakhir: {lastPeriod}, otomatis diisi periode
-                        berikutnya
-                      </p>
+                    
+                    {/* Enhanced Period Information Panel */}
+                    {formData.memberId && formData.productId && (
+                      <div className="mt-3 space-y-3">
+                        {/* Main Status Row - Horizontal Layout */}
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                          {/* Left: Status Overview */}
+                          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                            <h4 className="text-sm font-semibold text-gray-800 mb-2">
+                              📊 Status Periode
+                            </h4>
+                            
+                            {lastPeriod > 0 && (
+                              <p className="text-xs text-gray-600 mb-1">
+                                Terakhir approved: <span className="font-semibold">Periode {lastPeriod}</span>
+                              </p>
+                            )}
+                            
+                            <p className="text-sm text-green-700 font-medium mb-1">
+                              📍 Disarankan: <span className="text-lg">Periode {periodInfo.nextPeriod}</span>
+                              {periodInfo.isPartialPayment && (
+                                <span className="ml-1 text-orange-600 text-xs">(Lanjutan)</span>
+                              )}
+                            </p>
+                            
+                            <p className="text-sm text-blue-700">
+                              💰 <span className="font-semibold">
+                                Rp {periodInfo.suggestedAmount?.toLocaleString() || '0'}
+                              </span>
+                              {periodInfo.isPartialPayment && (
+                                <span className="text-orange-600 text-xs"> (Sisa)</span>
+                              )}
+                            </p>
+                          </div>
+
+                          {/* Right: Transaction History + Alerts + Actions */}
+                          <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                            {/* Header with Tooltip */}
+                            <div className="flex items-center justify-between mb-2">
+                              <h4 className="text-sm font-semibold text-gray-800">
+                                📋 Riwayat & Status
+                              </h4>
+                              <div className="group relative">
+                                <button className="text-blue-600 hover:text-blue-800 text-xs underline">
+                                  Detail →
+                                </button>
+                                <div className="absolute right-0 top-6 w-80 bg-white border border-gray-300 rounded-lg shadow-lg p-3 hidden group-hover:block z-50">
+                                  <h5 className="font-semibold text-sm mb-2 text-gray-800">Riwayat Per Periode:</h5>
+                                  <div className="max-h-60 overflow-y-auto">
+                                    {Object.keys(periodInfo.transactionsByPeriod).length > 0 ? (
+                                      Object.entries(periodInfo.transactionsByPeriod)
+                                        .sort(([a], [b]) => parseInt(a) - parseInt(b))
+                                        .map(([period, transactions]) => (
+                                          <div key={period} className="mb-3 pb-2 border-b border-gray-200 last:border-b-0">
+                                            <div className="font-semibold text-xs text-gray-700 mb-1">
+                                              Periode {period}:
+                                            </div>
+                                            {transactions.map((tx, idx) => (
+                                              <div key={idx} className="text-xs text-gray-600 ml-2 mb-1">
+                                                <span className={`inline-block px-2 py-0.5 rounded text-white text-xs mr-2 ${
+                                                  tx.status === 'Approved' ? 'bg-green-500' :
+                                                  tx.status === 'Pending' ? 'bg-yellow-500' :
+                                                  tx.status === 'Rejected' ? 'bg-red-500' : 'bg-gray-500'
+                                                }`}>
+                                                  {tx.status}
+                                                </span>
+                                                Rp {tx.amount?.toLocaleString()} 
+                                                <span className="text-gray-400 ml-1">
+                                                  ({new Date(tx.date).toLocaleDateString('id-ID')})
+                                                </span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ))
+                                    ) : (
+                                      <div className="text-xs text-gray-500">Belum ada transaksi</div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Summary Info */}
+                            <div className="text-xs text-gray-600 mb-3">
+                              Total Periode: <span className="font-semibold">
+                                {Object.keys(periodInfo.transactionsByPeriod).length || 0}
+                              </span>
+                            </div>
+
+                            {/* Inline Alert Badges */}
+                            <div className="flex flex-wrap gap-1 mb-3">
+                              {/* Incomplete */}
+                              {periodInfo.incompletePeriods && periodInfo.incompletePeriods.length > 0 && (
+                                <div className="px-2 py-1 bg-orange-100 border border-orange-300 rounded text-xs">
+                                  <span className="font-semibold text-orange-800">⚠️</span>
+                                  <span className="text-orange-700 ml-1">
+                                    P{periodInfo.incompletePeriods[0].period}
+                                    {periodInfo.incompletePeriods.length > 1 && ` +${periodInfo.incompletePeriods.length - 1}`}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Pending */}
+                              {periodInfo.pendingTransactions && periodInfo.pendingTransactions.length > 0 && (
+                                <div className="px-2 py-1 bg-yellow-100 border border-yellow-300 rounded text-xs">
+                                  <span className="font-semibold text-yellow-800">⏳</span>
+                                  <span className="text-yellow-700 ml-1">
+                                    P{periodInfo.pendingTransactions[0].installmentPeriod}
+                                    {periodInfo.pendingTransactions.length > 1 && ` +${periodInfo.pendingTransactions.length - 1}`}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Rejected */}
+                              {periodInfo.rejectedPeriods && periodInfo.rejectedPeriods.length > 0 && (
+                                <div className="px-2 py-1 bg-red-100 border border-red-300 rounded text-xs">
+                                  <span className="font-semibold text-red-800">❌</span>
+                                  <span className="text-red-700 ml-1">
+                                    P{periodInfo.rejectedPeriods.slice(0, 2).join(', P')}
+                                    {periodInfo.rejectedPeriods.length > 2 && ` +${periodInfo.rejectedPeriods.length - 2}`}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Quick Action Buttons */}
+                            <div className="border-t border-gray-300 pt-2">
+                              <div className="flex flex-wrap gap-1">
+                                <span className="text-xs text-gray-600 self-center mr-1">🚀</span>
+                                
+                                {/* Suggested Period */}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFormData(prev => ({
+                                      ...prev,
+                                      installmentPeriod: periodInfo.nextPeriod,
+                                      amount: periodInfo.suggestedAmount || 0,
+                                      description: periodInfo.isPartialPayment 
+                                        ? `Pembayaran Sisa Periode - ${periodInfo.nextPeriod} (Rp ${periodInfo.remainingAmount?.toLocaleString() || '0'})`
+                                        : `Pembayaran Simpanan Periode - ${periodInfo.nextPeriod}`
+                                    }));
+                                  }}
+                                  className="px-2 py-1 text-xs bg-green-100 text-green-800 border border-green-300 rounded hover:bg-green-200 transition-colors"
+                                >
+                                  📍 P{periodInfo.nextPeriod}
+                                  {periodInfo.isPartialPayment ? ' (Sisa)' : ''}
+                                </button>
+                                
+                                {/* Rejected Period Buttons */}
+                                {periodInfo.rejectedPeriods && periodInfo.rejectedPeriods.slice(0, 2).map(period => (
+                                  <button
+                                    key={period}
+                                    type="button"
+                                    onClick={() => {
+                                      setFormData(prev => ({
+                                        ...prev,
+                                        installmentPeriod: period,
+                                        amount: periodInfo.depositAmount || 0,
+                                        description: `Submit Ulang Periode - ${period}`
+                                      }));
+                                    }}
+                                    className="px-2 py-1 text-xs bg-red-100 text-red-800 border border-red-300 rounded hover:bg-red-200 transition-colors"
+                                  >
+                                    🔄 P{period}
+                                  </button>
+                                ))}
+                                
+                                {periodInfo.rejectedPeriods && periodInfo.rejectedPeriods.length > 2 && (
+                                  <span className="text-xs text-gray-500 self-center">
+                                    +{periodInfo.rejectedPeriods.length - 2}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
                     )}
                   </div>
 
