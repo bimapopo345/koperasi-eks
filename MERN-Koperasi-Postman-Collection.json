@@ -436,6 +436,54 @@
                   "path": ["api", "admin", "savings", "period-summary", "{{created_member_id}}", "{{product_id}}", "1"]
                 }
               }
+            },
+            {
+              "name": "Check Period Info",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/savings/check-period/{{created_member_id}}/{{product_id}}",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "savings", "check-period", "{{created_member_id}}", "{{product_id}}"]
+                }
+              }
+            },
+            {
+              "name": "Get Savings with Filters",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/savings?memberId={{created_member_id}}&productId={{product_id}}&status=Rejected",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "savings"],
+                  "query": [
+                    {
+                      "key": "memberId",
+                      "value": "{{created_member_id}}"
+                    },
+                    {
+                      "key": "productId", 
+                      "value": "{{product_id}}"
+                    },
+                    {
+                      "key": "status",
+                      "value": "Rejected"
+                    }
+                  ]
+                }
+              }
             }
           ]
         }
