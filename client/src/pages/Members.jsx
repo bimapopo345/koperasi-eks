@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import api from "../api/index.jsx";
 import Pagination from "../components/Pagination.jsx";
 
 const Members = () => {
+  const navigate = useNavigate();
   const [members, setMembers] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -148,22 +150,29 @@ const Members = () => {
     setShowModal(true);
   };
 
-  // Search and filter logic
-  const filteredMembers = members.filter(member => {
-    if (!searchTerm) return true;
+  // Search and filter logic with useMemo for performance
+  const filteredMembers = useMemo(() => {
+    if (!searchTerm) return members;
     
     const searchLower = searchTerm.toLowerCase();
-    const nameMatch = member.name.toLowerCase().includes(searchLower);
-    const uuidMatch = member.uuid.toLowerCase().includes(searchLower);
-    
-    return nameMatch || uuidMatch;
-  });
+    return members.filter(member => {
+      const nameMatch = member.name.toLowerCase().includes(searchLower);
+      const uuidMatch = member.uuid.toLowerCase().includes(searchLower);
+      return nameMatch || uuidMatch;
+    });
+  }, [members, searchTerm]);
 
-  // Pagination logic
-  const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
-  const startIndex = (currentPage - 1) * itemsPerPage;
-  const endIndex = startIndex + itemsPerPage;
-  const currentMembers = filteredMembers.slice(startIndex, endIndex);
+  // Pagination logic with useMemo for performance
+  const paginationData = useMemo(() => {
+    const totalPages = Math.ceil(filteredMembers.length / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    const currentMembers = filteredMembers.slice(startIndex, endIndex);
+    
+    return { totalPages, currentMembers };
+  }, [filteredMembers, currentPage, itemsPerPage]);
+
+  const { totalPages, currentMembers } = paginationData;
 
   const handlePageChange = (page) => {
     setCurrentPage(page);
@@ -340,7 +349,13 @@ const Members = () => {
                   {member.uuid}
                 </td>
                 <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-medium text-gray-900">
-                  {member.name}
+                  <button
+                    onClick={() => navigate(`/master/anggota/${member.uuid}`)}
+                    className="text-pink-600 hover:text-pink-800 hover:underline font-semibold transition-colors cursor-pointer"
+                    title={`Lihat detail ${member.name}`}
+                  >
+                    {member.name}
+                  </button>
                 </td>
                 <td className="hidden sm:table-cell px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm text-gray-500">
                   {member.user.username}

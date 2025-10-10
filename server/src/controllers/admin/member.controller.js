@@ -7,7 +7,7 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 const getAllMembers = asyncHandler(async (req, res) => {
   const members = await Member.find()
     .populate("user", "username email isActive")
-    .populate("product", "title depositAmount")
+    .populate("product", "title depositAmount termDuration returnProfit description")
     .sort({ createdAt: -1 });
 
   // Calculate total savings for each member
@@ -57,7 +57,7 @@ const getMemberByUuid = asyncHandler(async (req, res) => {
 
   const member = await Member.findOne({ uuid })
     .populate("user", "username email isActive")
-    .populate("product", "title depositAmount");
+    .populate("product", "title depositAmount termDuration returnProfit description");
 
   if (!member) {
     return res.status(404).json({
@@ -157,7 +157,7 @@ const createMember = asyncHandler(async (req, res) => {
   // Populate user data
   const populatedMember = await Member.findById(member._id)
     .populate("user", "username email isActive")
-    .populate("product", "title depositAmount");
+    .populate("product", "title depositAmount termDuration returnProfit description");
 
   res.status(201).json({
     success: true,
@@ -217,7 +217,7 @@ const updateMember = asyncHandler(async (req, res) => {
   // Populate user data
   const populatedMember = await Member.findById(member._id)
     .populate("user", "username email isActive")
-    .populate("product", "title depositAmount");
+    .populate("product", "title depositAmount termDuration returnProfit description");
 
   res.status(200).json({
     success: true,
