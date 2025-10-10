@@ -431,11 +431,11 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
       baseExpectedAmount = product.depositAmount; // Will be adjusted per period
     }
     
-    // Check for incomplete periods (partial payments and pending)
+    // Check for incomplete periods (only count approved payments)
     // For upgraded members, we need to check both old and new productId
     let matchQuery = {
       memberId: new mongoose.Types.ObjectId(memberId),
-      status: { $in: ["Approved", "Partial"] }
+      status: "Approved" // Only count approved payments
     };
     
     // If member has upgraded, include both old and new product IDs
@@ -468,35 +468,54 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
     
     // Filter incomplete periods based on the correct required amount for each period
     const actualIncompletePeriods = [];
+    
+    console.log("=== Incomplete Periods Debug ===");
+    console.log("Member has upgraded:", member.hasUpgraded);
+    console.log("Periods with payments:", incompletePeriods);
+    
     for (const period of incompletePeriods) {
       let requiredForThisPeriod = product.depositAmount;
       
       if (member.hasUpgraded && member.currentUpgradeId) {
         if (period._id <= member.currentUpgradeId.completedPeriodsAtUpgrade) {
           requiredForThisPeriod = member.currentUpgradeId.oldMonthlyDeposit;
+          console.log(`Period ${period._id}: Using old amount ${requiredForThisPeriod} (before upgrade)`);
         } else {
           requiredForThisPeriod = member.currentUpgradeId.newPaymentWithCompensation;
+          console.log(`Period ${period._id}: Using new amount with compensation ${requiredForThisPeriod} (after upgrade)`);
         }
+      } else {
+        console.log(`Period ${period._id}: Using standard amount ${requiredForThisPeriod}`);
       }
+      
+      console.log(`Period ${period._id}: Total paid = ${period.totalAmount}, Required = ${requiredForThisPeriod}`);
       
       if (period.totalAmount < requiredForThisPeriod) {
         actualIncompletePeriods.push({
           ...period,
-          requiredAmount: requiredForThisPeriod
+          requiredAmount: requiredForThisPeriod,
+          remainingAmount: requiredForThisPeriod - period.totalAmount
         });
+        console.log(`Period ${period._id} is incomplete, remaining: ${requiredForThisPeriod - period.totalAmount}`);
       }
     }
+    
+    console.log("Actual incomplete periods:", actualIncompletePeriods);
 
     let suggestedPeriod;
     let isPartialPayment = false;
     let remainingAmount = 0;
+    let targetAmountForPeriod = 0;
 
     if (actualIncompletePeriods.length > 0) {
       // Use the first incomplete period
       const incompletePeriod = actualIncompletePeriods[0];
       suggestedPeriod = incompletePeriod._id;
       isPartialPayment = true;
-      remainingAmount = incompletePeriod.requiredAmount - incompletePeriod.totalAmount;
+      remainingAmount = incompletePeriod.remainingAmount;
+      targetAmountForPeriod = incompletePeriod.requiredAmount;
+      
+      console.log(`Suggesting incomplete period ${suggestedPeriod} with remaining ${remainingAmount}`);
     } else {
       // Get the highest completed period
       // First try with current productId
@@ -594,28 +613,36 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
     let hasUpgrade = false;
     let upgradeInfo = null;
 
+    // If there's a partial payment, expected amount is the remaining amount
+    if (isPartialPayment) {
+      expectedAmount = remainingAmount;
+      console.log(`Partial payment detected. Expected amount = remaining amount: ${expectedAmount}`);
+    } else {
+      // For new periods, calculate based on upgrade status
+      if (member.hasUpgraded && member.currentUpgradeId) {
+        hasUpgrade = true;
+        upgradeInfo = member.currentUpgradeId;
+        
+        console.log("Calculating expected amount for upgraded member:");
+        console.log("Suggested Period:", suggestedPeriod);
+        console.log("Completed Periods at Upgrade:", upgradeInfo.completedPeriodsAtUpgrade);
+        
+        // If the next period is within the completed periods at upgrade, use old amount
+        // Otherwise, use new amount with compensation
+        if (suggestedPeriod <= upgradeInfo.completedPeriodsAtUpgrade) {
+          expectedAmount = upgradeInfo.oldMonthlyDeposit;
+          console.log("Using old amount:", expectedAmount);
+        } else {
+          expectedAmount = upgradeInfo.newPaymentWithCompensation;
+          console.log("Using new amount with compensation:", expectedAmount);
+        }
+      }
+    }
+    
+    // Set upgrade info if member has upgraded
     if (member.hasUpgraded && member.currentUpgradeId) {
       hasUpgrade = true;
       upgradeInfo = member.currentUpgradeId;
-      
-      console.log("Calculating expected amount for upgraded member:");
-      console.log("Suggested Period:", suggestedPeriod);
-      console.log("Completed Periods at Upgrade:", upgradeInfo.completedPeriodsAtUpgrade);
-      
-      // If the next period is within the completed periods at upgrade, use old amount
-      // Otherwise, use new amount with compensation
-      if (suggestedPeriod <= upgradeInfo.completedPeriodsAtUpgrade) {
-        expectedAmount = upgradeInfo.oldMonthlyDeposit;
-        console.log("Using old amount:", expectedAmount);
-      } else {
-        expectedAmount = upgradeInfo.newPaymentWithCompensation;
-        console.log("Using new amount with compensation:", expectedAmount);
-      }
-      
-      // Recalculate remaining amount if partial payment
-      if (isPartialPayment) {
-        remainingAmount = expectedAmount - (actualIncompletePeriods[0]?.totalAmount || 0);
-      }
     }
 
     res.status(200).json({
