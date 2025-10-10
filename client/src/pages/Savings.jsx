@@ -599,13 +599,22 @@ const Savings = () => {
                         className={`px-2 py-1 text-xs rounded-full ${getStatusBadge(
                           saving.status
                         )}`}
+                        title={saving.status === 'Rejected' && saving.rejectionReason ? `Alasan: ${saving.rejectionReason}` : ''}
                       >
                         {saving.status}
+                        {saving.status === 'Rejected' && (
+                          <span className="ml-1">💬</span>
+                        )}
                       </span>
                       {saving.paymentType === "Partial" && (
                         <span className="px-2 py-1 text-xs bg-orange-100 text-orange-800 rounded-full">
                           Partial #{saving.partialSequence}
                         </span>
+                      )}
+                      {saving.status === 'Rejected' && saving.rejectionReason && (
+                        <div className="text-red-600 text-xs italic max-w-xs truncate" title={saving.rejectionReason}>
+                          💬 {saving.rejectionReason}
+                        </div>
                       )}
                     </div>
                   </td>
@@ -749,7 +758,7 @@ const Savings = () => {
                             )}
                             
                             <p className="text-sm text-green-700 font-medium mb-1">
-                              📍 Disarankan: <span className="text-lg">Periode {periodInfo.nextPeriod}</span>
+                              📍 Disarankan: <span className="font-semibold">Periode {periodInfo.nextPeriod}</span>
                               {periodInfo.isPartialPayment && (
                                 <span className="ml-1 text-orange-600 text-xs">(Lanjutan)</span>
                               )}
@@ -800,6 +809,11 @@ const Savings = () => {
                                                 <span className="text-gray-400 ml-1">
                                                   ({new Date(tx.date).toLocaleDateString('id-ID')})
                                                 </span>
+                                                {tx.status === 'Rejected' && tx.rejectionReason && (
+                                                  <div className="text-red-600 text-xs italic ml-4 mt-1">
+                                                    💬 "{tx.rejectionReason}"
+                                                  </div>
+                                                )}
                                               </div>
                                             ))}
                                           </div>

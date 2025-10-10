@@ -462,6 +462,13 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
       status: "Pending"
     }).select("installmentPeriod amount description createdAt").sort({ installmentPeriod: 1 });
 
+    // Get rejected transactions with reasons
+    const rejectedTransactions = await Savings.find({
+      memberId: new mongoose.Types.ObjectId(memberId),
+      productId: new mongoose.Types.ObjectId(productId),
+      status: "Rejected"
+    }).select("installmentPeriod rejectionReason createdAt").sort({ installmentPeriod: 1 });
+
     // Get all transactions summary for tooltip
     const allTransactions = await Savings.find({
       memberId: new mongoose.Types.ObjectId(memberId),
@@ -477,7 +484,8 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
       transactionsByPeriod[tx.installmentPeriod].push({
         amount: tx.amount,
         status: tx.status,
-        date: tx.createdAt
+        date: tx.createdAt,
+        rejectionReason: tx.rejectionReason || null
       });
     });
 
@@ -495,6 +503,7 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
           remainingAmount: product.depositAmount - p.totalAmount
         })),
         pendingTransactions: pendingTransactions,
+        rejectedTransactions: rejectedTransactions,
         transactionsByPeriod: transactionsByPeriod
       },
       message: "Periode cicilan berhasil didapatkan"
