@@ -25,7 +25,14 @@ export const loginMember = asyncHandler(async (req, res) => {
     // Cari member berdasarkan UUID dan populate productId
     const member = await Member.findOne({ uuid })
       .populate('user')
-      .populate('productId'); // Populate product info
+      .populate('productId') // Populate product info
+      .populate({
+        path: 'currentUpgradeId',
+        populate: [
+          { path: 'oldProductId', select: 'title depositAmount' },
+          { path: 'newProductId', select: 'title depositAmount' }
+        ]
+      }); // Populate upgrade info with product details
 
     if (!member) {
       return res.status(401).json({
@@ -82,7 +89,14 @@ export const getCurrentMember = asyncHandler(async (req, res) => {
   try {
     const member = await Member.findById(req.member.memberId)
       .populate('user')
-      .populate('productId'); // Populate product info
+      .populate('productId') // Populate product info
+      .populate({
+        path: 'currentUpgradeId',
+        populate: [
+          { path: 'oldProductId', select: 'title depositAmount' },
+          { path: 'newProductId', select: 'title depositAmount' }
+        ]
+      }); // Populate upgrade info with product details
 
     if (!member) {
       return res.status(404).json({

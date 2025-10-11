@@ -51,21 +51,26 @@ export const getMemberSavings = asyncHandler(async (req, res) => {
 export const createMemberSaving = asyncHandler(async (req, res) => {
   try {
     const memberId = req.member.memberId;
-    const { amount, productId, description } = req.body;
+    const { amount, productId, description, installmentPeriod } = req.body;
+
+    // Parse amount to number if it's a string
+    const parsedAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+    
+    console.log('[Member Savings] Received data:', {
+      amount: amount,
+      parsedAmount: parsedAmount,
+      typeOfAmount: typeof amount,
+      productId: productId,
+      installmentPeriod: installmentPeriod,
+      memberId: memberId
+    });
 
     // Validasi input
-    if (!amount || amount <= 0) {
+    if (!parsedAmount || parsedAmount <= 0 || isNaN(parsedAmount)) {
+      console.log('[Member Savings] Amount validation failed:', parsedAmount);
       return res.status(400).json({
         success: false,
         message: "Jumlah saving harus lebih dari 0",
-      });
-    }
-
-    // Jika tidak ada productId, skip untuk sementara karena required di model
-    if (!productId && !member.productId) {
-      return res.status(400).json({
-        success: false,
-        message: "Product ID diperlukan untuk membuat saving. Silakan hubungi admin untuk mengatur produk member.",
       });
     }
 
@@ -76,6 +81,14 @@ export const createMemberSaving = asyncHandler(async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "Member tidak ditemukan",
+      });
+    }
+
+    // Jika tidak ada productId, skip untuk sementara karena required di model
+    if (!productId && !member.productId) {
+      return res.status(400).json({
+        success: false,
+        message: "Product ID diperlukan untuk membuat saving. Silakan hubungi admin untuk mengatur produk member.",
       });
     }
 
@@ -90,31 +103,39 @@ export const createMemberSaving = asyncHandler(async (req, res) => {
       });
     }
 
+    // Use installmentPeriod from request or default to 1
+    const finalPeriod = parseInt(installmentPeriod) || 1;
+    console.log('[Member Savings] Using installmentPeriod:', finalPeriod);
+
     // Calculate partial sequence for this period
     const existingSavingsCount = await Savings.countDocuments({
       memberId: member._id,
       productId: product._id,
-      installmentPeriod: 1,
+      installmentPeriod: finalPeriod,
     });
 
     const partialSequence = existingSavingsCount + 1;
 
     // Auto-detect payment type
-    const calculatedPaymentType = amount < product.depositAmount ? "Partial" : "Full";
+    const calculatedPaymentType = parsedAmount < product.depositAmount ? "Partial" : "Full";
 
+    // Handle file upload if present
+    const proofFilePath = req.file ? req.file.path.replace(/\\/g, '/') : null;
+    
     // Buat saving baru
     const newSaving = new Savings({
       memberId: member._id,
       productId: product._id,
-      amount: amount,
+      amount: parsedAmount,
       savingsDate: new Date(),
-      installmentPeriod: 1,
-      description: description || `Pembayaran Simpanan Periode - 1 ${partialSequence > 1 ? `(#${partialSequence})` : ''}`,
+      installmentPeriod: finalPeriod,
+      description: description || `Pembayaran Simpanan Periode - ${finalPeriod} ${partialSequence > 1 ? `(#${partialSequence})` : ''}`,
       type: "Setoran",
       status: "Pending", // Member API creates pending, needs admin approval
       paymentType: calculatedPaymentType,
       partialSequence: partialSequence,
-      notes: notes || "",
+      notes: "",
+      proofFile: proofFilePath,
     });
 
     await newSaving.save();

@@ -18,17 +18,17 @@ const router = express.Router();
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    cb(null, "uploads/savings/");
+    cb(null, "uploads/simpanan/");
   },
   filename: function (req, file, cb) {
     const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    // Format: bukti-{timestamp}-{random}-{originalname}
     cb(
       null,
-      file.fieldname +
-        "-" +
+      "bukti-" +
         uniqueSuffix +
-        "." +
-        file.originalname.split(".").pop()
+        "-" +
+        file.originalname
     );
   },
 });
