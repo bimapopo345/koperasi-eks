@@ -33,9 +33,29 @@ const getAllSavings = asyncHandler(async (req, res) => {
 
   const total = await Savings.countDocuments(query);
 
+  // Calculate summary totals from ALL records (not just paginated)
+  const summaryResult = await Savings.aggregate([
+    { $match: { status: "Approved" } },
+    {
+      $group: {
+        _id: "$type",
+        totalAmount: { $sum: "$amount" }
+      }
+    }
+  ]);
+
+  const totalSetoran = summaryResult.find(s => s._id === "Setoran")?.totalAmount || 0;
+  const totalPenarikan = summaryResult.find(s => s._id === "Penarikan")?.totalAmount || 0;
+  const saldo = totalSetoran - totalPenarikan;
+
   res.status(200).json(
     new ApiResponse(200, {
       savings,
+      summary: {
+        totalSetoran,
+        totalPenarikan,
+        saldo
+      },
       pagination: {
         currentPage: page,
         totalPages: Math.ceil(total / limit),

@@ -48,6 +48,13 @@ const Savings = () => {
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  
+  // Summary state for totals
+  const [summary, setSummary] = useState({
+    totalSetoran: 0,
+    totalPenarikan: 0,
+    saldo: 0
+  });
 
   // Fetch data
   const fetchSavings = async () => {
@@ -63,6 +70,11 @@ const Savings = () => {
         response.data ||
         [];
       setSavings(Array.isArray(data) ? data : []);
+      
+      // Set summary from backend response
+      if (response.data?.data?.summary) {
+        setSummary(response.data.data.summary);
+      }
     } catch {
       toast.error("Gagal memuat data simpanan");
       setSavings([]);
@@ -518,38 +530,19 @@ const Savings = () => {
         <div className="bg-white p-4 rounded-lg shadow">
           <h3 className="text-sm font-medium text-gray-500">Total Setoran</h3>
           <p className="text-2xl font-bold text-green-600">
-            {formatCurrency(
-              savings
-                .filter((s) => s.type === "Setoran" && s.status === "Approved")
-                .reduce((sum, s) => sum + s.amount, 0)
-            )}
+            {formatCurrency(summary.totalSetoran)}
           </p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
           <h3 className="text-sm font-medium text-gray-500">Total Penarikan</h3>
           <p className="text-2xl font-bold text-red-600">
-            {formatCurrency(
-              savings
-                .filter(
-                  (s) => s.type === "Penarikan" && s.status === "Approved"
-                )
-                .reduce((sum, s) => sum + s.amount, 0)
-            )}
+            {formatCurrency(summary.totalPenarikan)}
           </p>
         </div>
         <div className="bg-white p-4 rounded-lg shadow">
           <h3 className="text-sm font-medium text-gray-500">Saldo</h3>
           <p className="text-2xl font-bold text-blue-600">
-            {formatCurrency(
-              savings
-                .filter((s) => s.type === "Setoran" && s.status === "Approved")
-                .reduce((sum, s) => sum + s.amount, 0) -
-                savings
-                  .filter(
-                    (s) => s.type === "Penarikan" && s.status === "Approved"
-                  )
-                  .reduce((sum, s) => sum + s.amount, 0)
-            )}
+            {formatCurrency(summary.saldo)}
           </p>
         </div>
       </div>

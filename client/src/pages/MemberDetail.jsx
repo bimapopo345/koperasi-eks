@@ -64,17 +64,74 @@ const MemberDetail = () => {
 
   const fetchMemberSavings = async () => {
     try {
-      const response = await api.get("/api/admin/savings");
+      // First, try to fetch savings filtered by memberId for better performance
+      if (member?._id) {
+        // Try member-specific endpoint with high limit
+        const response = await api.get(`/api/admin/savings?memberId=${member._id}&limit=100`);
+        if (response.data.success) {
+          const savingsData = response.data.data?.savings || response.data.data || response.data.savings || [];
+          let allSavings = [...savingsData];
+          
+          // Check if we need to fetch more pages
+          const totalItems = response.data.data?.pagination?.totalItems || response.data.pagination?.totalItems;
+          if (totalItems && totalItems > 100) {
+            const totalPages = Math.ceil(totalItems / 100);
+            
+            // Fetch remaining pages in parallel for better performance
+            const pagePromises = [];
+            for (let page = 2; page <= totalPages; page++) {
+              pagePromises.push(api.get(`/api/admin/savings?memberId=${member._id}&limit=100&page=${page}`));
+            }
+            
+            const additionalResponses = await Promise.all(pagePromises);
+            additionalResponses.forEach(resp => {
+              if (resp.data.success) {
+                const additionalData = resp.data.data?.savings || resp.data.data || resp.data.savings || [];
+                allSavings.push(...additionalData);
+              }
+            });
+          }
+          
+          setSavings(allSavings);
+          console.log(`Total member savings fetched: ${allSavings.length}`);
+          return;
+        }
+      }
+      
+      // Fallback: Fetch all and filter client-side
+      const response = await api.get("/api/admin/savings?limit=100");
       if (response.data.success) {
-        // Handle different response data structures
         const savingsData = response.data.data?.savings || response.data.data || response.data.savings || [];
         const memberSavings = Array.isArray(savingsData) ? savingsData.filter(
           saving => saving.memberId?._id === member?._id || 
                    saving.memberId?.uuid === uuid ||
                    (typeof saving.memberId === 'string' && saving.memberId === member?._id)
         ) : [];
+        
+        // Check if there might be more pages to fetch
+        const totalItems = response.data.data?.pagination?.totalItems || response.data.pagination?.totalItems;
+        if (totalItems && totalItems > 100) {
+          const totalPages = Math.ceil(totalItems / 100);
+          
+          for (let page = 2; page <= totalPages; page++) {
+            const nextResponse = await api.get(`/api/admin/savings?limit=100&page=${page}`);
+            if (nextResponse.data.success) {
+              const nextData = nextResponse.data.data?.savings || nextResponse.data.data || nextResponse.data.savings || [];
+              const nextMemberSavings = Array.isArray(nextData) ? nextData.filter(
+                saving => saving.memberId?._id === member?._id || 
+                         saving.memberId?.uuid === uuid ||
+                         (typeof saving.memberId === 'string' && saving.memberId === member?._id)
+              ) : [];
+              
+              if (nextMemberSavings.length > 0) {
+                memberSavings.push(...nextMemberSavings);
+              }
+            }
+          }
+        }
+        
         setSavings(memberSavings);
-        console.log("Member savings:", memberSavings);
+        console.log(`Total member savings fetched: ${memberSavings.length}`);
       }
     } catch (err) {
       console.error("Savings fetch error:", err);
