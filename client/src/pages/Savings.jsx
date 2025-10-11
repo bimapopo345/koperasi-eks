@@ -60,22 +60,47 @@ const Savings = () => {
   const fetchSavings = async () => {
     try {
       const token = localStorage.getItem("token");
-      const response = await axios.get(`${API_URL}/api/admin/savings`, {
+      // Fetch with higher limit to get all records
+      const response = await axios.get(`${API_URL}/api/admin/savings?limit=100&page=1`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      const data =
-        response.data?.data?.savings ||
-        response.data?.savings ||
-        response.data?.data ||
-        response.data ||
-        [];
-      setSavings(Array.isArray(data) ? data : []);
+      
+      let allSavings = [];
+      const firstPageData = response.data?.data?.savings || response.data?.savings || response.data?.data || response.data || [];
+      allSavings = Array.isArray(firstPageData) ? [...firstPageData] : [];
+      
+      // Check if there are more pages
+      const totalItems = response.data?.data?.pagination?.totalItems;
+      const totalPages = response.data?.data?.pagination?.totalPages;
+      
+      if (totalPages && totalPages > 1) {
+        // Fetch remaining pages
+        const pagePromises = [];
+        for (let page = 2; page <= totalPages; page++) {
+          pagePromises.push(
+            axios.get(`${API_URL}/api/admin/savings?limit=100&page=${page}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            })
+          );
+        }
+        
+        const additionalResponses = await Promise.all(pagePromises);
+        additionalResponses.forEach(resp => {
+          const pageData = resp.data?.data?.savings || resp.data?.savings || resp.data?.data || resp.data || [];
+          if (Array.isArray(pageData)) {
+            allSavings.push(...pageData);
+          }
+        });
+      }
+      
+      setSavings(allSavings);
       
       // Set summary from backend response
       if (response.data?.data?.summary) {
         setSummary(response.data.data.summary);
       }
-    } catch {
+    } catch (error) {
+      console.error("Error fetching savings:", error);
       toast.error("Gagal memuat data simpanan");
       setSavings([]);
     }
@@ -698,14 +723,184 @@ const Savings = () => {
           </table>
         </div>
         
-        {/* Pagination */}
-        <Pagination
-          currentPage={currentPage}
-          totalPages={totalPages}
-          onPageChange={handlePageChange}
-          itemsPerPage={itemsPerPage}
-          totalItems={savings.length}
-        />
+        {/* Custom Pagination */}
+        {savings.length > 0 && (
+          <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 mt-4">
+            <div className="flex-1 flex justify-between sm:hidden">
+              {/* Mobile Pagination */}
+              <button
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage === 1 || totalPages <= 1}
+                className={`relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md ${
+                  currentPage === 1 || totalPages <= 1
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Previous
+              </button>
+              <div className="flex items-center">
+                <span className="text-sm text-gray-700">
+                  Page {currentPage} of {Math.max(totalPages, 1)}
+                </span>
+              </div>
+              <button
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage === totalPages || totalPages <= 1}
+                className={`ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md ${
+                  currentPage === totalPages || totalPages <= 1
+                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Next
+              </button>
+            </div>
+            
+            {/* Desktop Pagination */}
+            <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm text-gray-700">
+                  Showing{' '}
+                  <span className="font-medium">
+                    {Math.min((currentPage - 1) * itemsPerPage + 1, savings.length)}
+                  </span>{' '}
+                  to{' '}
+                  <span className="font-medium">
+                    {Math.min(currentPage * itemsPerPage, savings.length)}
+                  </span>{' '}
+                  of <span className="font-medium">{savings.length}</span> results
+                </p>
+              </div>
+              
+              <div>
+                <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                  {/* Previous Button */}
+                  <button
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      className={`relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium ${
+                        currentPage === 1
+                          ? 'text-gray-400 cursor-not-allowed'
+                          : 'text-gray-500 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="sr-only">Previous</span>
+                      <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                    
+                    {/* Page Numbers */}
+                    {(() => {
+                      const pages = [];
+                      
+                      // If there's only 1 page or no pages, show just page 1
+                      if (totalPages <= 1) {
+                        pages.push(
+                          <button
+                            key={1}
+                            onClick={() => handlePageChange(1)}
+                            className="z-10 bg-pink-50 border-pink-500 text-pink-600 relative inline-flex items-center px-4 py-2 border text-sm font-medium cursor-default"
+                          >
+                            1
+                          </button>
+                        );
+                        return pages;
+                      }
+                      
+                      const maxPagesToShow = 7;
+                      let startPage = Math.max(1, currentPage - 3);
+                      let endPage = Math.min(totalPages, currentPage + 3);
+                      
+                      // Adjust if we're near the beginning or end
+                      if (currentPage <= 4) {
+                        endPage = Math.min(totalPages, maxPagesToShow);
+                      }
+                      if (currentPage >= totalPages - 3) {
+                        startPage = Math.max(1, totalPages - maxPagesToShow + 1);
+                      }
+                      
+                      // First page
+                      if (startPage > 1) {
+                        pages.push(
+                          <button
+                            key={1}
+                            onClick={() => handlePageChange(1)}
+                            className="bg-white border-gray-300 text-gray-500 hover:bg-gray-50 relative inline-flex items-center px-4 py-2 border text-sm font-medium"
+                          >
+                            1
+                          </button>
+                        );
+                        if (startPage > 2) {
+                          pages.push(
+                            <span key="dots1" className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                              ...
+                            </span>
+                          );
+                        }
+                      }
+                      
+                      // Middle pages
+                      for (let i = startPage; i <= endPage; i++) {
+                        pages.push(
+                          <button
+                            key={i}
+                            onClick={() => handlePageChange(i)}
+                            className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                              i === currentPage
+                                ? 'z-10 bg-pink-50 border-pink-500 text-pink-600'
+                                : 'bg-white border-gray-300 text-gray-500 hover:bg-gray-50'
+                            }`}
+                          >
+                            {i}
+                          </button>
+                        );
+                      }
+                      
+                      // Last page
+                      if (endPage < totalPages) {
+                        if (endPage < totalPages - 1) {
+                          pages.push(
+                            <span key="dots2" className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                              ...
+                            </span>
+                          );
+                        }
+                        pages.push(
+                          <button
+                            key={totalPages}
+                            onClick={() => handlePageChange(totalPages)}
+                            className="bg-white border-gray-300 text-gray-500 hover:bg-gray-50 relative inline-flex items-center px-4 py-2 border text-sm font-medium"
+                          >
+                            {totalPages}
+                          </button>
+                        );
+                      }
+                      
+                      return pages;
+                    })()}
+                    
+                    {/* Next Button */}
+                    <button
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      className={`relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium ${
+                        currentPage === totalPages
+                          ? 'text-gray-400 cursor-not-allowed'
+                          : 'text-gray-500 hover:bg-gray-50'
+                      }`}
+                    >
+                      <span className="sr-only">Next</span>
+                      <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                </nav>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Modal */}
