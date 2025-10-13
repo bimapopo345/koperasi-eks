@@ -1,5 +1,5 @@
-import { LoanProduct } from "../models/loanProduct.model.js";
-import { asyncHandler } from "../utils/asyncHandler.js";
+import { LoanProduct } from "../../models/loanProduct.model.js";
+import { asyncHandler } from "../../utils/asyncHandler.js";
 
 // Get all loan products
 const getAllLoanProducts = asyncHandler(async (req, res) => {

@@ -6,7 +6,7 @@ import {
   updateLoanProduct,
   deleteLoanProduct,
   toggleLoanProductStatus,
-} from "../controllers/loanProduct.controller.js";
+} from "../controllers/admin/loanProduct.controller.js";
 import { verifyToken } from "../middlewares/auth.middleware.js";
 
 const router = express.Router();

@@ -5,6 +5,8 @@ import { Product } from "../models/product.model.js";
 import { Savings } from "../models/savings.model.js";
 import { Member } from "../models/member.model.js";
 import { LoanProduct } from "../models/loanProduct.model.js";
+import { Loan } from "../models/loan.model.js";
+import { LoanPayment } from "../models/loanPayment.model.js";
 
 const connectDB = async () => {
   try {
@@ -21,4 +23,4 @@ const connectDB = async () => {
 };
 
 export default connectDB;
-export { User, Product, Savings, Member, LoanProduct };
+export { User, Product, Savings, Member, LoanProduct, Loan, LoanPayment };

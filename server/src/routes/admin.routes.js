@@ -38,6 +38,9 @@ import {
 import { verifyToken } from "../middlewares/auth.middleware.js";
 import multer from "multer";
 import productUpgradeRoutes from "./admin/productUpgrade.routes.js";
+import loanRoutes from "./loan.routes.js";
+import loanPaymentRoutes from "./loanPayment.routes.js";
+import loanProductRoutes from "./loanProduct.routes.js";
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -93,5 +96,10 @@ router.get("/savings/period-summary/:memberId/:productId/:installmentPeriod", ve
 
 // Product upgrade routes
 router.use("/product-upgrade", productUpgradeRoutes);
+
+// Loan routes
+router.use("/loans", loanRoutes);
+router.use("/loan-payments", loanPaymentRoutes);
+router.use("/loan-products", loanProductRoutes);
 
 export default router;

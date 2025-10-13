@@ -2,6 +2,8 @@ import { User } from "../../models/user.model.js";
 import { Product } from "../../models/product.model.js";
 import { Savings } from "../../models/savings.model.js";
 import { LoanProduct } from "../../models/loanProduct.model.js";
+import { Loan } from "../../models/loan.model.js";
+import { LoanPayment } from "../../models/loanPayment.model.js";
 import { Member } from "../../models/member.model.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 
@@ -34,6 +36,138 @@ const getDashboardStats = asyncHandler(async (req, res) => {
     const activeSavingsCount = await LoanProduct.countDocuments({
       isActive: true,
     });
+
+    // ===== LOAN STATISTICS =====
+    
+    // Get total loan products
+    const totalLoanProducts = await LoanProduct.countDocuments({ isActive: true });
+
+    // Get total active loans
+    const totalActiveLoans = await Loan.countDocuments({ 
+      status: { $in: ["Active", "Approved"] }
+    });
+
+    // Get total loan disbursed (total pinjaman yang disalurkan)
+    const totalLoanDisbursedResult = await Loan.aggregate([
+      {
+        $match: {
+          status: { $in: ["Active", "Approved", "Completed"] },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$loanAmount" },
+        },
+      },
+    ]);
+    const totalLoanDisbursed = totalLoanDisbursedResult[0]?.total || 0;
+
+    // Get total loan collected (total cicilan terbayar)
+    const totalLoanCollectedResult = await LoanPayment.aggregate([
+      {
+        $match: {
+          status: "Approved",
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: "$amount" },
+        },
+      },
+    ]);
+    const totalLoanCollected = totalLoanCollectedResult[0]?.total || 0;
+
+    // Get overdue loans count
+    const today = new Date();
+    const overdueLoans = await Loan.countDocuments({
+      status: "Active",
+      nextDueDate: { $lt: today }
+    });
+
+    // Get recent loan activities
+    const recentLoanActivities = await LoanPayment.find()
+      .populate("memberId", "name uuid")
+      .populate({
+        path: "loanId",
+        populate: {
+          path: "loanProductId",
+          select: "title"
+        }
+      })
+      .sort({ createdAt: -1 })
+      .limit(5);
+
+    // Get monthly loan statistics
+    const monthlyLoanStats = await LoanPayment.aggregate([
+      {
+        $match: {
+          status: "Approved",
+          paymentDate: {
+            $gte: new Date(new Date().setMonth(new Date().getMonth() - 5))
+          }
+        },
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: "$paymentDate" },
+            month: { $month: "$paymentDate" },
+          },
+          collected: { $sum: "$amount" },
+        },
+      },
+      {
+        $sort: { "_id.year": 1, "_id.month": 1 },
+      },
+      {
+        $project: {
+          month: {
+            $let: {
+              vars: {
+                months: [
+                  "",
+                  "Jan",
+                  "Feb",
+                  "Mar",
+                  "Apr",
+                  "Mei",
+                  "Jun",
+                  "Jul",
+                  "Agu",
+                  "Sep",
+                  "Okt",
+                  "Nov",
+                  "Des",
+                ],
+              },
+              in: {
+                $arrayElemAt: ["$$months", "$_id.month"],
+              },
+            },
+          },
+          collected: 1,
+        },
+      },
+    ]);
+
+    // Format recent loan activities
+    const formattedLoanActivities = recentLoanActivities.map((activity) => ({
+      id: activity._id,
+      type: "payment",
+      member: activity.memberId?.name || "Unknown",
+      memberUuid: activity.memberId?.uuid || "",
+      amount: activity.amount,
+      status: activity.status,
+      product: activity.loanId?.loanProductId?.title || "Unknown",
+      period: activity.period,
+      date: activity.paymentDate
+        ? new Date(activity.paymentDate).toLocaleDateString("id-ID")
+        : new Date(activity.createdAt).toLocaleDateString("id-ID"),
+    }));
+
+    // ===== END LOAN STATISTICS =====
 
     // Get recent transactions (last 10 savings)
     const recentTransactions = await Savings.find()
@@ -127,6 +261,15 @@ const getDashboardStats = asyncHandler(async (req, res) => {
         activeSavingsCount,
         recentTransactions: formattedTransactions,
         monthlyStats,
+        // Loan statistics
+        totalLoanProducts,
+        totalActiveLoans,
+        totalLoanDisbursed,
+        totalLoanCollected,
+        totalOutstanding: totalLoanDisbursed - totalLoanCollected,
+        overdueLoans,
+        recentLoanActivities: formattedLoanActivities,
+        monthlyLoanStats,
       },
     });
   } catch (error) {

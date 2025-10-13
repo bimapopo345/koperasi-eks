@@ -13,6 +13,15 @@ const Dashboard = () => {
     activeSavingsCount: 0,
     recentTransactions: [],
     monthlyStats: [],
+    // Loan statistics
+    totalLoanProducts: 0,
+    totalActiveLoans: 0,
+    totalLoanDisbursed: 0,
+    totalLoanCollected: 0,
+    totalOutstanding: 0,
+    overdueLoans: 0,
+    recentLoanActivities: [],
+    monthlyLoanStats: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -29,6 +38,15 @@ const Dashboard = () => {
             activeSavingsCount: response.data.data.activeSavingsCount || 0,
             recentTransactions: response.data.data.recentTransactions,
             monthlyStats: response.data.data.monthlyStats || [],
+            // Loan statistics
+            totalLoanProducts: response.data.data.totalLoanProducts || 0,
+            totalActiveLoans: response.data.data.totalActiveLoans || 0,
+            totalLoanDisbursed: response.data.data.totalLoanDisbursed || 0,
+            totalLoanCollected: response.data.data.totalLoanCollected || 0,
+            totalOutstanding: response.data.data.totalOutstanding || 0,
+            overdueLoans: response.data.data.overdueLoans || 0,
+            recentLoanActivities: response.data.data.recentLoanActivities || [],
+            monthlyLoanStats: response.data.data.monthlyLoanStats || [],
           });
         }
       } catch (err) {
@@ -98,10 +116,45 @@ const Dashboard = () => {
           color="bg-purple-100 text-purple-600"
         />
         <StatCard
-          title="Produk Pinjaman Aktif"
+          title="Produk Simpanan Aktif"
           value={stats.activeSavingsCount}
           icon="🌸"
           color="bg-pink-100 text-pink-600"
+        />
+      </div>
+
+      {/* Loan Stats Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8">
+        <StatCard
+          title="Produk Pinjaman"
+          value={stats.totalLoanProducts || 0}
+          icon="📦"
+          color="bg-blue-100 text-blue-600"
+        />
+        <StatCard
+          title="Total Pinjaman Aktif"
+          value={stats.totalActiveLoans || 0}
+          icon="💳"
+          color="bg-green-100 text-green-600"
+        />
+        <StatCard
+          title="Total Terbayar"
+          value={typeof stats.totalLoanCollected === 'number' ? 
+            new Intl.NumberFormat("id-ID", {
+              style: "currency",
+              currency: "IDR",
+              minimumFractionDigits: 0,
+            }).format(stats.totalLoanCollected) : 
+            "Rp 0"
+          }
+          icon="✅"
+          color="bg-emerald-100 text-emerald-600"
+        />
+        <StatCard
+          title="Jatuh Tempo"
+          value={stats.overdueLoans || 0}
+          icon="⚠️"
+          color={stats.overdueLoans > 0 ? "bg-red-100 text-red-600" : "bg-gray-100 text-gray-600"}
         />
       </div>
 

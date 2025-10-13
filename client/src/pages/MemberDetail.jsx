@@ -3,7 +3,9 @@ import { useParams, useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import api from "../api/index.jsx";
+import { loanApi, loanPaymentApi } from "../api/loanApi.jsx";
 import Pagination from "../components/Pagination.jsx";
+import { toast } from "react-toastify";
 
 const MemberDetail = () => {
   const { uuid } = useParams();
@@ -11,7 +13,8 @@ const MemberDetail = () => {
   
   const [member, setMember] = useState(null);
   const [savings, setSavings] = useState([]);
-  const [loans, setLoans] = useState([]); // Placeholder for future loans
+  const [loans, setLoans] = useState([]);
+  const [loanProducts, setLoanProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("simpanan");
@@ -35,13 +38,35 @@ const MemberDetail = () => {
   const [products, setProducts] = useState([]);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
 
+  // Loan application state
+  const [showLoanModal, setShowLoanModal] = useState(false);
+  const [loanStep, setLoanStep] = useState(1);
+  const [selectedLoanProduct, setSelectedLoanProduct] = useState(null);
+  const [loanCalculation, setLoanCalculation] = useState(null);
+  const [loanFormData, setLoanFormData] = useState({
+    downPayment: 0,
+    description: "",
+  });
+  
+  // Loan detail state
+  const [selectedLoanDetail, setSelectedLoanDetail] = useState(null);
+  const [loanPaymentHistory, setLoanPaymentHistory] = useState([]);
+  const [showLoanDetailModal, setShowLoanDetailModal] = useState(false);
+
   useEffect(() => {
     if (uuid) {
       fetchMemberDetail();
       fetchMemberSavings();
       fetchProducts();
+      fetchLoanProducts();
     }
   }, [uuid]);
+
+  useEffect(() => {
+    if (member?._id) {
+      fetchMemberLoans();
+    }
+  }, [member]);
 
   const fetchMemberDetail = async () => {
     try {
@@ -147,6 +172,95 @@ const MemberDetail = () => {
       }
     } catch (err) {
       console.error("Products fetch error:", err);
+    }
+  };
+
+  const fetchMemberLoans = async () => {
+    if (!member?._id) return;
+    
+    try {
+      const response = await loanApi.getByMember(member._id);
+      if (response.success) {
+        setLoans(response.data || []);
+      }
+    } catch (err) {
+      console.error("Loans fetch error:", err);
+      setLoans([]);
+    }
+  };
+
+  const fetchLoanProducts = async () => {
+    try {
+      const response = await api.get("/api/admin/loan-products");
+      if (response.data.success) {
+        setLoanProducts(response.data.data || []);
+      }
+    } catch (err) {
+      console.error("Loan products fetch error:", err);
+    }
+  };
+
+  const fetchLoanPaymentHistory = async (loanId) => {
+    try {
+      const response = await loanPaymentApi.getByLoan(loanId);
+      if (response.success) {
+        setLoanPaymentHistory(response.data.paymentSchedule || []);
+        console.log("Payment history:", response.data);
+      }
+    } catch (err) {
+      console.error("Loan payment history error:", err);
+      setLoanPaymentHistory([]);
+    }
+  };
+
+  const handleShowLoanDetail = async (loan) => {
+    setSelectedLoanDetail(loan);
+    await fetchLoanPaymentHistory(loan._id);
+    setShowLoanDetailModal(true);
+  };
+
+  const handleLoanCalculation = async () => {
+    if (!selectedLoanProduct || !member) return;
+    
+    try {
+      const response = await loanApi.calculate({
+        loanProductId: selectedLoanProduct._id,
+        downPayment: loanFormData.downPayment || selectedLoanProduct.downPayment,
+      });
+      
+      if (response.success) {
+        setLoanCalculation(response.data);
+        setLoanStep(2);
+      }
+    } catch (err) {
+      console.error("Loan calculation error:", err);
+      toast.error(err.response?.data?.message || "Gagal menghitung cicilan");
+    }
+  };
+
+  const handleLoanApplication = async () => {
+    if (!loanCalculation || !member || !selectedLoanProduct) return;
+    
+    try {
+      const response = await loanApi.apply({
+        memberId: member._id,
+        loanProductId: selectedLoanProduct._id,
+        downPayment: loanFormData.downPayment || selectedLoanProduct.downPayment,
+        description: loanFormData.description,
+      });
+      
+      if (response.success) {
+        toast.success("Pengajuan pinjaman berhasil dibuat!");
+        setShowLoanModal(false);
+        setLoanStep(1);
+        setSelectedLoanProduct(null);
+        setLoanCalculation(null);
+        setLoanFormData({ downPayment: 0, description: "" });
+        fetchMemberLoans();
+      }
+    } catch (err) {
+      console.error("Loan application error:", err);
+      toast.error(err.response?.data?.message || "Gagal mengajukan pinjaman");
     }
   };
 
@@ -975,18 +1089,133 @@ const MemberDetail = () => {
 
           {activeTab === "pinjaman" && (
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-4">Riwayat Pinjaman</h3>
-              <div className="text-center py-12">
-                <div className="text-6xl mb-4">🏦</div>
-                <h4 className="text-lg font-medium text-gray-900 mb-2">Fitur Pinjaman</h4>
-                <p className="text-gray-500 mb-4">Fitur pinjaman akan segera hadir</p>
-                <div className="inline-flex items-center px-4 py-2 bg-blue-50 text-blue-700 rounded-lg">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-semibold text-gray-900">Riwayat Pinjaman</h3>
+                <button
+                  onClick={() => setShowLoanModal(true)}
+                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+                >
                   <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                   </svg>
-                  Coming Soon
-                </div>
+                  Ajukan Pinjaman
+                </button>
               </div>
+
+              {loans.length === 0 ? (
+                <div className="text-center py-12 bg-gray-50 rounded-lg">
+                  <div className="text-6xl mb-4">💳</div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">Belum Ada Pinjaman</h4>
+                  <p className="text-gray-500 mb-4">Member ini belum memiliki pinjaman aktif</p>
+                  <button
+                    onClick={() => setShowLoanModal(true)}
+                    className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  >
+                    Ajukan Pinjaman Sekarang
+                  </button>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gradient-to-r from-blue-50 to-indigo-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                          Produk
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                          Total Pinjaman
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                          Cicilan/Bulan
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                          Progress
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                          Sisa Pinjaman
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                          Jatuh Tempo
+                        </th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">
+                          Aksi
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {loans.map((loan) => (
+                        <tr key={loan._id} className="hover:bg-gray-50 cursor-pointer" onClick={() => handleShowLoanDetail(loan)}>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">
+                            {loan.loanProductId?.title || "-"}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {formatCurrency(loan.loanAmount)}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {formatCurrency(loan.monthlyInstallment)}
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            <div className="flex items-center">
+                              <div className="w-full bg-gray-200 rounded-full h-2 mr-2">
+                                <div 
+                                  className={`h-2 rounded-full ${
+                                    loan.status === "Completed" ? 'bg-green-500' : 
+                                    loan.paidPeriods > 0 ? 'bg-blue-500' : 'bg-gray-300'
+                                  }`}
+                                  style={{ width: `${(loan.paidPeriods / loan.totalPeriods) * 100}%` }}
+                                ></div>
+                              </div>
+                              <span className="text-xs text-gray-600 w-20">
+                                {loan.paidPeriods}/{loan.totalPeriods} bulan
+                              </span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">
+                            <span className={loan.outstandingAmount > 0 ? 'text-orange-600' : 'text-green-600'}>
+                              {formatCurrency(loan.outstandingAmount || 0)}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                              loan.status === 'Active' ? 'bg-green-100 text-green-800' :
+                              loan.status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
+                              loan.status === 'Completed' ? 'bg-blue-100 text-blue-800' :
+                              loan.status === 'Rejected' ? 'bg-red-100 text-red-800' :
+                              loan.status === 'Overdue' ? 'bg-red-100 text-red-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {loan.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            {loan.nextDueDate ? 
+                              format(new Date(loan.nextDueDate), "dd MMM yyyy", { locale: id }) : 
+                              "-"
+                            }
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleShowLoanDetail(loan);
+                              }}
+                              className="text-blue-600 hover:text-blue-900"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1260,6 +1489,422 @@ const MemberDetail = () => {
               >
                 Tutup
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loan Application Modal */}
+      {showLoanModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <h2 className="text-xl font-bold text-gray-800">💳 Ajukan Pinjaman</h2>
+              <button
+                onClick={() => {
+                  setShowLoanModal(false);
+                  setLoanStep(1);
+                  setSelectedLoanProduct(null);
+                  setLoanCalculation(null);
+                  setLoanFormData({ downPayment: 0, description: "" });
+                }}
+                className="text-gray-400 hover:text-gray-600 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              {loanStep === 1 && (
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Pilih Produk Pinjaman</h3>
+                  
+                  <div className="space-y-3">
+                    {loanProducts.map(product => (
+                      <div
+                        key={product._id}
+                        className={`border rounded-lg p-4 cursor-pointer transition-all ${
+                          selectedLoanProduct?._id === product._id
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-blue-300'
+                        }`}
+                        onClick={() => {
+                          setSelectedLoanProduct(product);
+                          setLoanFormData(prev => ({ ...prev, downPayment: product.downPayment }));
+                        }}
+                      >
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <h4 className="font-semibold">{product.title}</h4>
+                            <p className="text-sm text-gray-600">
+                              Plafon: {formatCurrency(product.maxLoanAmount)}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              DP Minimal: {formatCurrency(product.downPayment)}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm text-gray-500">Tenor: {product.loanTerm} bulan</p>
+                            <p className="text-sm text-gray-500">Bunga: {product.interestRate}%</p>
+                            {product.description && (
+                              <p className="text-xs text-gray-400 mt-1">{product.description}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {loanProducts.length === 0 && (
+                    <p className="text-center text-gray-500 py-8">
+                      Tidak ada produk pinjaman yang tersedia
+                    </p>
+                  )}
+
+                  {selectedLoanProduct && (
+                    <div className="mt-6">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Uang Muka (DP)
+                      </label>
+                      <input
+                        type="number"
+                        value={loanFormData.downPayment}
+                        onChange={(e) => setLoanFormData(prev => ({ ...prev, downPayment: parseFloat(e.target.value) || 0 }))}
+                        min={selectedLoanProduct.downPayment}
+                        max={selectedLoanProduct.maxLoanAmount}
+                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">
+                        Minimal: {formatCurrency(selectedLoanProduct.downPayment)} - Maksimal: {formatCurrency(selectedLoanProduct.maxLoanAmount)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {loanStep === 2 && loanCalculation && (
+                <div>
+                  <h3 className="text-lg font-semibold mb-4">Review Kalkulasi Pinjaman</h3>
+                  
+                  <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-gray-600">Produk:</p>
+                        <p className="font-semibold">{loanCalculation.productName}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Harga Produk:</p>
+                        <p className="font-semibold">{formatCurrency(loanCalculation.productPrice)}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Uang Muka (DP):</p>
+                        <p className="font-semibold">{formatCurrency(loanCalculation.downPayment)}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Jumlah Pinjaman:</p>
+                        <p className="font-semibold">{formatCurrency(loanCalculation.loanAmount)}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Bunga ({loanCalculation.interestRate}%):</p>
+                        <p className="font-semibold">{formatCurrency(loanCalculation.interestAmount)}</p>
+                      </div>
+                      <div>
+                        <p className="text-sm text-gray-600">Total Pembayaran:</p>
+                        <p className="font-semibold text-blue-600">{formatCurrency(loanCalculation.totalPayment)}</p>
+                      </div>
+                    </div>
+                    
+                    <div className="border-t pt-3">
+                      <p className="text-sm text-gray-600">Tenor:</p>
+                      <p className="font-semibold">{loanCalculation.tenor} bulan</p>
+                    </div>
+                    
+                    <div className="border-t pt-3 bg-blue-50 -m-4 mt-3 p-4 rounded-b-lg">
+                      <p className="text-sm text-blue-800 font-semibold">Cicilan Bulanan:</p>
+                      <p className="text-2xl font-bold text-blue-900">
+                        {formatCurrency(loanCalculation.monthlyInstallment)}/bulan
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Payment Schedule Table */}
+                  {loanCalculation.paymentSchedule && (
+                    <div className="mt-6">
+                      <h4 className="font-semibold text-gray-800 mb-2">Jadwal Pembayaran</h4>
+                      <div className="max-h-48 overflow-y-auto">
+                        <table className="min-w-full divide-y divide-gray-200 text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">Periode</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">Jatuh Tempo</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">Cicilan</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase">Sisa</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {loanCalculation.paymentSchedule.map((schedule) => (
+                              <tr key={schedule.period} className="hover:bg-gray-50">
+                                <td className="px-3 py-2 text-gray-900">Bulan {schedule.period}</td>
+                                <td className="px-3 py-2 text-gray-900">
+                                  {format(new Date(schedule.dueDate), "dd MMM yyyy", { locale: id })}
+                                </td>
+                                <td className="px-3 py-2 font-medium text-gray-900">
+                                  {formatCurrency(schedule.amount)}
+                                </td>
+                                <td className="px-3 py-2 text-gray-900">
+                                  {formatCurrency(schedule.remainingBalance)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Description */}
+                  <div className="mt-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Keterangan Pinjaman
+                    </label>
+                    <textarea
+                      value={loanFormData.description}
+                      onChange={(e) => setLoanFormData(prev => ({ ...prev, description: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      rows="3"
+                      placeholder="Tambahkan keterangan jika diperlukan..."
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex justify-between p-6 border-t border-gray-200 bg-gray-50">
+              <button
+                onClick={() => {
+                  if (loanStep === 2) {
+                    setLoanStep(1);
+                  } else {
+                    setShowLoanModal(false);
+                    setLoanStep(1);
+                    setSelectedLoanProduct(null);
+                    setLoanCalculation(null);
+                    setLoanFormData({ downPayment: 0, description: "" });
+                  }
+                }}
+                className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300"
+              >
+                {loanStep === 2 ? 'Kembali' : 'Batal'}
+              </button>
+
+              <div>
+                {loanStep === 1 && selectedLoanProduct && (
+                  <button
+                    onClick={handleLoanCalculation}
+                    className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700"
+                  >
+                    Hitung Cicilan
+                  </button>
+                )}
+                
+                {loanStep === 2 && (
+                  <button
+                    onClick={handleLoanApplication}
+                    className="px-4 py-2 text-white bg-green-600 rounded-lg hover:bg-green-700"
+                  >
+                    Ajukan Pinjaman
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loan Detail Modal */}
+      {showLoanDetailModal && selectedLoanDetail && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-6 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-indigo-50">
+              <h2 className="text-xl font-bold text-gray-800">📋 Detail Pinjaman</h2>
+              <button
+                onClick={() => {
+                  setShowLoanDetailModal(false);
+                  setSelectedLoanDetail(null);
+                  setLoanPaymentHistory([]);
+                }}
+                className="text-gray-400 hover:text-gray-600 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              {/* Loan Information */}
+              <div className="mb-6">
+                <h3 className="font-semibold text-gray-800 mb-3">Informasi Pinjaman</h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 bg-gray-50 p-4 rounded-lg">
+                  <div>
+                    <p className="text-sm text-gray-600">Produk</p>
+                    <p className="font-medium">{selectedLoanDetail.loanProductId?.title || '-'}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Status</p>
+                    <span className={`inline-block px-2 py-1 text-xs font-medium rounded-full ${
+                      selectedLoanDetail.status === "Active" ? "bg-green-100 text-green-800" :
+                      selectedLoanDetail.status === "Completed" ? "bg-blue-100 text-blue-800" :
+                      selectedLoanDetail.status === "Overdue" ? "bg-red-100 text-red-800" :
+                      "bg-yellow-100 text-yellow-800"
+                    }`}>
+                      {selectedLoanDetail.status}
+                    </span>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Tanggal Pengajuan</p>
+                    <p className="font-medium">
+                      {selectedLoanDetail.applicationDate ? 
+                        format(new Date(selectedLoanDetail.applicationDate), "dd MMM yyyy", { locale: id }) : 
+                        "-"
+                      }
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Total Pinjaman</p>
+                    <p className="font-medium text-blue-600">{formatCurrency(selectedLoanDetail.loanAmount)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Uang Muka (DP)</p>
+                    <p className="font-medium">{formatCurrency(selectedLoanDetail.downPayment)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Tenor</p>
+                    <p className="font-medium">{selectedLoanDetail.tenor} bulan</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Cicilan/Bulan</p>
+                    <p className="font-medium text-green-600">{formatCurrency(selectedLoanDetail.monthlyInstallment)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Bunga</p>
+                    <p className="font-medium">{selectedLoanDetail.interestRate}%</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-600">Total Pembayaran</p>
+                    <p className="font-medium">{formatCurrency(selectedLoanDetail.totalPayment)}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Progress */}
+              <div className="mb-6">
+                <h3 className="font-semibold text-gray-800 mb-3">Progress Pembayaran</h3>
+                <div className="bg-blue-50 p-4 rounded-lg">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm text-gray-600">Progress:</span>
+                    <span className="text-sm font-medium">
+                      {selectedLoanDetail.paidPeriods} dari {selectedLoanDetail.totalPeriods} periode
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div 
+                      className={`h-3 rounded-full transition-all ${
+                        selectedLoanDetail.status === "Completed" ? 'bg-green-500' :
+                        selectedLoanDetail.paidPeriods > 0 ? 'bg-blue-500' : 'bg-gray-400'
+                      }`}
+                      style={{ width: `${(selectedLoanDetail.paidPeriods / selectedLoanDetail.totalPeriods) * 100}%` }}
+                    ></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <p className="text-sm text-gray-600">Sisa Pinjaman</p>
+                      <p className="text-lg font-bold text-orange-600">
+                        {formatCurrency(selectedLoanDetail.outstandingAmount || 0)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-600">Jatuh Tempo Berikutnya</p>
+                      <p className="text-lg font-bold">
+                        {selectedLoanDetail.nextDueDate ? 
+                          format(new Date(selectedLoanDetail.nextDueDate), "dd MMM yyyy", { locale: id }) : 
+                          "-"
+                        }
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Payment Schedule */}
+              {loanPaymentHistory.length > 0 && (
+                <div>
+                  <h3 className="font-semibold text-gray-800 mb-3">Jadwal Pembayaran</h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-lg">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Periode</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Jatuh Tempo</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Jumlah</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Status</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Tanggal Bayar</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {loanPaymentHistory.map((schedule, idx) => (
+                          <tr key={idx} className="hover:bg-gray-50">
+                            <td className="px-4 py-2 text-sm text-gray-900">
+                              Periode {schedule.period}
+                            </td>
+                            <td className="px-4 py-2 text-sm text-gray-900">
+                              {format(new Date(schedule.dueDate), "dd MMM yyyy", { locale: id })}
+                            </td>
+                            <td className="px-4 py-2 text-sm font-medium text-gray-900">
+                              {formatCurrency(schedule.expectedAmount)}
+                            </td>
+                            <td className="px-4 py-2">
+                              <span className={`px-2 py-1 text-xs font-medium rounded-full ${
+                                schedule.status === "Approved" ? "bg-green-100 text-green-800" :
+                                schedule.status === "Pending" ? "bg-yellow-100 text-yellow-800" :
+                                schedule.status === "Rejected" ? "bg-red-100 text-red-800" :
+                                "bg-gray-100 text-gray-800"
+                              }`}>
+                                {schedule.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2 text-sm text-gray-900">
+                              {schedule.actualPayment ? 
+                                format(new Date(schedule.actualPayment.paymentDate), "dd MMM yyyy", { locale: id }) : 
+                                "-"
+                              }
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-gray-200">
+              <div className="flex justify-end">
+                <button
+                  onClick={() => {
+                    setShowLoanDetailModal(false);
+                    setSelectedLoanDetail(null);
+                    setLoanPaymentHistory([]);
+                  }}
+                  className="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300"
+                >
+                  Tutup
+                </button>
+              </div>
             </div>
           </div>
         </div>

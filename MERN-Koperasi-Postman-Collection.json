@@ -676,6 +676,389 @@
               }
             }
           ]
+        },
+        {
+          "name": "Loans",
+          "item": [
+            {
+              "name": "Get Available Loan Products",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/member/loans/products",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "loans", "products"]
+                }
+              }
+            },
+            {
+              "name": "Get My Loans",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/member/loans/my-loans",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "loans", "my-loans"]
+                }
+              }
+            },
+            {
+              "name": "Apply for Loan",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"loanProductId\": \"{{loan_product_id}}\",\n  \"downPayment\": 3000000,\n  \"description\": \"Pengajuan pinjaman untuk iPhone 15 Pro\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/member/loans/apply",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "loans", "apply"]
+                }
+              }
+            },
+            {
+              "name": "Calculate Loan Simulation",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"loanProductId\": \"{{loan_product_id}}\",\n  \"downPayment\": 3000000\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/member/loans/calculate",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "loans", "calculate"]
+                }
+              }
+            },
+            {
+              "name": "Make Loan Payment",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"loanId\": \"{{loan_id}}\",\n  \"amount\": 1000000,\n  \"paymentDate\": \"2024-01-15\",\n  \"description\": \"Pembayaran cicilan periode 1\",\n  \"notes\": \"Bayar tepat waktu\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/member/loans/payment",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "loans", "payment"]
+                }
+              }
+            },
+            {
+              "name": "Get My Loan Payments",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/member/loans/payments",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "loans", "payments"]
+                }
+              }
+            },
+            {
+              "name": "Get Loan Payment Schedule",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/member/loans/schedule/:loanId",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "member", "loans", "schedule", ":loanId"],
+                  "variable": [
+                    {
+                      "key": "loanId",
+                      "value": "{{loan_id}}"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Admin Loan API",
+      "item": [
+        {
+          "name": "Loans",
+          "item": [
+            {
+              "name": "Get All Loans",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/loans",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "loans"]
+                }
+              }
+            },
+            {
+              "name": "Create Loan Application",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"memberId\": \"{{created_member_id}}\",\n  \"loanProductId\": \"{{loan_product_id}}\",\n  \"downPayment\": 3000000,\n  \"description\": \"Pengajuan pinjaman untuk iPhone\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin/loans/apply",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "loans", "apply"]
+                }
+              }
+            },
+            {
+              "name": "Approve Loan",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/loans/:id/approve",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "loans", ":id", "approve"],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "{{loan_id}}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Reject Loan",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"rejectionReason\": \"Dokumen tidak lengkap\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin/loans/:id/reject",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "loans", ":id", "reject"],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "{{loan_id}}"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Loan Payments",
+          "item": [
+            {
+              "name": "Get All Loan Payments",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/loan-payments",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "loan-payments"]
+                }
+              }
+            },
+            {
+              "name": "Approve Payment",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/loan-payments/:id/approve",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "loan-payments", ":id", "approve"],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "{{payment_id}}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Reject Payment",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"rejectionReason\": \"Bukti pembayaran tidak valid\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin/loan-payments/:id/reject",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "loan-payments", ":id", "reject"],
+                  "variable": [
+                    {
+                      "key": "id",
+                      "value": "{{payment_id}}"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Loan Products",
+          "item": [
+            {
+              "name": "Get All Loan Products",
+              "request": {
+                "method": "GET",
+                "header": [
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "url": {
+                  "raw": "{{base_url}}/api/admin/loan-products",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "loan-products"]
+                }
+              }
+            },
+            {
+              "name": "Create Loan Product",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Authorization",
+                    "value": "Bearer {{auth_token}}"
+                  }
+                ],
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"title\": \"iPhone 15 Pro\",\n  \"loanTerm\": 12,\n  \"maxLoanAmount\": 20000000,\n  \"downPayment\": 3000000,\n  \"interestRate\": 10,\n  \"description\": \"Kredit iPhone 15 Pro dengan cicilan 12 bulan\"\n}"
+                },
+                "url": {
+                  "raw": "{{base_url}}/api/admin/loan-products",
+                  "host": ["{{base_url}}"],
+                  "path": ["api", "admin", "loan-products"]
+                }
+              }
+            }
+          ]
         }
       ]
     }

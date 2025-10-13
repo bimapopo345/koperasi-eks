@@ -23,7 +23,7 @@ const LoanProducts = () => {
 
   const fetchLoanProducts = async () => {
     try {
-      const response = await api.get("/api/loan-products");
+      const response = await api.get("/api/admin/loan-products");
       if (response.data.success) {
         setLoanProducts(response.data.data);
       }
@@ -50,7 +50,7 @@ const LoanProducts = () => {
         const productId = editingProduct._id;
         if (productId) {
           const response = await api.put(
-            `/api/loan-products/${productId}`,
+            `/api/admin/loan-products/${productId}`,
             productData
           );
           console.log("Update response:", response.data);
@@ -66,7 +66,7 @@ const LoanProducts = () => {
           return;
         }
       } else {
-        const response = await api.post("/api/loan-products", productData);
+        const response = await api.post("/api/admin/loan-products", productData);
         console.log("Create response:", response.data);
         if (response.data.success) {
           fetchLoanProducts();
@@ -118,7 +118,7 @@ const LoanProducts = () => {
 
     if (window.confirm("Apakah Anda yakin ingin menghapus produk ini?")) {
       try {
-        const response = await api.delete(`/api/loan-products/${id}`);
+        const response = await api.delete(`/api/admin/loan-products/${id}`);
         console.log("Delete response:", response.data);
         if (response.data.success) {
           fetchLoanProducts();
@@ -144,7 +144,7 @@ const LoanProducts = () => {
     }
 
     try {
-      const response = await api.put(`/api/loan-products/${id}/toggle`);
+      const response = await api.put(`/api/admin/loan-products/${id}/toggle`);
       console.log("Toggle status response:", response.data);
       if (response.data.success) {
         fetchLoanProducts();

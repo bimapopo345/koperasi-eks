@@ -12,6 +12,7 @@ import {
 } from "../controllers/member/savings.controller.js";
 import { verifyMemberToken } from "../middlewares/memberAuth.middleware.js";
 import multer from "multer";
+import loanRoutes from "./member/loan.routes.js";
 
 const router = express.Router();
 
@@ -45,5 +46,8 @@ router.get("/savings", verifyMemberToken, getMemberSavings);
 router.post("/savings", verifyMemberToken, upload.single("proofFile"), createMemberSaving);
 router.get("/savings/summary", verifyMemberToken, getMemberSavingsSummary);
 router.get("/savings/:id", verifyMemberToken, getMemberSavingById);
+
+// Loan routes
+router.use("/loans", loanRoutes);
 
 export default router;
