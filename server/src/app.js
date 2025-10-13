@@ -17,7 +17,11 @@ app.use(bodyParser.json());
 
 app.use(
   cors({
-    origin: ["http://localhost:5173", "http://localhost:3000"],
+    origin: [
+      "http://localhost:5173", 
+      "http://localhost:3000",
+      "http://localhost:8080"  // Added for CI4 to MERN webhook
+    ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   })
@@ -32,8 +36,11 @@ app.use('/uploads', express.static('uploads'));
 
 import Routes from "./routes/index.js";
 import adminRoutes from "./routes/admin.routes.js";
+import webhookRoutes from "./routes/webhook.routes.js";
+
 app.use("/api", Routes);
 app.use("/api", adminRoutes);
+app.use("/api/webhook", webhookRoutes);
 
 app.post("/testing", (req, res) => {
   console.log("Testing");
