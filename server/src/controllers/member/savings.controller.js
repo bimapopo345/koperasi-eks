@@ -120,7 +120,7 @@ export const createMemberSaving = asyncHandler(async (req, res) => {
     const calculatedPaymentType = parsedAmount < product.depositAmount ? "Partial" : "Full";
 
     // Handle file upload if present
-    const proofFilePath = req.file ? req.file.path.replace(/\\/g, '/') : null;
+    const proofFilePath = req.file ? req.file.filename : null;
     
     // Buat saving baru
     const newSaving = new Savings({
