@@ -452,23 +452,17 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
     }
     
     // Check for incomplete periods (only count approved payments)
-    // For upgraded members, we need to check both old and new productId
+    // Don't filter by productId - we want ALL approved payments for this member
+    // This properly handles upgrades and product changes
     let matchQuery = {
       memberId: new mongoose.Types.ObjectId(memberId),
-      status: "Approved" // Only count approved payments
+      status: "Approved", // Only count approved payments
+      type: "Setoran" // Only count deposits, not withdrawals
     };
     
-    // If member has upgraded, include both old and new product IDs
-    if (member.hasUpgraded && member.currentUpgradeId) {
-      matchQuery.productId = {
-        $in: [
-          new mongoose.Types.ObjectId(productId),
-          member.currentUpgradeId.oldProductId
-        ]
-      };
-    } else {
-      matchQuery.productId = new mongoose.Types.ObjectId(productId);
-    }
+    // Note: We intentionally don't filter by productId here
+    // This allows us to see ALL periods the member has paid for,
+    // regardless of which product they were using at the time
     
     const incompletePeriods = await Savings.aggregate([
       {
@@ -522,6 +516,30 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
     
     console.log("Actual incomplete periods:", actualIncompletePeriods);
 
+    // FIRST: Get the highest completed period across ALL products
+    // This is the ACTUAL last completed period
+    const highestPeriodResult = await Savings.aggregate([
+      {
+        $match: {
+          memberId: new mongoose.Types.ObjectId(memberId),
+          status: "Approved",
+          type: "Setoran"
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          maxPeriod: { $max: "$installmentPeriod" }
+        }
+      }
+    ]);
+    
+    const actualLastCompletedPeriod = highestPeriodResult.length > 0 
+      ? highestPeriodResult[0].maxPeriod 
+      : 0;
+    
+    console.log("Actual highest approved period:", actualLastCompletedPeriod);
+
     let suggestedPeriod;
     let isPartialPayment = false;
     let remainingAmount = 0;
@@ -537,82 +555,52 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
       
       console.log(`Suggesting incomplete period ${suggestedPeriod} with remaining ${remainingAmount}`);
     } else {
-      // Get the highest completed period
-      // First try with current productId
-      let lastCompletedSavings = await Savings.findOne({
-        memberId: new mongoose.Types.ObjectId(memberId),
-        productId: new mongoose.Types.ObjectId(productId),
-        status: "Approved"
-      })
-        .sort({ installmentPeriod: -1 })
-        .select("installmentPeriod");
-
-      // If not found and member has upgraded, also check with old product
-      if (!lastCompletedSavings && member.hasUpgraded && member.currentUpgradeId) {
-        // Try to find with old product ID
-        lastCompletedSavings = await Savings.findOne({
-          memberId: new mongoose.Types.ObjectId(memberId),
-          productId: member.currentUpgradeId.oldProductId,
-          status: "Approved"
-        })
-          .sort({ installmentPeriod: -1 })
-          .select("installmentPeriod");
-      }
-
-      // If still not found, check all approved savings for this member
-      if (!lastCompletedSavings) {
-        lastCompletedSavings = await Savings.findOne({
-          memberId: new mongoose.Types.ObjectId(memberId),
-          status: "Approved"
-        })
-          .sort({ installmentPeriod: -1 })
-          .select("installmentPeriod");
-      }
-
-      const lastPeriod = lastCompletedSavings ? lastCompletedSavings.installmentPeriod : 0;
-      suggestedPeriod = lastPeriod + 1;
+      // Suggest the next period after the last completed one
+      suggestedPeriod = actualLastCompletedPeriod + 1;
       
       console.log("=== Period Calculation Debug ===");
       console.log("Member ID:", memberId);
       console.log("Product ID:", productId);
       console.log("Has Upgraded:", member.hasUpgraded);
-      console.log("Last Completed Savings:", lastCompletedSavings);
-      console.log("Last Period:", lastPeriod);
+      console.log("Last Completed Period:", actualLastCompletedPeriod);
       console.log("Suggested Period:", suggestedPeriod);
     }
 
-    // Build query for transactions (include both old and new productId for upgraded members)
+    // Build query for transactions - get ALL transactions for this member
+    // Don't filter by productId to handle upgrades properly
     let transactionQuery = {
       memberId: new mongoose.Types.ObjectId(memberId)
     };
-    
-    if (member.hasUpgraded && member.currentUpgradeId) {
-      transactionQuery.productId = {
-        $in: [
-          new mongoose.Types.ObjectId(productId),
-          member.currentUpgradeId.oldProductId
-        ]
-      };
-    } else {
-      transactionQuery.productId = new mongoose.Types.ObjectId(productId);
-    }
 
     // Get pending transactions for this member/product
     const pendingTransactions = await Savings.find({
       ...transactionQuery,
-      status: "Pending"
+      status: "Pending",
+      type: "Setoran"
     }).select("installmentPeriod amount description createdAt").sort({ installmentPeriod: 1 });
 
     // Get rejected transactions with reasons
     const rejectedTransactions = await Savings.find({
       ...transactionQuery,
-      status: "Rejected"
+      status: "Rejected",
+      type: "Setoran"
     }).select("installmentPeriod rejectionReason createdAt").sort({ installmentPeriod: 1 });
 
     // Get all transactions summary for tooltip
-    const allTransactions = await Savings.find(transactionQuery)
-      .select("installmentPeriod amount status createdAt rejectionReason")
+    const allTransactions = await Savings.find({
+      ...transactionQuery,
+      type: "Setoran"
+    })
+      .select("installmentPeriod amount status createdAt rejectionReason productId")
       .sort({ installmentPeriod: 1, createdAt: 1 });
+
+    console.log(`Found ${allTransactions.length} total transactions for member ${memberId}`);
+    console.log("Transaction periods:", allTransactions.map(t => ({
+      period: t.installmentPeriod,
+      status: t.status,
+      amount: t.amount,
+      productId: t.productId
+    })));
 
     // Group transactions by period for tooltip
     const transactionsByPeriod = {};
@@ -668,7 +656,7 @@ const getLastInstallmentPeriod = asyncHandler(async (req, res) => {
     res.status(200).json({
       success: true,
       data: {
-        lastPeriod: suggestedPeriod - 1,
+        lastPeriod: actualLastCompletedPeriod,
         nextPeriod: suggestedPeriod,
         isPartialPayment,
         remainingAmount,

@@ -968,19 +968,112 @@ const Savings = () => {
                     <label className="block text-sm font-medium text-gray-700">
                       Periode Angsuran
                     </label>
-                    <input
-                      type="number"
-                      min="1"
+                    <select
                       value={formData.installmentPeriod}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const selectedPeriod = parseInt(e.target.value);
+                        const product = products.find(p => p._id === formData.productId);
+                        
+                        // Calculate amount for selected period
+                        let suggestedAmount = product?.depositAmount || 0;
+                        let description = `Pembayaran Simpanan Periode - ${selectedPeriod}`;
+                        
+                        // Check if period has existing transactions
+                        const periodTransactions = periodInfo.transactionsByPeriod?.[selectedPeriod] || [];
+                        const totalPaid = periodTransactions
+                          .filter(t => t.status === 'Approved')
+                          .reduce((sum, t) => sum + (t.amount || 0), 0);
+                        
+                        // Adjust for upgrade if applicable
+                        if (periodInfo.hasUpgrade && periodInfo.upgradeInfo) {
+                          const completedAtUpgrade = periodInfo.upgradeInfo.completedPeriodsAtUpgrade || 0;
+                          if (selectedPeriod <= completedAtUpgrade) {
+                            suggestedAmount = periodInfo.upgradeInfo.oldMonthlyDeposit || product?.depositAmount || 0;
+                          } else {
+                            suggestedAmount = periodInfo.upgradeInfo.newPaymentWithCompensation || product?.depositAmount || 0;
+                          }
+                        }
+                        
+                        // Calculate remaining if partial payment
+                        const remainingAmount = Math.max(0, suggestedAmount - totalPaid);
+                        if (totalPaid > 0 && remainingAmount > 0) {
+                          suggestedAmount = remainingAmount;
+                          description = `Pembayaran Sisa Periode - ${selectedPeriod} (Rp ${remainingAmount.toLocaleString()})`;
+                        } else if (totalPaid > 0 && remainingAmount === 0) {
+                          // Period already complete, but user can still add more
+                          description = `Pembayaran Tambahan Periode - ${selectedPeriod}`;
+                        }
+                        
                         setFormData({
                           ...formData,
-                          installmentPeriod: parseInt(e.target.value),
-                        })
-                      }
+                          installmentPeriod: selectedPeriod,
+                          amount: suggestedAmount,
+                          description: description
+                        });
+                      }}
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                       required
-                    />
+                    >
+                      {formData.memberId && formData.productId ? (
+                        // Generate options based on product termDuration
+                        (() => {
+                          const product = products.find(p => p._id === formData.productId);
+                          const maxPeriod = product?.termDuration || 60;
+                          const options = [];
+                          
+                          // Add all periods, marking complete/incomplete/pending
+                          for (let i = 1; i <= maxPeriod; i++) {
+                            const periodTransactions = periodInfo.transactionsByPeriod?.[i] || [];
+                            const hasApproved = periodTransactions.some(t => t.status === 'Approved');
+                            const hasPending = periodTransactions.some(t => t.status === 'Pending');
+                            const hasRejected = periodTransactions.some(t => t.status === 'Rejected');
+                            const totalPaid = periodTransactions
+                              .filter(t => t.status === 'Approved')
+                              .reduce((sum, t) => sum + (t.amount || 0), 0);
+                            
+                            // Calculate required amount for this period
+                            let requiredAmount = product?.depositAmount || 0;
+                            if (periodInfo.hasUpgrade && periodInfo.upgradeInfo) {
+                              const completedAtUpgrade = periodInfo.upgradeInfo.completedPeriodsAtUpgrade || 0;
+                              if (i <= completedAtUpgrade) {
+                                requiredAmount = periodInfo.upgradeInfo.oldMonthlyDeposit || product?.depositAmount || 0;
+                              } else {
+                                requiredAmount = periodInfo.upgradeInfo.newPaymentWithCompensation || product?.depositAmount || 0;
+                              }
+                            }
+                            
+                            const remainingAmount = Math.max(0, requiredAmount - totalPaid);
+                            
+                            let label = `Periode ${i}`;
+                            if (hasApproved && remainingAmount === 0) {
+                              label += ' ✓ Lunas';
+                            } else if (hasApproved && remainingAmount > 0) {
+                              label += ` (Sisa: Rp ${remainingAmount.toLocaleString()})`;
+                            } else if (hasPending) {
+                              label += ' ⏳ Pending';
+                            } else if (hasRejected) {
+                              label += ' ❌ Ditolak';
+                            } else if (i === periodInfo.nextPeriod) {
+                              label += ' 📍 Disarankan';
+                            }
+                            
+                            options.push(
+                              <option key={i} value={i}>
+                                {label}
+                              </option>
+                            );
+                          }
+                          return options;
+                        })()
+                      ) : (
+                        <option value="1">Pilih Anggota & Produk terlebih dahulu</option>
+                      )}
+                    </select>
+                    {formData.memberId && formData.productId && (
+                      <p className="mt-1 text-xs text-gray-600">
+                        Periode otomatis terdeteksi, tapi Anda bisa memilih periode lain yang tersedia
+                      </p>
+                    )}
                     
                     {/* Enhanced Period Information Panel */}
                     {formData.memberId && formData.productId && (
