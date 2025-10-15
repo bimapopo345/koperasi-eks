@@ -491,8 +491,14 @@ const deletePayment = asyncHandler(async (req, res) => {
   if (payment.proofFile) {
     try {
       const filePath = path.join(process.cwd(), payment.proofFile.replace(/^\//, ''));
-      await fs.unlink(filePath);
-      console.log("Proof file deleted:", filePath);
+      // Check if file exists before trying to delete
+      try {
+        await fs.access(filePath);
+        await fs.unlink(filePath);
+        console.log("Proof file deleted:", filePath);
+      } catch (accessErr) {
+        console.log("Proof file not found or already deleted:", filePath);
+      }
     } catch (err) {
       console.error("Error deleting proof file:", err);
       // Continue even if file deletion fails
@@ -503,10 +509,16 @@ const deletePayment = asyncHandler(async (req, res) => {
   if (payment.status === "Approved") {
     const loan = await Loan.findById(payment.loanId);
     if (loan) {
+      // Ensure all values are numbers before calculation
+      const loanAmount = Number(loan.loanAmount) || 0;
+      const interestAmount = Number(loan.interestAmount) || 0;
+      const paymentAmount = Number(payment.amount) || 0;
+      const currentTotalPaid = Number(loan.totalPaid) || 0;
+      
       // Recalculate loan values
-      loan.totalPaid = Math.max(0, loan.totalPaid - payment.amount);
-      loan.outstandingAmount = loan.loanAmount + loan.interestAmount - loan.totalPaid;
-      loan.paidPeriods = Math.max(0, loan.paidPeriods - 1);
+      loan.totalPaid = Math.max(0, currentTotalPaid - paymentAmount);
+      loan.outstandingAmount = loanAmount + interestAmount - loan.totalPaid;
+      loan.paidPeriods = Math.max(0, (loan.paidPeriods || 0) - 1);
       
       // Update loan status if needed
       if (loan.paidPeriods === 0) {
@@ -549,7 +561,7 @@ const updatePayment = asyncHandler(async (req, res) => {
   }
 
   // Update payment fields
-  if (amount !== undefined) payment.amount = amount;
+  if (amount !== undefined) payment.amount = Number(amount);
   if (paymentDate !== undefined) payment.paymentDate = new Date(paymentDate);
   if (description !== undefined) payment.description = description;
   if (notes !== undefined) payment.notes = notes;
