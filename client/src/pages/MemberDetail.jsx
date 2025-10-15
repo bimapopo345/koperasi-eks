@@ -52,6 +52,8 @@ const MemberDetail = () => {
   const [selectedLoanDetail, setSelectedLoanDetail] = useState(null);
   const [loanPaymentHistory, setLoanPaymentHistory] = useState([]);
   const [showLoanDetailModal, setShowLoanDetailModal] = useState(false);
+  const [showPaymentProofModal, setShowPaymentProofModal] = useState(false);
+  const [selectedPaymentProof, setSelectedPaymentProof] = useState(null);
 
   useEffect(() => {
     if (uuid) {
@@ -1852,6 +1854,7 @@ const MemberDetail = () => {
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Jumlah</th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Status</th>
                           <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Tanggal Bayar</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium text-gray-700 uppercase">Bukti</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-gray-200">
@@ -1882,6 +1885,22 @@ const MemberDetail = () => {
                                 "-"
                               }
                             </td>
+                            <td className="px-4 py-2 text-sm">
+                              {schedule.actualPayment?.proofFile ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedPaymentProof(schedule.actualPayment.proofFile);
+                                    setShowPaymentProofModal(true);
+                                  }}
+                                  className="text-blue-600 hover:text-blue-800 underline text-xs"
+                                >
+                                  📷 Lihat
+                                </button>
+                              ) : (
+                                <span className="text-gray-400">-</span>
+                              )}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1905,6 +1924,66 @@ const MemberDetail = () => {
                   Tutup
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Payment Proof Image Modal */}
+      {showPaymentProofModal && selectedPaymentProof && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+             onClick={() => {
+               setShowPaymentProofModal(false);
+               setSelectedPaymentProof(null);
+             }}>
+          <div className="relative max-w-4xl max-h-[90vh] bg-white rounded-lg overflow-hidden"
+               onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-4 border-b border-gray-200 bg-white">
+              <h3 className="text-lg font-semibold text-gray-800">📷 Bukti Pembayaran</h3>
+              <button
+                onClick={() => {
+                  setShowPaymentProofModal(false);
+                  setSelectedPaymentProof(null);
+                }}
+                className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* Image Container */}
+            <div className="p-4 bg-gray-50 overflow-auto max-h-[calc(90vh-80px)]">
+              <img
+                src={`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}${selectedPaymentProof}`}
+                alt="Bukti Pembayaran"
+                className="w-full h-auto object-contain"
+                onError={(e) => {
+                  e.target.onerror = null;
+                  e.target.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iNDAwIiBoZWlnaHQ9IjMwMCIgZmlsbD0iI2VlZSIvPjx0ZXh0IHRleHQtYW5jaG9yPSJtaWRkbGUiIHg9IjIwMCIgeT0iMTUwIiBzdHlsZT0iZmlsbDojYWFhO2ZvbnQtd2VpZ2h0OmJvbGQ7Zm9udC1zaXplOjI0cHg7Zm9udC1mYW1pbHk6QXJpYWwsSGVsdmV0aWNhLHNhbnMtc2VyaWY7ZG9taW5hbnQtYmFzZWxpbmU6Y2VudHJhbCI+R2FtYmFyIHRpZGFrIGRpdGVtdWthbjwvdGV4dD48L3N2Zz4=';
+                }}
+              />
+            </div>
+            
+            {/* Modal Footer with Actions */}
+            <div className="p-4 border-t border-gray-200 bg-white flex justify-between items-center">
+              <a
+                href={`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}${selectedPaymentProof}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+              >
+                🔗 Buka di Tab Baru
+              </a>
+              <button
+                onClick={() => {
+                  setShowPaymentProofModal(false);
+                  setSelectedPaymentProof(null);
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+              >
+                Tutup
+              </button>
             </div>
           </div>
         </div>
