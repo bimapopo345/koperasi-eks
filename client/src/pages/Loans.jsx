@@ -335,7 +335,12 @@ const Loans = () => {
       const response = await axios.put(
         `${API_URL}/api/admin/loan-payments/${editingPayment._id}`,
         editFormData,
-        { headers: { Authorization: `Bearer ${token}` } }
+        { 
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          } 
+        }
       );
 
       if (response.data.success) {
@@ -346,6 +351,7 @@ const Loans = () => {
       }
     } catch (error) {
       console.error("Error updating payment:", error);
+      console.error("Error response:", error.response?.data);
       toast.error(error.response?.data?.message || "Gagal memperbarui pembayaran");
     }
   };

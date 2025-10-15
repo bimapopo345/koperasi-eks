@@ -543,50 +543,78 @@ const updatePayment = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { amount, paymentDate, description, notes } = req.body;
 
-  // Find payment
-  const payment = await LoanPayment.findById(id);
-  if (!payment) {
-    return res.status(404).json({
-      success: false,
-      message: "Pembayaran tidak ditemukan",
-    });
-  }
-
-  // Only allow update for pending payments
-  if (payment.status !== "Pending") {
-    return res.status(400).json({
-      success: false,
-      message: "Hanya pembayaran dengan status Pending yang dapat diubah",
-    });
-  }
-
-  // Update payment fields
-  if (amount !== undefined) payment.amount = Number(amount);
-  if (paymentDate !== undefined) payment.paymentDate = new Date(paymentDate);
-  if (description !== undefined) payment.description = description;
-  if (notes !== undefined) payment.notes = notes;
-
-  // Recalculate payment type if amount or date changed
-  if (amount !== undefined || paymentDate !== undefined) {
-    const loan = await Loan.findById(payment.loanId);
-    if (loan) {
-      let paymentType = "Full";
-      if (payment.amount < loan.monthlyInstallment) {
-        paymentType = "Partial";
-      }
+  try {
+    // Find payment with populate to get full data
+    const payment = await LoanPayment.findById(id)
+      .populate('loanId')
+      .populate('memberId');
       
-      const payDate = new Date(payment.paymentDate);
-      const dueDate = payment.dueDate;
-      
-      if (payDate > dueDate) {
-        paymentType = "Late";
-      }
-      
-      payment.paymentType = paymentType;
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: "Pembayaran tidak ditemukan",
+      });
     }
+
+    // Only allow update for pending payments
+    if (payment.status !== "Pending") {
+      return res.status(400).json({
+        success: false,
+        message: `Tidak dapat mengubah pembayaran dengan status ${payment.status}. Hanya pembayaran dengan status Pending yang dapat diubah`,
+      });
+    }
+  } catch (err) {
+    console.error("Error finding payment:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Error saat mencari data pembayaran",
+    });
   }
 
-  await payment.save();
+  try {
+    // Update payment fields
+    if (amount !== undefined && amount !== '') {
+      payment.amount = Number(amount);
+    }
+    if (paymentDate !== undefined && paymentDate !== '') {
+      payment.paymentDate = new Date(paymentDate);
+    }
+    if (description !== undefined) {
+      payment.description = description;
+    }
+    if (notes !== undefined) {
+      payment.notes = notes;
+    }
+
+    // Recalculate payment type if amount or date changed
+    if ((amount !== undefined && amount !== '') || (paymentDate !== undefined && paymentDate !== '')) {
+      const loan = payment.loanId; // Already populated
+      if (loan) {
+        let paymentType = "Full";
+        if (payment.amount < loan.monthlyInstallment) {
+          paymentType = "Partial";
+        }
+        
+        const payDate = new Date(payment.paymentDate);
+        const dueDate = payment.dueDate;
+        
+        if (payDate > dueDate) {
+          paymentType = "Late";
+        }
+        
+        payment.paymentType = paymentType;
+      }
+    }
+
+    await payment.save();
+  } catch (saveErr) {
+    console.error("Error saving payment:", saveErr);
+    return res.status(500).json({
+      success: false,
+      message: "Error saat menyimpan perubahan pembayaran",
+      error: saveErr.message
+    });
+  }
 
   // Populate for response
   await payment.populate([
