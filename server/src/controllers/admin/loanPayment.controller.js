@@ -474,6 +474,121 @@ const getOverduePayments = asyncHandler(async (req, res) => {
   });
 });
 
+// Delete loan payment
+const deletePayment = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  // Find payment
+  const payment = await LoanPayment.findById(id);
+  if (!payment) {
+    return res.status(404).json({
+      success: false,
+      message: "Pembayaran tidak ditemukan",
+    });
+  }
+
+  // Delete proof file if exists
+  if (payment.proofFile) {
+    try {
+      const filePath = path.join(process.cwd(), payment.proofFile.replace(/^\//, ''));
+      await fs.unlink(filePath);
+      console.log("Proof file deleted:", filePath);
+    } catch (err) {
+      console.error("Error deleting proof file:", err);
+      // Continue even if file deletion fails
+    }
+  }
+
+  // If payment was approved, need to update loan
+  if (payment.status === "Approved") {
+    const loan = await Loan.findById(payment.loanId);
+    if (loan) {
+      // Recalculate loan values
+      loan.totalPaid = Math.max(0, loan.totalPaid - payment.amount);
+      loan.outstandingAmount = loan.loanAmount + loan.interestAmount - loan.totalPaid;
+      loan.paidPeriods = Math.max(0, loan.paidPeriods - 1);
+      
+      // Update loan status if needed
+      if (loan.paidPeriods === 0) {
+        loan.status = "Active";
+      }
+      
+      await loan.save();
+    }
+  }
+
+  // Delete payment
+  await payment.deleteOne();
+
+  res.status(200).json({
+    success: true,
+    message: "Pembayaran berhasil dihapus",
+  });
+});
+
+// Update loan payment
+const updatePayment = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { amount, paymentDate, description, notes } = req.body;
+
+  // Find payment
+  const payment = await LoanPayment.findById(id);
+  if (!payment) {
+    return res.status(404).json({
+      success: false,
+      message: "Pembayaran tidak ditemukan",
+    });
+  }
+
+  // Only allow update for pending payments
+  if (payment.status !== "Pending") {
+    return res.status(400).json({
+      success: false,
+      message: "Hanya pembayaran dengan status Pending yang dapat diubah",
+    });
+  }
+
+  // Update payment fields
+  if (amount !== undefined) payment.amount = amount;
+  if (paymentDate !== undefined) payment.paymentDate = new Date(paymentDate);
+  if (description !== undefined) payment.description = description;
+  if (notes !== undefined) payment.notes = notes;
+
+  // Recalculate payment type if amount or date changed
+  if (amount !== undefined || paymentDate !== undefined) {
+    const loan = await Loan.findById(payment.loanId);
+    if (loan) {
+      let paymentType = "Full";
+      if (payment.amount < loan.monthlyInstallment) {
+        paymentType = "Partial";
+      }
+      
+      const payDate = new Date(payment.paymentDate);
+      const dueDate = payment.dueDate;
+      
+      if (payDate > dueDate) {
+        paymentType = "Late";
+      }
+      
+      payment.paymentType = paymentType;
+    }
+  }
+
+  await payment.save();
+
+  // Populate for response
+  await payment.populate([
+    { path: "memberId", select: "name uuid" },
+    { path: "loanId", select: "uuid loanProductId", populate: { path: "loanProductId", select: "title" } },
+  ]);
+
+  res.status(200).json({
+    success: true,
+    message: "Pembayaran berhasil diperbarui",
+    data: payment,
+  });
+});
+
 export {
   createPayment,
   approvePayment,
@@ -482,4 +597,6 @@ export {
   getPaymentsByLoan,
   bulkApprovePayments,
   getOverduePayments,
+  deletePayment,
+  updatePayment,
 };

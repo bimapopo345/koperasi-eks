@@ -9,6 +9,8 @@ import {
   getPaymentsByLoan,
   bulkApprovePayments,
   getOverduePayments,
+  deletePayment,
+  updatePayment,
 } from "../controllers/admin/loanPayment.controller.js";
 import { verifyToken } from "../middlewares/auth.middleware.js";
 import { validate } from "../middlewares/validate.middleware.js";
@@ -91,5 +93,11 @@ router.post(
   validate(bulkApproveValidation),
   bulkApprovePayments
 );
+
+// Delete payment
+router.delete("/:id", deletePayment);
+
+// Update payment
+router.put("/:id", updatePayment);
 
 export default router;

@@ -104,13 +104,13 @@ const Dashboard = () => {
           color="bg-pink-100 text-pink-600"
         />
         <StatCard
-          title="Total Setoran"
+          title="Total Tabungan"
           value={stats.totalDeposits}
           icon="💰"
           color="bg-rose-100 text-rose-600"
         />
         <StatCard
-          title="Produk Aktif"
+          title="Produk Simpanan"
           value={stats.totalProducts}
           icon="📋"
           color="bg-purple-100 text-purple-600"
@@ -138,7 +138,7 @@ const Dashboard = () => {
           color="bg-green-100 text-green-600"
         />
         <StatCard
-          title="Total Terbayar"
+          title="Total Pinjaman Terbayar"
           value={typeof stats.totalLoanCollected === 'number' ? 
             new Intl.NumberFormat("id-ID", {
               style: "currency",
