@@ -802,7 +802,7 @@ const MemberDetail = () => {
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
             >
-              🏦 Pinjaman (0)
+              🏦 Pinjaman ({loans.length})
             </button>
           </nav>
         </div>

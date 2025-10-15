@@ -168,7 +168,7 @@ const makeLoanPayment = asyncHandler(async (req, res) => {
   // Handle file upload if exists
   let proofFile = null;
   if (req.file) {
-    proofFile = `/uploads/loans/${req.file.filename}`;
+    proofFile = `/uploads/pinjaman/${req.file.filename}`;
   }
 
   // Create payment

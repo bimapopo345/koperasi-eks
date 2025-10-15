@@ -155,6 +155,7 @@ const Loans = () => {
     if (formData.memberId) {
       // Find active loans for this member
       const memberLoans = loans.filter(loan => {
+        if (!loan.memberId) return false;
         const memberId = typeof loan.memberId === 'object' ? loan.memberId._id : loan.memberId;
         return memberId === formData.memberId;
       });
@@ -627,6 +628,7 @@ const Loans = () => {
                   {loans
                     .filter(loan => {
                       // Debug logging
+                      if (!loan.memberId) return false;
                       const loanMemberId = typeof loan.memberId === 'object' ? loan.memberId._id : loan.memberId;
                       const isMatch = loanMemberId === formData.memberId;
                       if (isMatch) {
@@ -641,6 +643,7 @@ const Loans = () => {
                     ))}
                 </select>
                 {formData.memberId && loans.filter(loan => {
+                  if (!loan.memberId) return false;
                   const loanMemberId = typeof loan.memberId === 'object' ? loan.memberId._id : loan.memberId;
                   return loanMemberId === formData.memberId;
                 }).length === 0 && (

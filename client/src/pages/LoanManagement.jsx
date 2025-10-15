@@ -307,8 +307,21 @@ const LoanManagement = () => {
   };
 
   const handleCreateLoan = async () => {
-    if (!createData.memberId || !createData.loanProductId) {
-      toast.error("Pilih anggota dan produk pinjaman");
+    // Validasi field wajib dengan pesan spesifik
+    if (!createData.memberId) {
+      toast.error("Anggota harus dipilih");
+      return;
+    }
+    
+    if (!createData.loanProductId) {
+      toast.error("Produk pinjaman harus dipilih");
+      return;
+    }
+    
+    // Validasi down payment jika produk memiliki minimum DP
+    const selectedProduct = loanProducts.find(p => p._id === createData.loanProductId);
+    if (selectedProduct && createData.downPayment < selectedProduct.downPayment) {
+      toast.error(`Uang muka minimal ${formatCurrency(selectedProduct.downPayment)}`);
       return;
     }
 
@@ -700,7 +713,10 @@ const LoanManagement = () => {
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-[600px] max-h-[80vh] overflow-y-auto">
-            <h2 className="text-lg font-bold mb-4">➕ Buat Pengajuan Pinjaman</h2>
+            <h2 className="text-lg font-bold mb-2">➕ Buat Pengajuan Pinjaman</h2>
+            <p className="text-sm text-gray-500 mb-4">
+              <span className="text-red-500">*</span> Field wajib diisi
+            </p>
             
             <div className="space-y-4">
               {/* Member Selection */}
@@ -711,7 +727,10 @@ const LoanManagement = () => {
                 <select
                   value={createData.memberId}
                   onChange={(e) => setCreateData({...createData, memberId: e.target.value})}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    !createData.memberId ? "border-red-300" : "border-gray-300"
+                  }`}
+                  required
                 >
                   <option value="">-- Pilih Anggota --</option>
                   {members.map(member => (
@@ -733,7 +752,10 @@ const LoanManagement = () => {
                     setCreateData({...createData, loanProductId: e.target.value});
                     setCalculationResult(null);
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                    !createData.loanProductId ? "border-red-300" : "border-gray-300"
+                  }`}
+                  required
                 >
                   <option value="">-- Pilih Produk --</option>
                   {loanProducts.filter(p => p.isActive).map(product => (

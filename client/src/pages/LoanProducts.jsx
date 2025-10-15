@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import api from "../api/index.jsx";
+import toast, { Toaster } from "react-hot-toast";
 
 const LoanProducts = () => {
   const [loanProducts, setLoanProducts] = useState([]);
@@ -55,13 +56,25 @@ const LoanProducts = () => {
           );
           console.log("Update response:", response.data);
           if (response.data.success) {
+            toast.success("Produk pinjaman berhasil diperbarui");
             fetchLoanProducts();
             setShowModal(false);
             setEditingProduct(null);
+            setFormData({
+              title: "",
+              loanTerm: "",
+              maxLoanAmount: "",
+              downPayment: "",
+              interestRate: "",
+              description: "",
+              isActive: true,
+            });
           } else {
+            toast.error(response.data.message || "Gagal memperbarui produk pinjaman");
             setError(response.data.message || "Gagal menyimpan data");
           }
         } else {
+          toast.error("ID produk tidak valid");
           setError("ID produk tidak valid");
           return;
         }
@@ -69,6 +82,7 @@ const LoanProducts = () => {
         const response = await api.post("/api/admin/loan-products", productData);
         console.log("Create response:", response.data);
         if (response.data.success) {
+          toast.success("Produk pinjaman berhasil ditambahkan");
           fetchLoanProducts();
           setShowModal(false);
           setFormData({
@@ -81,11 +95,14 @@ const LoanProducts = () => {
             isActive: true,
           });
         } else {
+          toast.error(response.data.message || "Gagal menambahkan produk pinjaman");
           setError(response.data.message || "Gagal menyimpan data");
         }
       }
     } catch (err) {
-      setError("Gagal menyimpan data");
+      const errorMsg = err.response?.data?.message || "Gagal menyimpan data";
+      toast.error(errorMsg);
+      setError(errorMsg);
       console.error("Submit error:", err);
     }
   };
@@ -121,17 +138,17 @@ const LoanProducts = () => {
         const response = await api.delete(`/api/admin/loan-products/${id}`);
         console.log("Delete response:", response.data);
         if (response.data.success) {
+          toast.success("Produk pinjaman berhasil dihapus");
           fetchLoanProducts();
         } else {
+          toast.error(response.data.message || "Gagal menghapus produk");
           setError(response.data.message || "Gagal menghapus data");
         }
       } catch (err) {
         console.error("Delete error:", err);
-        if (err.response?.data?.message) {
-          setError(err.response.data.message);
-        } else {
-          setError("Gagal menghapus data");
-        }
+        const errorMsg = err.response?.data?.message || "Gagal menghapus produk pinjaman";
+        toast.error(errorMsg);
+        setError(errorMsg);
       }
     }
   };
@@ -147,17 +164,19 @@ const LoanProducts = () => {
       const response = await api.put(`/api/admin/loan-products/${id}/toggle`);
       console.log("Toggle status response:", response.data);
       if (response.data.success) {
+        const product = loanProducts.find(p => p._id === id);
+        const newStatus = product?.isActive ? "dinonaktifkan" : "diaktifkan";
+        toast.success(`Produk pinjaman berhasil ${newStatus}`);
         fetchLoanProducts();
       } else {
+        toast.error(response.data.message || "Gagal mengubah status produk");
         setError(response.data.message || "Gagal mengubah status produk");
       }
     } catch (err) {
       console.error("Toggle status error:", err);
-      if (err.response?.data?.message) {
-        setError(err.response.data.message);
-      } else {
-        setError("Gagal mengubah status produk");
-      }
+      const errorMsg = err.response?.data?.message || "Gagal mengubah status produk";
+      toast.error(errorMsg);
+      setError(errorMsg);
     }
   };
 
@@ -201,6 +220,7 @@ const LoanProducts = () => {
 
   return (
     <div className="p-4 sm:p-6">
+      <Toaster position="top-right" />
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 space-y-4 sm:space-y-0">
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
           🌸 Manajemen Produk Pinjaman
@@ -315,7 +335,7 @@ const LoanProducts = () => {
                   ? "Edit Produk Pinjaman"
                   : "Tambah Produk Pinjaman"}
               </h3>
-              <form onSubmit={handleSubmit}>
+              <form onSubmit={handleSubmit} noValidate>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Nama Pinjaman *
