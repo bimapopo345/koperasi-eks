@@ -6,6 +6,8 @@ import api from "../api/index.jsx";
 import { loanApi, loanPaymentApi } from "../api/loanApi.jsx";
 import Pagination from "../components/Pagination.jsx";
 import { toast } from "react-toastify";
+import jsPDF from "jspdf";
+import "jspdf-autotable";
 
 const MemberDetail = () => {
   const { uuid } = useParams();
@@ -337,6 +339,303 @@ const MemberDetail = () => {
       currency: "IDR",
       minimumFractionDigits: 0,
     }).format(amount);
+  };
+
+  // Generate PDF Mutasi Simpanan
+  const generateMutasiPDF = () => {
+    if (!member || !savings) {
+      toast.error("Data member atau simpanan tidak tersedia");
+      return;
+    }
+
+    const doc = new jsPDF();
+    const pageHeight = doc.internal.pageSize.height;
+    const pageWidth = doc.internal.pageSize.width;
+    let yPos = 20;
+    
+    // Get current date for period
+    const currentDate = new Date();
+    const monthNames = ["JANUARI", "FEBRUARI", "MARET", "APRIL", "MEI", "JUNI", 
+                       "JULI", "AGUSTUS", "SEPTEMBER", "OKTOBER", "NOVEMBER", "DESEMBER"];
+    const currentMonth = monthNames[currentDate.getMonth()];
+    const currentYear = currentDate.getFullYear();
+    
+    // Filter approved savings only for the report
+    const approvedSavings = savings
+      .filter(s => s.status === "Approved")
+      .sort((a, b) => new Date(a.savingsDate) - new Date(b.savingsDate));
+    
+    // Calculate opening balance (assuming starts from 0)
+    let saldo = 0;
+    const saldoAwal = 0;
+    
+    // Prepare transaction data
+    const transactions = approvedSavings.map(saving => {
+      const amount = saving.amount;
+      const isDebit = saving.type === "Penarikan";
+      
+      if (isDebit) {
+        saldo -= amount;
+      } else {
+        saldo += amount;
+      }
+      
+      return {
+        date: format(new Date(saving.savingsDate), "dd/MM"),
+        description: `${saving.type.toUpperCase()} - ${saving.description || 'Simpanan Rutin'} - Periode ${saving.period || ''}${saving.notes ? ' - ' + saving.notes : ''}`,
+        type: saving.type,
+        amount: amount,
+        isDebit: isDebit,
+        balance: saldo
+      };
+    });
+    
+    // Calculate totals
+    const totalCredit = transactions.filter(t => !t.isDebit).reduce((sum, t) => sum + t.amount, 0);
+    const totalDebit = transactions.filter(t => t.isDebit).reduce((sum, t) => sum + t.amount, 0);
+    const saldoAkhir = saldo;
+    
+    // Function to add header on each page
+    const addHeader = (pageNum, totalPages) => {
+      yPos = 20;
+      
+      // Title
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "bold");
+      doc.text("REKENING SIMPANAN", 20, yPos);
+      yPos += 8;
+      
+      // Member info with border
+      const memberInfoStartY = yPos - 2;
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.text(member.name.toUpperCase(), 22, yPos);
+      yPos += 5;
+      doc.setFont("helvetica", "normal");
+      doc.text(member.address || "ALAMAT TIDAK TERSEDIA", 22, yPos);
+      yPos += 5;
+      doc.text(member.phone || "TELEPON TIDAK TERSEDIA", 22, yPos);
+      yPos += 5;
+      doc.text("INDONESIA", 22, yPos);
+      yPos += 5;
+      
+      // Draw border around member info
+      doc.setLineWidth(0.8);
+      doc.setDrawColor(0, 0, 0); // Black color
+      doc.rect(20, memberInfoStartY - 3, 90, yPos - memberInfoStartY, 'S');
+      
+      // Account info on the right with border
+      const accountInfoStartY = 25;
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text(`NO. REKENING : ${member.uuid}`, pageWidth - 78, 28);
+      doc.text(`HALAMAN : ${pageNum} / ${totalPages}`, pageWidth - 78, 33);
+      doc.text(`PERIODE : ${currentMonth} ${currentYear}`, pageWidth - 78, 38);
+      doc.text("MATA UANG : IDR", pageWidth - 78, 43);
+      
+      // Draw border around account info
+      doc.setLineWidth(0.8);
+      doc.rect(pageWidth - 82, accountInfoStartY - 2, 72, 22, 'S');
+      
+      yPos += 5;
+      
+      // Notes with 2 column layout and border
+      const notesStartY = yPos;
+      
+      // Draw border first
+      const notesHeight = 30; // Fixed height for notes section
+      doc.setLineWidth(0.8);
+      doc.setDrawColor(0, 0, 0);
+      doc.rect(20, notesStartY, pageWidth - 40, notesHeight, 'S');
+      
+      // Add CATATAN header inside border
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "bold");
+      doc.text("CATATAN:", 24, notesStartY + 6);
+      
+      // Calculate 50% width for each column
+      const columnWidth = (pageWidth - 40) / 2; // Total width divided by 2
+      const leftColumnX = 24; // Start position for left column
+      const rightColumnX = 20 + columnWidth + 4; // Start position for right column (middle + padding)
+      
+      // Calculate available text width for each column (with padding)
+      const textWidth = columnWidth - 8; // Leave some padding from edges
+      
+      // Left column note (50% width)
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      
+      // Left note as single string for better text wrapping
+      const leftNoteText = "• Apabila anggota tidak melakukan sanggahan atas Laporan Mutasi Simpanan ini sampai dengan akhir bulan berikutnya, anggota dianggap telah menyetujui segala data yang tercantum pada Laporan Mutasi Simpanan ini.";
+      
+      // Use splitTextToSize for automatic text wrapping
+      const leftLines = doc.splitTextToSize(leftNoteText, textWidth);
+      
+      let leftY = notesStartY + 11;
+      leftLines.forEach(line => {
+        doc.text(line, leftColumnX, leftY);
+        leftY += 3.5;
+      });
+      
+      // Right column note (50% width)
+      const rightNoteText = "• Koperasi berhak setiap saat melakukan koreksi apabila ada kesalahan pada Laporan Mutasi Simpanan.";
+      
+      // Use splitTextToSize for automatic text wrapping
+      const rightLines = doc.splitTextToSize(rightNoteText, textWidth);
+      
+      let rightY = notesStartY + 11;
+      rightLines.forEach(line => {
+        doc.text(line, rightColumnX, rightY);
+        rightY += 3.5;
+      });
+      
+      // Draw vertical line between columns
+      doc.setLineWidth(0.3);
+      doc.line(20 + columnWidth, notesStartY, 20 + columnWidth, notesStartY + notesHeight);
+      
+      // Update yPos after notes section
+      yPos = notesStartY + notesHeight + 6;
+      
+      // Table header
+      doc.setFontSize(9);
+      doc.setFont("helvetica", "bold");
+      doc.text("TANGGAL", 20, yPos);
+      doc.text("KETERANGAN", 40, yPos);
+      doc.text("MUTASI", 120, yPos);
+      doc.text("SALDO", 160, yPos);
+      
+      // Line under header
+      doc.setLineWidth(0.5);
+      doc.line(20, yPos + 2, pageWidth - 20, yPos + 2);
+      yPos += 7;
+    };
+    
+    // Calculate total pages needed (considering multi-line descriptions)
+    const rowsPerPage = 22; // Reduced to accommodate multi-line descriptions
+    // Estimate total rows including multi-line descriptions
+    let estimatedRows = 2; // Opening + summary
+    transactions.forEach(tx => {
+      const lines = doc.splitTextToSize(tx.description, 75);
+      estimatedRows += lines.length > 1 ? lines.length * 0.7 : 1;
+    });
+    const totalPages = Math.ceil(estimatedRows / rowsPerPage);
+    
+    // Start first page
+    addHeader(1, totalPages);
+    
+    // Add opening balance
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text(format(new Date(currentYear, currentDate.getMonth(), 1), "dd/MM"), 20, yPos);
+    doc.text("SALDO AWAL", 40, yPos);
+    doc.text(formatCurrency(saldoAwal).replace("Rp", "").trim(), 160, yPos, { align: "right" });
+    yPos += 5;
+    
+    let currentPage = 1;
+    let rowCount = 1;
+    
+    // Add transactions
+    transactions.forEach((tx, index) => {
+      // Check if need new page
+      if (rowCount >= rowsPerPage) {
+        // Add footer
+        doc.setFontSize(8);
+        doc.text(`Bersambung ke Halaman berikut`, pageWidth - 60, pageHeight - 15);
+        
+        // New page
+        doc.addPage();
+        currentPage++;
+        addHeader(currentPage, totalPages);
+        rowCount = 0;
+      }
+      
+      // Add transaction row
+      doc.setFontSize(9);
+      doc.text(tx.date, 20, yPos);
+      
+      // Handle long description with word wrap
+      let desc = tx.description;
+      const maxWidth = 75; // Maximum width for description column
+      
+      // Split text into lines if too long
+      const lines = doc.splitTextToSize(desc, maxWidth);
+      
+      // Print first line with other columns
+      doc.text(lines[0], 40, yPos);
+      
+      // Amount with DB/CR indicator
+      const amountStr = formatCurrency(tx.amount).replace("Rp", "").trim();
+      if (tx.isDebit) {
+        doc.text(amountStr + " DB", 120, yPos);
+      } else {
+        doc.text(amountStr + " CR", 120, yPos);
+      }
+      
+      // Balance
+      doc.text(formatCurrency(tx.balance).replace("Rp", "").trim(), 160, yPos, { align: "right" });
+      
+      // Print additional lines if description is multi-line
+      if (lines.length > 1) {
+        for (let i = 1; i < lines.length; i++) {
+          yPos += 4;
+          rowCount += 0.3; // Count partial rows for pagination
+          
+          // Check if need new page for additional lines
+          if (rowCount >= rowsPerPage) {
+            // Add footer
+            doc.setFontSize(8);
+            doc.text(`Bersambung ke Halaman berikut`, pageWidth - 60, pageHeight - 15);
+            
+            // New page
+            doc.addPage();
+            currentPage++;
+            addHeader(currentPage, totalPages);
+            rowCount = 0;
+          }
+          
+          doc.setFontSize(9);
+          doc.text(lines[i], 40, yPos);
+        }
+      }
+      
+      yPos += 5;
+      rowCount++;
+    });
+    
+    // Add summary at the end
+    yPos += 5;
+    doc.setLineWidth(0.5);
+    doc.line(20, yPos, pageWidth - 20, yPos);
+    yPos += 7;
+    
+    doc.setFont("helvetica", "bold");
+    doc.text("SALDO AWAL :", 20, yPos);
+    doc.text(formatCurrency(saldoAwal).replace("Rp", "").trim(), 80, yPos, { align: "right" });
+    yPos += 5;
+    
+    doc.text("MUTASI CR :", 20, yPos);
+    doc.text(formatCurrency(totalCredit).replace("Rp", "").trim(), 80, yPos, { align: "right" });
+    doc.text(transactions.filter(t => !t.isDebit).length.toString(), 95, yPos);
+    yPos += 5;
+    
+    doc.text("MUTASI DB :", 20, yPos);
+    doc.text(formatCurrency(totalDebit).replace("Rp", "").trim(), 80, yPos, { align: "right" });
+    doc.text(transactions.filter(t => t.isDebit).length.toString(), 95, yPos);
+    yPos += 5;
+    
+    doc.text("SALDO AKHIR :", 20, yPos);
+    doc.text(formatCurrency(saldoAkhir).replace("Rp", "").trim(), 80, yPos, { align: "right" });
+    
+    // Footer on last page
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.text("KOPERASI", pageWidth - 40, pageHeight - 15);
+    
+    // Save the PDF
+    const fileName = `Mutasi_Simpanan_${member.uuid}_${currentMonth}_${currentYear}.pdf`;
+    doc.save(fileName);
+    
+    toast.success("PDF Mutasi Simpanan berhasil diunduh");
   };
 
   const getStatusBadge = (status) => {
@@ -813,9 +1112,22 @@ const MemberDetail = () => {
         <div className="p-6">
           {activeTab === "simpanan" && (
             <div>
+              {/* Header with Print Button */}
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-lg font-semibold text-gray-900">Ringkasan Proyeksi & Realisasi</h3>
+                <button
+                  onClick={() => generateMutasiPDF()}
+                  className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  Print Mutasi Simpanan
+                </button>
+              </div>
+              
               {/* Projection Cards */}
               <div className="mb-8">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Ringkasan Proyeksi & Realisasi</h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   {/* Proyeksi Card */}
                   <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-6 border border-blue-200">
