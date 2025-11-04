@@ -2,50 +2,61 @@ name: Deploy to Podman Server
 
 on:
   push:
-    branches:
-      - main
-      - deploy
+    branches: [ main, deploy ]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup SSH key
+      - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy to server via SSH
+      - name: Deploy over SSH
         run: |
-          ssh ${{ secrets.USER }}@${{ secrets.HOST }} << 'EOF'
-            cd /opt/mern/koperasi
-            echo "🌀 Pulling latest code..."
-            git pull origin main || git pull origin deploy
+          ssh -o StrictHostKeyChecking=yes ${{ secrets.USER }}@${{ secrets.HOST }} 'bash -s' <<'EOF'
+            set -euo pipefail
 
-            echo "📦 Rebuilding backend..."
+            cd /opt/mern/koperasi || {
+              echo "Repo not found, cloning..."
+              git clone ${{ secrets.REPO_SSH_URL }} /opt/mern/koperasi
+              cd /opt/mern/koperasi
+            }
+
+            # Pastikan Git mau kerja di folder ini
+            git config --global --add safe.directory /opt/mern/koperasi
+
+            # Ambil kode terbaru, tahan ke branch yang didorong
+            BRANCH="${GITHUB_REF_NAME:-main}"
+            git fetch --all --prune
+            git checkout "$BRANCH" || git checkout main
+            git reset --hard "origin/$BRANCH" || git reset --hard origin/main
+
+            echo "📦 Backend"
             cd server
-            podman build -t koperasi-api .
+            # (opsional) kalau pakai .env runtime, pastikan file .env ada di sini
+            podman build --pull-always --no-cache -t koperasi-api .
             podman stop api || true
             podman rm api || true
-            podman run -d --name api -p 5000:5000 koperasi-api
+            podman run -d --name api -p 5000:5000 --env-file .env koperasi-api
 
-            echo "⚛ Rebuilding frontend..."
+            echo "⚛ Frontend"
             cd ../client
-            npm install
-            npm run build
-            podman build -t koperasi-web .
+            # Build sepenuhnya di dalam container (tidak perlu npm di host)
+            podman build --pull-always --no-cache -t koperasi-web .
             podman stop web || true
             podman rm web || true
             podman run -d --name web -p 3000:80 koperasi-web
 
-            echo "🔁 Restarting Nginx..."
-            sudo systemctl reload nginx
+            echo "🔁 Nginx reload (no password)"
+            sudo -n systemctl reload nginx || echo "skip reload (no change / not needed)"
 
-            echo "✅ Deployment completed successfully!"
+            echo "✅ Done. Running containers:"
+            podman ps
           EOF
