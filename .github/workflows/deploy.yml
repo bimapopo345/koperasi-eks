@@ -48,4 +48,4 @@ jobs:
             sudo systemctl reload nginx
 
             echo "✅ Deployment completed successfully!"
-          EOF
+          EOF
