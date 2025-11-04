@@ -70,7 +70,7 @@ const Login = () => {
             IQQQQBAl
           </h1>
           <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold mb-4 text-pink-100">
-            IQBAL DRAGON
+            IQBAL LOVE KA ADE
           </h2>
           <p className="text-sm sm:text-base lg:text-lg mb-2">
             Lembaga Pelatihan Kerja
