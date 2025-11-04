@@ -66,11 +66,10 @@ const Login = () => {
             </div>
           </div>
           <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold mb-2">
-            {/* LPK SAMIT */}
-            IQQQQBAl
+            LPK SAMIT
           </h1>
           <h2 className="text-lg sm:text-xl lg:text-2xl font-semibold mb-4 text-pink-100">
-            IQBAL LOVE KA ADE
+            Sakura Mitra
           </h2>
           <p className="text-sm sm:text-base lg:text-lg mb-2">
             Lembaga Pelatihan Kerja
