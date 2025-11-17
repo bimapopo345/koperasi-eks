@@ -12,6 +12,12 @@ const Members = () => {
   const [showModal, setShowModal] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
   
+  // 🔴 NEW: state untuk UUID student & dropdown
+  const [availableUuids, setAvailableUuids] = useState([]);
+  const [filteredUuids, setFilteredUuids] = useState([]);
+  const [showUuidDropdown, setShowUuidDropdown] = useState(false);
+  const [loadingUuids, setLoadingUuids] = useState(false);
+
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -34,6 +40,7 @@ const Members = () => {
   useEffect(() => {
     fetchMembers();
     fetchProducts();
+    fetchAvailableUuids(); // 🔴 NEW: ambil daftar UUID dari API student
   }, []);
 
   const fetchProducts = async () => {
@@ -61,6 +68,71 @@ const Members = () => {
     }
   };
 
+  // 🔴 NEW: ambil semua UUID student
+  const fetchAvailableUuids = async () => {
+    setLoadingUuids(true);
+    try {
+      const response = await fetch("https://student.samit.co.id/api/students/uuids");
+      const data = await response.json();
+      if (data.success) {
+        setAvailableUuids(data.data);
+        setFilteredUuids(data.data);
+      }
+    } catch (error) {
+      console.error("Error fetching UUIDs:", error);
+    } finally {
+      setLoadingUuids(false);
+    }
+  };
+
+  // 🔴 NEW: ambil data student berdasarkan UUID & auto-fill form
+  const fetchStudentInfo = async (uuid) => {
+    try {
+      const response = await fetch(`https://student.samit.co.id/api/students/info/${uuid}`);
+      const data = await response.json();
+      if (data.success) {
+        const studentData = data.data;
+
+        setFormData((prev) => ({
+          ...prev,
+          uuid: uuid,
+          name: studentData.name,
+          phone: studentData.phone,
+          city: studentData.birth_place, // birth_place -> city
+          gender: studentData.gender === "l" ? "L" : "P", // convert format
+          completeAddress: prev.completeAddress || "-", // default alamat
+          username: generateUsername(studentData.name), // username dari nama
+        }));
+      }
+    } catch (error) {
+      console.error("Error fetching student info:", error);
+    }
+  };
+
+  // 🔴 NEW: generate username dari nama
+  const generateUsername = (name) => {
+    return name
+      .toLowerCase()
+      .replace(/\s+/g, ".") // spasi -> titik
+      .replace(/[^a-z0-9.]/g, ""); // buang karakter aneh
+  };
+
+  // 🔴 NEW: handle perubahan input UUID + filter dropdown
+  const handleUuidChange = (value) => {
+    setFormData((prev) => ({ ...prev, uuid: value }));
+
+    const filtered = availableUuids.filter((uuid) =>
+      uuid.toLowerCase().includes(value.toLowerCase())
+    );
+    setFilteredUuids(filtered);
+    setShowUuidDropdown(value.length > 0 && filtered.length > 0);
+  };
+
+  // 🔴 NEW: pilih UUID dari dropdown
+  const handleUuidSelect = (selectedUuid) => {
+    setShowUuidDropdown(false);
+    fetchStudentInfo(selectedUuid);
+  };
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -84,7 +156,9 @@ const Members = () => {
         if (response.data.success) {
           fetchMembers();
           setShowModal(false);
+          // 🔴 NEW: reset uuid juga
           setFormData({
+            uuid: "",
             name: "",
             gender: "L",
             phone: "",
@@ -136,7 +210,9 @@ const Members = () => {
 
   const handleAddNew = () => {
     setEditingMember(null);
+    // 🔴 NEW: reset uuid juga
     setFormData({
+      uuid: "",
       name: "",
       gender: "L",
       phone: "",
@@ -190,6 +266,20 @@ const Members = () => {
     setCurrentPage(1);
   };
 
+   // 🔴 NEW: tutup dropdown UUID kalau klik di luar
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest(".uuid-dropdown-container")) {
+        setShowUuidDropdown(false);
+      }
+    };
+
+    document.addEventListener("click", handleClickOutside);
+    return () => {
+      document.removeEventListener("click", handleClickOutside);
+    };
+  }, []);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen p-4">
@@ -216,7 +306,7 @@ const Members = () => {
   return (
     <div className="p-4 sm:p-6">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 space-y-4 sm:space-y-0">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+        <h1 className="text-2xl sm:3xl font-bold text-gray-900">
           🌸 Manajemen Anggota
         </h1>
         <button
@@ -431,19 +521,52 @@ const Members = () => {
               </h3>
               <form onSubmit={handleSubmit}>
                 {!editingMember && (
-                  <div className="mb-4">
+                  // 🔴 NEW: input UUID + dropdown dari API student
+                  <div className="mb-4 relative">
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      UUID (Kosongkan untuk otomatis)
+                      🔍 UUID Student (Pilih dari database)
                     </label>
-                    <input
-                      type="text"
-                      value={formData.uuid}
-                      onChange={(e) =>
-                        setFormData({ ...formData, uuid: e.target.value })
-                      }
-                      placeholder="Contoh: ANG-001"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    <div className="relative uuid-dropdown-container">
+                      <input
+                        type="text"
+                        value={formData.uuid}
+                        onChange={(e) => handleUuidChange(e.target.value)}
+                        onFocus={() =>
+                          setShowUuidDropdown(filteredUuids.length > 0)
+                        }
+                        placeholder="Ketik untuk mencari UUID... (contoh: JPTG0001)"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-pink-500 pr-10"
+                      />
+                      {loadingUuids && (
+                        <div className="absolute right-3 top-2">
+                          <div className="animate-spin h-4 w-4 border-2 border-pink-500 border-t-transparent rounded-full"></div>
+                        </div>
+                      )}
+
+                      {showUuidDropdown && filteredUuids.length > 0 && (
+                        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-48 overflow-y-auto">
+                          {filteredUuids.slice(0, 20).map((uuid) => (
+                            <div
+                              key={uuid}
+                              onClick={() => handleUuidSelect(uuid)}
+                              className="px-3 py-2 hover:bg-pink-50 cursor-pointer text-sm border-b border-gray-100 last:border-b-0"
+                            >
+                              <span className="font-mono text-pink-600">
+                                {uuid}
+                              </span>
+                            </div>
+                          ))}
+                          {filteredUuids.length > 20 && (
+                            <div className="px-3 py-2 text-sm text-gray-500 bg-gray-50">
+                              ... dan {filteredUuids.length - 20} UUID lainnya
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    <small className="text-gray-500 mt-1 block">
+                      💡 Pilih UUID, data akan otomatis terisi.
+                    </small>
                   </div>
                 )}
 
@@ -536,7 +659,8 @@ const Members = () => {
                     <option value="">Pilih Produk Simpanan</option>
                     {products.map((product) => (
                       <option key={product._id} value={product._id}>
-                        {product.title} - Min. Rp {product.depositAmount.toLocaleString('id-ID')}
+                        {product.title} - Min. Rp{" "}
+                        {product.depositAmount.toLocaleString("id-ID")}
                       </option>
                     ))}
                   </select>
@@ -591,7 +715,10 @@ const Members = () => {
                     type="text"
                     value={formData.accountNumber}
                     onChange={(e) =>
-                      setFormData({ ...formData, accountNumber: e.target.value })
+                      setFormData({
+                        ...formData,
+                        accountNumber: e.target.value,
+                      })
                     }
                     placeholder="Contoh: 1234567890"
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
