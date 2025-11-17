@@ -7,7 +7,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -20,10 +19,8 @@ jobs:
           ssh-keyscan -H ${{ secrets.HOST }} >> ~/.ssh/known_hosts
 
       - name: Deploy over SSH
-        env:
-          BRANCH: ${{ github.ref_name }}
         run: |
-          ssh -o StrictHostKeyChecking=yes ${{ secrets.USER }}@${{ secrets.HOST }} << EOF
+          ssh -o StrictHostKeyChecking=yes ${{ secrets.USER }}@${{ secrets.HOST }} 'bash -s' <<'EOF'
             set -euo pipefail
 
             cd /opt/mern/koperasi || {
@@ -32,29 +29,33 @@ jobs:
               cd /opt/mern/koperasi
             }
 
-            git config --add safe.directory /opt/mern/koperasi
+            # Pastikan Git mau kerja di folder ini
+            git config --global --add safe.directory /opt/mern/koperasi
 
-            echo "▶ Checkout branch: ${BRANCH}"
+            # Ambil kode terbaru, tahan ke branch yang didorong
+            BRANCH="${GITHUB_REF_NAME:-main}"
             git fetch --all --prune
-            git checkout "\${BRANCH}" || git checkout main
-            git reset --hard "origin/\${BRANCH}" || git reset --hard origin/main
+            git checkout "$BRANCH" || git checkout main
+            git reset --hard "origin/$BRANCH" || git reset --hard origin/main
 
             echo "📦 Backend"
             cd server
+            # (opsional) kalau pakai .env runtime, pastikan file .env ada di sini
             podman build --pull-always --no-cache -t koperasi-api .
             podman stop api || true
             podman rm api || true
-            podman run -d --name api --network host --env-file .env koperasi-api
+            podman run -d --name api -p 5000:5000 --env-file .env koperasi-api
 
             echo "⚛ Frontend"
             cd ../client
+            # Build sepenuhnya di dalam container (tidak perlu npm di host)
             podman build --pull-always --no-cache -t koperasi-web .
             podman stop web || true
             podman rm web || true
             podman run -d --name web -p 3000:80 koperasi-web
 
-            echo "🔁 Reload nginx (if exists)"
-            sudo -n systemctl reload nginx || echo "skip reload"
+            echo "🔁 Nginx reload (no password)"
+            sudo -n systemctl reload nginx || echo "skip reload (no change / not needed)"
 
             echo "✅ Done. Running containers:"
             podman ps
