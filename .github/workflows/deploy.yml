@@ -49,9 +49,11 @@ jobs:
             echo "⚛ Frontend"
             cd ../client
             # Build sepenuhnya di dalam container (tidak perlu npm di host)
-            podman build --pull-always --no-cache -t koperasi-web .
             podman stop web || true
             podman rm web || true
+            # Hapus port forwarding leftover dari rootlessport (kalau ada)
+            podman network reload || true
+            podman build --pull-always --no-cache -t koperasi-web .
             podman run -d --name web -p 3000:80 koperasi-web
 
             echo "🔁 Nginx reload (no password)"
