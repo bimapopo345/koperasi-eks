@@ -138,10 +138,8 @@ export const calculateUpgradeCompensation = async (req, res) => {
   }
 };
 
-// Execute product upgrade
+// Execute product upgrade TANPA transaction
 export const executeProductUpgrade = async (req, res) => {
-  const session = await mongoose.startSession();
-  
   try {
     const { memberId, newProductId, calculationResult } = req.body;
 
@@ -149,42 +147,37 @@ export const executeProductUpgrade = async (req, res) => {
     if (!memberId || !newProductId || !calculationResult) {
       return res.status(400).json({
         success: false,
-        message: "Data tidak lengkap untuk eksekusi upgrade"
+        message: "Data tidak lengkap untuk eksekusi upgrade",
       });
     }
 
-    // Start transaction
-    session.startTransaction();
-
-    // Verifikasi ulang member dan produk
-    const member = await Member.findById(memberId).session(session);
+    // Verifikasi ulang member
+    const member = await Member.findById(memberId);
     if (!member) {
-      await session.abortTransaction();
       return res.status(404).json({
         success: false,
-        message: "Member tidak ditemukan"
+        message: "Member tidak ditemukan",
       });
     }
 
     if (member.hasUpgraded) {
-      await session.abortTransaction();
       return res.status(400).json({
         success: false,
-        message: "Member sudah pernah melakukan upgrade"
+        message: "Member sudah pernah melakukan upgrade",
       });
     }
 
-    const newProduct = await Product.findById(newProductId).session(session);
+    // Verifikasi ulang produk baru
+    const newProduct = await Product.findById(newProductId);
     if (!newProduct) {
-      await session.abortTransaction();
       return res.status(404).json({
         success: false,
-        message: "Produk baru tidak ditemukan"
+        message: "Produk baru tidak ditemukan",
       });
     }
 
     // Buat record ProductUpgrade
-    const productUpgrade = new ProductUpgrade({
+    const productUpgrade = await ProductUpgrade.create({
       memberId: member._id,
       oldProductId: calculationResult.oldProductId,
       newProductId: newProduct._id,
@@ -194,25 +187,24 @@ export const executeProductUpgrade = async (req, res) => {
       newMonthlyDeposit: calculationResult.newMonthlyDeposit,
       compensationPerMonth: calculationResult.compensationPerMonth,
       newPaymentWithCompensation: calculationResult.newPaymentWithCompensation,
-      status: "ACTIVE"
+      status: "ACTIVE",
     });
 
-    const savedUpgrade = await productUpgrade.save({ session });
+    // Pastikan upgradeHistory array
+    if (!Array.isArray(member.upgradeHistory)) {
+      member.upgradeHistory = [];
+    }
 
     // Update Member
     member.hasUpgraded = true;
-    member.currentUpgradeId = savedUpgrade._id;
-    member.upgradeHistory.push(savedUpgrade._id);
+    member.currentUpgradeId = productUpgrade._id;
+    member.upgradeHistory.push(productUpgrade._id);
     member.productId = newProduct._id;
 
-    await member.save({ session });
+    await member.save();
 
-    // Commit transaction
-    await session.commitTransaction();
-
-    // Populate data untuk response
-    const populatedUpgrade = await ProductUpgrade
-      .findById(savedUpgrade._id)
+    // Populate buat response
+    const populatedUpgrade = await ProductUpgrade.findById(productUpgrade._id)
       .populate("memberId", "uuid name")
       .populate("oldProductId", "title depositAmount")
       .populate("newProductId", "title depositAmount");
@@ -220,22 +212,18 @@ export const executeProductUpgrade = async (req, res) => {
     return res.status(201).json({
       success: true,
       message: "Upgrade produk berhasil dilakukan",
-      data: populatedUpgrade
+      data: populatedUpgrade,
     });
-
   } catch (error) {
-    // Rollback transaction
-    await session.abortTransaction();
     console.error("Error executing product upgrade:", error);
     return res.status(500).json({
       success: false,
       message: "Terjadi kesalahan saat melakukan upgrade produk",
-      error: error.message
+      error: error.message,
     });
-  } finally {
-    session.endSession();
   }
 };
+
 
 // Get upgrade history for a member
 export const getMemberUpgradeHistory = async (req, res) => {
@@ -263,67 +251,58 @@ export const getMemberUpgradeHistory = async (req, res) => {
   }
 };
 
-// Cancel product upgrade (for rollback purposes)
+// Cancel product upgrade (for rollback purposes) TANPA transaction
 export const cancelProductUpgrade = async (req, res) => {
-  const session = await mongoose.startSession();
-  
   try {
     const { upgradeId } = req.params;
 
-    session.startTransaction();
-
-    const upgrade = await ProductUpgrade
-      .findById(upgradeId)
-      .session(session);
-
+    const upgrade = await ProductUpgrade.findById(upgradeId);
     if (!upgrade) {
-      await session.abortTransaction();
       return res.status(404).json({
         success: false,
-        message: "Upgrade tidak ditemukan"
+        message: "Upgrade tidak ditemukan",
       });
     }
 
     if (upgrade.status === "CANCELLED") {
-      await session.abortTransaction();
       return res.status(400).json({
         success: false,
-        message: "Upgrade sudah dibatalkan sebelumnya"
+        message: "Upgrade sudah dibatalkan sebelumnya",
       });
     }
 
     // Update status upgrade
     upgrade.status = "CANCELLED";
-    await upgrade.save({ session });
+    await upgrade.save();
 
     // Revert member changes
-    const member = await Member.findById(upgrade.memberId).session(session);
+    const member = await Member.findById(upgrade.memberId);
     if (member) {
       member.productId = upgrade.oldProductId;
       member.hasUpgraded = false;
       member.currentUpgradeId = null;
-      member.upgradeHistory = member.upgradeHistory.filter(
-        id => !id.equals(upgrade._id)
-      );
-      await member.save({ session });
-    }
 
-    await session.commitTransaction();
+      if (!Array.isArray(member.upgradeHistory)) {
+        member.upgradeHistory = [];
+      }
+
+      member.upgradeHistory = member.upgradeHistory.filter(
+        (id) => !id.equals(upgrade._id)
+      );
+
+      await member.save();
+    }
 
     return res.status(200).json({
       success: true,
-      message: "Upgrade berhasil dibatalkan"
+      message: "Upgrade berhasil dibatalkan",
     });
-
   } catch (error) {
-    await session.abortTransaction();
     console.error("Error cancelling upgrade:", error);
     return res.status(500).json({
       success: false,
       message: "Terjadi kesalahan saat membatalkan upgrade",
-      error: error.message
+      error: error.message,
     });
-  } finally {
-    session.endSession();
   }
 };
