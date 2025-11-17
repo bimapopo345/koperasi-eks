@@ -11,13 +11,13 @@ const Members = () => {
   const [error, setError] = useState("");
   const [showModal, setShowModal] = useState(false);
   const [editingMember, setEditingMember] = useState(null);
-  
+
   // 🔴 NEW: state untuk UUID student & dropdown
   const [availableUuids, setAvailableUuids] = useState([]);
   const [filteredUuids, setFilteredUuids] = useState([]);
   const [showUuidDropdown, setShowUuidDropdown] = useState(false);
   const [loadingUuids, setLoadingUuids] = useState(false);
-
+  
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
@@ -133,6 +133,7 @@ const Members = () => {
     setShowUuidDropdown(false);
     fetchStudentInfo(selectedUuid);
   };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -266,7 +267,7 @@ const Members = () => {
     setCurrentPage(1);
   };
 
-   // 🔴 NEW: tutup dropdown UUID kalau klik di luar
+  // 🔴 NEW: tutup dropdown UUID kalau klik di luar
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (!e.target.closest(".uuid-dropdown-container")) {
