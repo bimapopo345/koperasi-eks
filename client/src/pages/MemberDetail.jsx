@@ -412,9 +412,11 @@ const MemberDetail = () => {
       doc.text(member.name.toUpperCase(), 22, yPos);
       yPos += 5;
       doc.setFont("helvetica", "normal");
-      doc.text(member.address || "ALAMAT TIDAK TERSEDIA", 22, yPos);
+      const address = member.completeAddress && member.completeAddress.trim() !== '-' ? member.completeAddress : "ALAMAT TIDAK TERSEDIA";
+      doc.text(address, 22, yPos);
       yPos += 5;
-      doc.text(member.phone || "TELEPON TIDAK TERSEDIA", 22, yPos);
+      const phoneNum = member.phone && member.phone.trim() !== '-' ? member.phone : "TELEPON TIDAK TERSEDIA";
+      doc.text(phoneNum, 22, yPos);
       yPos += 5;
       doc.text("INDONESIA", 22, yPos);
       yPos += 5;
@@ -428,14 +430,15 @@ const MemberDetail = () => {
       const accountInfoStartY = 25;
       doc.setFontSize(9);
       doc.setFont("helvetica", "bold");
-      doc.text(`NO. REKENING : ${member.uuid}`, pageWidth - 78, 28);
-      doc.text(`HALAMAN : ${pageNum} / ${totalPages}`, pageWidth - 78, 33);
-      doc.text(`PERIODE : ${currentMonth} ${currentYear}`, pageWidth - 78, 38);
-      doc.text("MATA UANG : IDR", pageWidth - 78, 43);
+      const accNum = member.accountNumber && member.accountNumber.trim() !== '-' ? member.accountNumber : "REKENING TIDAK TERSEDIA";
+      doc.text(`NO. REKENING : ${accNum}`, pageWidth - 94, 28);
+      doc.text(`HALAMAN : ${pageNum} / ${totalPages}`, pageWidth - 94, 33);
+      doc.text(`PERIODE : ${currentMonth} ${currentYear}`, pageWidth - 94, 38);
+      doc.text("MATA UANG : IDR", pageWidth - 94, 43);
       
       // Draw border around account info
       doc.setLineWidth(0.8);
-      doc.rect(pageWidth - 82, accountInfoStartY - 2, 72, 22, 'S');
+      doc.rect(pageWidth - 96, accountInfoStartY - 2, 76, 22, 'S');
       
       yPos += 5;
       

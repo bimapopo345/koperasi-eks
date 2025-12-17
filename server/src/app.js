@@ -20,7 +20,8 @@ app.use(
     origin: [
       "http://localhost:5173", 
       "http://localhost:3000",
-      "http://localhost:8080"  // Added for CI4 to MERN webhook
+      "http://localhost:8080",  // Added for CI4 to MERN webhook
+      "https://admin.samitcoop.com"
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
