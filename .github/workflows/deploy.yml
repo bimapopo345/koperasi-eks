@@ -42,6 +42,8 @@ jobs:
             echo "📦 Backend"
             cd "$APP_DIR/server"
             podman build --pull-always --no-cache -t koperasi-api:latest .
+            podman stop api || true
+            podman rm api || true
             podman run -d --name api --network host --env-file .env koperasi-api
 
             echo "⚛ Frontend"
@@ -51,6 +53,8 @@ jobs:
             # podman network reload || true
 
             podman build --pull-always --no-cache -t koperasi-web:latest .
+            podman stop web || true
+            podman rm web || true
             podman run -d \
               --replace \
               --name web \
