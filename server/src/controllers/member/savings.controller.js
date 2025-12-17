@@ -51,7 +51,7 @@ export const getMemberSavings = asyncHandler(async (req, res) => {
 export const createMemberSaving = asyncHandler(async (req, res) => {
   try {
     const memberId = req.member.memberId;
-    const { amount, productId, description, installmentPeriod } = req.body;
+    const { amount, productId, description, installmentPeriod, paymentDate } = req.body;
 
     // Parse amount to number if it's a string
     const parsedAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
@@ -128,6 +128,7 @@ export const createMemberSaving = asyncHandler(async (req, res) => {
       productId: product._id,
       amount: parsedAmount,
       savingsDate: new Date(),
+      paymentDate: paymentDate ? new Date(paymentDate) : null,
       installmentPeriod: finalPeriod,
       description: description || `Pembayaran Simpanan Periode - ${finalPeriod} ${partialSequence > 1 ? `(#${partialSequence})` : ''}`,
       type: "Setoran",

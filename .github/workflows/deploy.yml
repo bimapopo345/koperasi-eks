@@ -7,6 +7,7 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,38 +24,40 @@ jobs:
           ssh -o StrictHostKeyChecking=yes ${{ secrets.USER }}@${{ secrets.HOST }} 'bash -s' <<'EOF'
             set -euo pipefail
 
-            cd /opt/mern/koperasi || {
+            APP_DIR="/opt/mern/koperasi"
+
+            cd "$APP_DIR" || {
               echo "Repo not found, cloning..."
-              git clone ${{ secrets.REPO_SSH_URL }} /opt/mern/koperasi
-              cd /opt/mern/koperasi
+              git clone ${{ secrets.REPO_SSH_URL }} "$APP_DIR"
+              cd "$APP_DIR"
             }
 
-            # Pastikan Git mau kerja di folder ini
-            git config --global --add safe.directory /opt/mern/koperasi
+            git config --global --add safe.directory "$APP_DIR"
 
-            # Ambil kode terbaru, tahan ke branch yang didorong
             BRANCH="${GITHUB_REF_NAME:-main}"
             git fetch --all --prune
             git checkout "$BRANCH" || git checkout main
             git reset --hard "origin/$BRANCH" || git reset --hard origin/main
 
             echo "📦 Backend"
-            cd server
-            # (opsional) kalau pakai .env runtime, pastikan file .env ada di sini
-            podman build --pull-always --no-cache -t koperasi-api .
-            podman stop api || true
-            podman rm api || true
-            podman run -d --name api -p 5000:5000 --env-file .env koperasi-api
+            cd "$APP_DIR/server"
+            podman build --pull-always --no-cache -t koperasi-api:latest .
+            podman run -d --name api --network host --env-file .env koperasi-api
 
             echo "⚛ Frontend"
-            cd ../client
-            # Build sepenuhnya di dalam container (tidak perlu npm di host)
-            podman build --pull-always --no-cache -t koperasi-web .
-            podman stop web || true
-            podman rm web || true
-            podman run -d --name web -p 3000:80 koperasi-web
+            cd "$APP_DIR/client"
 
-            echo "🔁 Nginx reload (no password)"
+            # Opsional tapi membantu kalau pernah ada kasus port forwarding nyangkut
+            # podman network reload || true
+
+            podman build --pull-always --no-cache -t koperasi-web:latest .
+            podman run -d \
+              --replace \
+              --name web \
+              -p 3000:80 \
+              koperasi-web:latest
+
+            echo "🔁 Nginx reload (kalau kamu memang pakai nginx di host)"
             sudo -n systemctl reload nginx || echo "skip reload (no change / not needed)"
 
             echo "✅ Done. Running containers:"

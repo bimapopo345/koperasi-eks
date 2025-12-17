@@ -105,7 +105,14 @@ const Dashboard = () => {
         />
         <StatCard
           title="Total Tabungan"
-          value={stats.totalDeposits}
+          value={typeof stats.totalLoanCollected === 'number' ? 
+            new Intl.NumberFormat("id-ID", {
+              style: "currency",
+              currency: "IDR",
+              minimumFractionDigits: 0,
+            }).format(stats.totalDeposits) : 
+            "Rp 0"
+          }
           icon="💰"
           color="bg-rose-100 text-rose-600"
         />
