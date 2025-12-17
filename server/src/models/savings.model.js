@@ -31,6 +31,9 @@ const savingsSchema = new mongoose.Schema(
       type: Date,
       required: [true, "Tanggal simpanan wajib diisi"],
     },
+    paymentDate: {
+      type: Date,
+    },
     proofFile: {
       type: String,
       trim: true,
