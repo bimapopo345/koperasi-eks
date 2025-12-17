@@ -360,32 +360,62 @@ const MemberDetail = () => {
     const currentMonth = monthNames[currentDate.getMonth()];
     const currentYear = currentDate.getFullYear();
     
-    // Filter approved savings only for the report
-    const approvedSavings = savings
+    // helper: ambil tanggal bayar (prioritas: latest payments[], lalu paymentDate, fallback savingsDate/createdAt)
+    const getPaidDateRaw = (s) => {
+      const dates = (s.payments || [])
+        .map(p => p.paymentDate || p.date)
+        .filter(Boolean)
+        .sort((a, b) => new Date(a) - new Date(b));
+
+      return dates.length
+        ? dates[dates.length - 1]
+        : (s.paymentDate || s.savingsDate || s.createdAt || null);
+    };
+
+    const getPeriodNum = (s) => {
+      const p = s.installmentPeriod ?? s.installment_period ?? s.period;
+      const n = Number(p);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    // Filter approved + SORT: period dulu (biar ga kebalik), lalu tanggal bayar
+    const approvedSavings = [...(savings || [])]
       .filter(s => s.status === "Approved")
-      .sort((a, b) => new Date(a.savingsDate) - new Date(b.savingsDate));
-    
+      .sort((a, b) => {
+        const pa = getPeriodNum(a);
+        const pb = getPeriodNum(b);
+
+        // kalau dua-duanya punya periode, urutkan by periode
+        if (pa != null && pb != null && pa !== pb) return pa - pb;
+
+        // fallback urut by tanggal bayar
+        const da = new Date(getPaidDateRaw(a) || 0);
+        const db = new Date(getPaidDateRaw(b) || 0);
+        return da - db;
+      });
+
     // Calculate opening balance (assuming starts from 0)
     let saldo = 0;
     const saldoAwal = 0;
-    
+
     // Prepare transaction data
     const transactions = approvedSavings.map(saving => {
-      const amount = saving.amount;
+      const amount = Number(saving.amount || 0);
       const isDebit = saving.type === "Penarikan";
-      
-      if (isDebit) {
-        saldo -= amount;
-      } else {
-        saldo += amount;
-      }
-      
+
+      saldo += isDebit ? -amount : amount;
+
+      const paidRaw = getPaidDateRaw(saving);
+      const period = getPeriodNum(saving);
+
+      const periodeStr = period ? ` - Periode ${period}` : "";
+
       return {
-        date: format(new Date(saving.savingsDate), "dd/MM"),
-        description: `${saving.type.toUpperCase()} - ${saving.description || 'Simpanan Rutin'} - Periode ${saving.period || ''}${saving.notes ? ' - ' + saving.notes : ''}`,
+        date: paidRaw ? format(new Date(paidRaw), "dd/MM") : "-",
+        description: `${(saving.type || "Setoran").toUpperCase()} - ${saving.description || "Simpanan Rutin"}${periodeStr}${saving.notes ? " - " + saving.notes : ""}`,
         type: saving.type,
-        amount: amount,
-        isDebit: isDebit,
+        amount,
+        isDebit,
         balance: saldo
       };
     });
@@ -813,6 +843,24 @@ const MemberDetail = () => {
     setCurrentProofImage(null);
     setCurrentTransactionInfo(null);
   };
+
+  const getPaidDateRaw = (tx) => {
+    // dukung beberapa kemungkinan struktur
+    const dates = (tx?.payments || [])
+      .map(p => p?.paymentDate || p?.date)
+      .filter(Boolean)
+      .sort((a, b) => new Date(a) - new Date(b));
+
+    return dates.length ? dates[dates.length - 1] : (tx?.paymentDate || null);
+  };
+
+  const formatDateSafe = (d, fmt = "dd/MM/yyyy") => {
+    if (!d) return "-";
+    const dt = d instanceof Date ? d : new Date(d);
+    if (isNaN(dt.getTime())) return "-";
+    return format(dt, fmt, { locale: id });
+  };
+
 
   if (loading) {
     return (
@@ -1260,7 +1308,10 @@ const MemberDetail = () => {
                             Periode
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
-                            Tanggal
+                            Tanggal Upload
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
+                            Tanggal Bayar
                           </th>
                           <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
                             Status
@@ -1293,10 +1344,20 @@ const MemberDetail = () => {
                               <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
                                 {(() => {
                                   if (period.transactions.length === 0) return "-";
-                                  
-                                  // Get latest transaction date
-                                  const latestTx = period.transactions.sort((a, b) => new Date(b.savingsDate) - new Date(a.savingsDate))[0];
-                                  return format(new Date(latestTx.savingsDate), "dd/MM/yyyy", { locale: id });
+                                  const latestTx = [...period.transactions].sort(
+                                    (a, b) => new Date(b.savingsDate) - new Date(a.savingsDate)
+                                  )[0];
+                                  return formatDateSafe(latestTx.savingsDate, "dd/MM/yyyy");
+                                })()}
+                              </td>
+
+                              <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
+                                {(() => {
+                                  if (period.transactions.length === 0) return "-";
+                                  const latestTx = [...period.transactions].sort(
+                                    (a, b) => new Date((getPaidDateRaw(b) || b.savingsDate)) - new Date((getPaidDateRaw(a) || a.savingsDate))
+                                  )[0];
+                                  return formatDateSafe(getPaidDateRaw(latestTx), "dd/MM/yyyy");
                                 })()}
                               </td>
                               <td className="px-4 py-3 whitespace-nowrap">
