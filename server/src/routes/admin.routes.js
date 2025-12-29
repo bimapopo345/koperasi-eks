@@ -35,6 +35,7 @@ import {
   markAsPartial,
   getSavingsPeriodSummary 
 } from "../controllers/admin/savingsApproval.controller.js";
+import { clearAllData } from "../controllers/admin/system.controller.js";
 import { verifyToken } from "../middlewares/auth.middleware.js";
 import multer from "multer";
 import productUpgradeRoutes from "./admin/productUpgrade.routes.js";
@@ -101,5 +102,8 @@ router.use("/product-upgrade", productUpgradeRoutes);
 router.use("/loans", loanRoutes);
 router.use("/loan-payments", loanPaymentRoutes);
 router.use("/loan-products", loanProductRoutes);
+
+// System routes (danger zone)
+router.post("/system/clear-all", verifyToken, clearAllData);
 
 export default router;
