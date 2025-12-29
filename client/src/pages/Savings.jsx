@@ -19,6 +19,7 @@ const Savings = () => {
     productId: "",
     amount: "",
     savingsDate: format(new Date(), "yyyy-MM-dd"),
+    paymentDate: "",
     type: "Setoran",
     description: "",
     status: "Pending",
@@ -339,6 +340,8 @@ const Savings = () => {
       // Ensure numeric fields are numbers
       dataToSend.amount = Number(dataToSend.amount);
       dataToSend.installmentPeriod = Number(dataToSend.installmentPeriod);
+
+      if (!dataToSend.paymentDate) delete dataToSend.paymentDate;
       
       formDataToSend = dataToSend;
       headers["Content-Type"] = "application/json";
@@ -380,6 +383,7 @@ const Savings = () => {
       productId: "",
       amount: "",
       savingsDate: format(new Date(), "yyyy-MM-dd"),
+      paymentDate: "",
       type: "Setoran",
       description: "",
       status: "Pending",
@@ -464,6 +468,7 @@ const Savings = () => {
       productId: saving.productId?._id || saving.productId || "",
       amount: saving.amount || 0,
       savingsDate: format(new Date(saving.savingsDate), "yyyy-MM-dd"),
+      paymentDate: saving.paymentDate ? format(new Date(saving.paymentDate), "yyyy-MM-dd") : "",
       type: saving.type || "Setoran",
       description: saving.description || "",
       status: saving.status || "Pending",
@@ -579,7 +584,10 @@ const Savings = () => {
             <thead className="bg-gradient-to-r from-pink-50 to-rose-50">
               <tr>
                 <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
-                  Tanggal
+                  Tanggal Upload
+                </th>
+                <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
+                  Tanggal Pembayaran
                 </th>
                 <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
                   Anggota
@@ -617,6 +625,11 @@ const Savings = () => {
                     {format(new Date(saving.savingsDate), "dd MMM yyyy", {
                       locale: id,
                     })}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {saving.paymentDate
+                      ? format(new Date(saving.paymentDate), "dd MMM yyyy", { locale: id })
+                      : "-"}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {getMemberName(saving.memberId)}
@@ -1314,7 +1327,7 @@ const Savings = () => {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">
-                      Tanggal
+                      Tanggal Upload
                     </label>
                     <input
                       type="date"
@@ -1328,6 +1341,19 @@ const Savings = () => {
                       className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
                       required
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Tanggal Pembayaran
+                    </label>
+                    <input
+                      type="date"
+                      value={formData.paymentDate || ""}
+                      onChange={(e) => setFormData({ ...formData, paymentDate: e.target.value })}
+                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                    />
+                    <p className="mt-1 text-xs text-gray-500">Opsional (kalau ada bukti tanggal transfer)</p>
                   </div>
 
                   <div>
