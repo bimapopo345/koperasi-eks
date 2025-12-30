@@ -67,6 +67,13 @@ const Savings = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   
+  // Filter & Search state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [filterStatus, setFilterStatus] = useState("all"); // all, Pending, Approved, Rejected
+  const [filterProduct, setFilterProduct] = useState("all");
+  const [filterMember, setFilterMember] = useState("all");
+  const [sortOrder, setSortOrder] = useState("newest"); // newest, oldest
+  
   // Summary state for totals
   const [summary, setSummary] = useState({
     totalSetoran: 0,
@@ -570,15 +577,61 @@ const Savings = () => {
     return badges[status] || "bg-gray-100 text-gray-800";
   };
 
+  // Filter and sort logic
+  const filteredSavings = savings.filter(saving => {
+    // Search filter
+    const memberName = saving.memberId?.name || "";
+    const memberUuid = saving.memberId?.uuid || "";
+    const description = saving.description || "";
+    const searchLower = searchTerm.toLowerCase();
+    const matchesSearch = !searchTerm || 
+      memberName.toLowerCase().includes(searchLower) ||
+      memberUuid.toLowerCase().includes(searchLower) ||
+      description.toLowerCase().includes(searchLower);
+    
+    // Status filter
+    const matchesStatus = filterStatus === "all" || saving.status === filterStatus;
+    
+    // Product filter
+    const productId = saving.productId?._id || saving.productId;
+    const matchesProduct = filterProduct === "all" || productId === filterProduct;
+    
+    // Member filter
+    const memberId = saving.memberId?._id || saving.memberId;
+    const matchesMember = filterMember === "all" || memberId === filterMember;
+    
+    return matchesSearch && matchesStatus && matchesProduct && matchesMember;
+  });
+
+  // Sort logic
+  const sortedSavings = [...filteredSavings].sort((a, b) => {
+    const dateA = new Date(a.createdAt || a.savingsDate);
+    const dateB = new Date(b.createdAt || b.savingsDate);
+    return sortOrder === "newest" ? dateB - dateA : dateA - dateB;
+  });
+
   // Pagination logic
-  const totalPages = Math.ceil(savings.length / itemsPerPage);
+  const totalPages = Math.ceil(sortedSavings.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const currentSavings = savings.slice(startIndex, endIndex);
+  const currentSavings = sortedSavings.slice(startIndex, endIndex);
+
+  // Reset page when filter changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterStatus, filterProduct, filterMember, sortOrder]);
 
   const handlePageChange = (page) => {
     setCurrentPage(page);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const clearFilters = () => {
+    setSearchTerm("");
+    setFilterStatus("all");
+    setFilterProduct("all");
+    setFilterMember("all");
+    setSortOrder("newest");
   };
 
   if (loading) {
@@ -622,6 +675,88 @@ const Savings = () => {
           <p className="text-2xl font-bold text-blue-600">
             {formatCurrency(summary.saldo)}
           </p>
+        </div>
+      </div>
+
+      {/* Filter & Search Section */}
+      <div className="bg-white rounded-lg shadow p-4 mb-6 border border-pink-100">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+          {/* Search */}
+          <div className="lg:col-span-2">
+            <label className="block text-xs font-medium text-gray-600 mb-1">🔍 Cari</label>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Nama, UUID, atau keterangan..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500"
+            />
+          </div>
+
+          {/* Status Filter */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">📊 Status</label>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-pink-500"
+            >
+              <option value="all">Semua Status</option>
+              <option value="Pending">⏳ Pending</option>
+              <option value="Approved">✅ Approved</option>
+              <option value="Rejected">❌ Rejected</option>
+            </select>
+          </div>
+
+          {/* Product Filter */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">📦 Produk</label>
+            <select
+              value={filterProduct}
+              onChange={(e) => setFilterProduct(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-pink-500"
+            >
+              <option value="all">Semua Produk</option>
+              {products.map(product => (
+                <option key={product._id} value={product._id}>
+                  {product.title}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Sort Order */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">📅 Urutan</label>
+            <select
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-pink-500"
+            >
+              <option value="newest">Terbaru</option>
+              <option value="oldest">Terlama</option>
+            </select>
+          </div>
+
+          {/* Clear Filters */}
+          <div className="flex items-end">
+            <button
+              onClick={clearFilters}
+              className="w-full px-3 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200 transition-colors"
+            >
+              🔄 Reset
+            </button>
+          </div>
+        </div>
+
+        {/* Filter Summary */}
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-gray-600">
+            Menampilkan <strong>{sortedSavings.length}</strong> dari <strong>{savings.length}</strong> data
+          </span>
+          {(searchTerm || filterStatus !== "all" || filterProduct !== "all") && (
+            <span className="text-pink-600">• Filter aktif</span>
+          )}
         </div>
       </div>
 

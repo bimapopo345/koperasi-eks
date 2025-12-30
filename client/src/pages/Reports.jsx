@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { format, startOfMonth, endOfMonth, parseISO, isWithinInterval, isBefore } from "date-fns";
+import { format, startOfMonth, endOfMonth, isBefore, parseISO } from "date-fns";
 import { id } from "date-fns/locale";
 import api from "../api/index.jsx";
 import Pagination from "../components/Pagination.jsx";
@@ -106,16 +106,24 @@ const Reports = () => {
 
   // Calculate member payment status for each period
   const getMemberPaymentStatus = (member) => {
-    if (!member.product) return { status: "no_product", periods: [] };
+    if (!member.product) return { status: "no_product", periods: [], paidPeriods: 0, totalPaid: 0 };
     
-    const memberSavings = savings.filter(s => 
-      s.memberId?._id === member._id || 
-      s.memberId?.uuid === member.uuid ||
-      s.memberId === member._id
-    );
+    // Find all savings for this member - check multiple ways
+    const memberSavings = savings.filter(s => {
+      const savingMemberId = s.memberId?._id || s.memberId;
+      const memberIdStr = member._id?.toString() || member._id;
+      return savingMemberId === memberIdStr || 
+             savingMemberId === member._id ||
+             s.memberId?.uuid === member.uuid;
+    });
+    
+    // Debug log
+    if (memberSavings.length > 0) {
+      console.log(`Member ${member.name} (${member.uuid}): Found ${memberSavings.length} savings`);
+    }
     
     const totalPeriods = member.product.termDuration || 36;
-    const depositAmount = member.product.depositAmount || 0;
+    let depositAmount = member.product.depositAmount || 0;
     const periods = [];
     
     let totalPaid = 0;
@@ -123,12 +131,27 @@ const Reports = () => {
     let partialPeriods = 0;
     let overduePeriods = 0;
     
+    // Check if member has upgraded
+    const hasUpgraded = member.hasUpgraded;
+    const upgradeInfo = member.currentUpgradeId;
+    
     // Calculate start date for periods
     const startDate = member.savingsStartDate 
       ? new Date(member.savingsStartDate) 
       : new Date(member.createdAt);
     
     for (let period = 1; period <= totalPeriods; period++) {
+      // Adjust deposit amount based on upgrade
+      let requiredAmount = depositAmount;
+      if (hasUpgraded && upgradeInfo) {
+        const completedAtUpgrade = upgradeInfo.completedPeriodsAtUpgrade || 0;
+        if (period <= completedAtUpgrade && upgradeInfo.oldMonthlyDeposit > 0) {
+          requiredAmount = upgradeInfo.oldMonthlyDeposit;
+        } else if (upgradeInfo.newPaymentWithCompensation > 0) {
+          requiredAmount = upgradeInfo.newPaymentWithCompensation;
+        }
+      }
+      
       const periodSavings = memberSavings.filter(s => s.installmentPeriod === period && s.status === "Approved");
       const periodTotal = periodSavings.reduce((sum, s) => sum + s.amount, 0);
       
@@ -136,10 +159,10 @@ const Reports = () => {
       const dueDate = new Date(startDate);
       dueDate.setMonth(dueDate.getMonth() + period - 1);
       
-      const isOverdue = isBefore(dueDate, new Date()) && periodTotal < depositAmount;
+      const isOverdue = isBefore(dueDate, new Date()) && periodTotal < requiredAmount;
       
       let status = "unpaid";
-      if (periodTotal >= depositAmount) {
+      if (periodTotal >= requiredAmount) {
         status = "paid";
         paidPeriods++;
       } else if (periodTotal > 0) {
@@ -155,9 +178,9 @@ const Reports = () => {
       periods.push({
         period,
         dueDate,
-        required: depositAmount,
+        required: requiredAmount,
         paid: periodTotal,
-        remaining: Math.max(0, depositAmount - periodTotal),
+        remaining: Math.max(0, requiredAmount - periodTotal),
         status,
         isOverdue
       });
@@ -169,7 +192,7 @@ const Reports = () => {
       paidPeriods,
       partialPeriods,
       overduePeriods,
-      unpaidPeriods: totalPeriods - paidPeriods - partialPeriods,
+      unpaidPeriods: totalPeriods - paidPeriods - partialPeriods - overduePeriods,
       periods,
       progress: totalPeriods > 0 ? (paidPeriods / totalPeriods) * 100 : 0
     };
@@ -179,19 +202,25 @@ const Reports = () => {
   const filteredSavings = useMemo(() => {
     let result = [...savings];
     
-    // Filter by date range
+    console.log("Total savings before filter:", result.length);
+    
+    // Filter by date range - make it more lenient
     if (dateFrom && dateTo) {
+      const startDate = new Date(dateFrom);
+      startDate.setHours(0, 0, 0, 0);
+      const endDate = new Date(dateTo);
+      endDate.setHours(23, 59, 59, 999);
+      
       result = result.filter(s => {
         const savingDate = new Date(s.savingsDate || s.createdAt);
-        return isWithinInterval(savingDate, {
-          start: parseISO(dateFrom),
-          end: parseISO(dateTo)
-        });
+        return savingDate >= startDate && savingDate <= endDate;
       });
+      
+      console.log("After date filter:", result.length);
     }
     
-    // Filter by status
-    if (filterStatus !== "all") {
+    // Filter by status - only for savings tab
+    if (filterStatus !== "all" && activeTab === "savings") {
       result = result.filter(s => s.status === filterStatus);
     }
     
@@ -211,8 +240,10 @@ const Reports = () => {
       );
     }
     
+    console.log("Final filtered savings:", result.length);
+    
     return result.sort((a, b) => new Date(b.savingsDate || b.createdAt) - new Date(a.savingsDate || a.createdAt));
-  }, [savings, dateFrom, dateTo, filterStatus, filterMember, filterProduct]);
+  }, [savings, dateFrom, dateTo, filterStatus, filterMember, filterProduct, activeTab]);
 
   // Member report with payment status
   const memberReport = useMemo(() => {
@@ -589,7 +620,7 @@ const Reports = () => {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-4">
+      <div className="flex flex-wrap gap-2 mb-4">
         <button
           onClick={() => { setActiveTab("savings"); setCurrentPage(1); setFilterStatus("all"); }}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -609,6 +640,26 @@ const Reports = () => {
           }`}
         >
           👥 Status Anggota ({memberReport.length})
+        </button>
+        <button
+          onClick={() => { setActiveTab("members"); setCurrentPage(1); setFilterStatus("has_overdue"); }}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === "members" && filterStatus === "has_overdue"
+              ? "bg-red-500 text-white" 
+              : "bg-red-100 text-red-700 hover:bg-red-200"
+          }`}
+        >
+          🔴 Overdue ({summaryStats.membersWithOverdue})
+        </button>
+        <button
+          onClick={() => { setActiveTab("savings"); setCurrentPage(1); setFilterStatus("Pending"); }}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            activeTab === "savings" && filterStatus === "Pending"
+              ? "bg-yellow-500 text-white" 
+              : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
+          }`}
+        >
+          ⏳ Pending ({summaryStats.pendingCount})
         </button>
       </div>
 
