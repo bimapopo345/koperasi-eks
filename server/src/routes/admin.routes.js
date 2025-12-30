@@ -19,7 +19,9 @@ import {
   getMemberByUuid, 
   createMember, 
   updateMember, 
-  deleteMember 
+  deleteMember,
+  markAsCompleted,
+  unmarkAsCompleted
 } from "../controllers/admin/member.controller.js";
 import { 
   getAllSavings, 
@@ -80,6 +82,8 @@ router.get("/members/:uuid", verifyToken, getMemberByUuid);
 router.post("/members", verifyToken, createMember);
 router.put("/members/:uuid", verifyToken, updateMember);
 router.delete("/members/:uuid", verifyToken, deleteMember);
+router.patch("/members/:uuid/complete", verifyToken, markAsCompleted);
+router.patch("/members/:uuid/uncomplete", verifyToken, unmarkAsCompleted);
 
 // Savings management routes
 router.get("/savings", verifyToken, getAllSavings);
