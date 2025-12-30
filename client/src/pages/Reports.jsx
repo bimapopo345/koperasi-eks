@@ -246,7 +246,7 @@ const Reports = () => {
     const completedMembers = members.filter(m => m.isCompleted).length;
     
     const totalSavingsAmount = savings
-      .filter(s => s.status === "Approved" && s.type === "Setoran")
+      .filter(s => (s.status === "Approved" || s.status === "Partial") && s.type === "Setoran")
       .reduce((sum, s) => sum + s.amount, 0);
     
     const totalWithdrawals = savings
@@ -257,6 +257,12 @@ const Reports = () => {
       .filter(s => s.status === "Pending")
       .reduce((sum, s) => sum + s.amount, 0);
     
+    const partialSavings = savings
+      .filter(s => s.status === "Partial" || s.paymentType === "Partial")
+      .length;
+    
+    const pendingCount = savings.filter(s => s.status === "Pending").length;
+    
     const membersWithOverdue = memberReport.filter(m => m.paymentStatus.overduePeriods > 0).length;
     const membersAllPaid = memberReport.filter(m => 
       m.paymentStatus.unpaidPeriods === 0 && m.paymentStatus.partialPeriods === 0 && m.product
@@ -264,7 +270,7 @@ const Reports = () => {
     
     // Period stats in date range
     const filteredTotal = filteredSavings
-      .filter(s => s.status === "Approved" && s.type === "Setoran")
+      .filter(s => (s.status === "Approved" || s.status === "Partial") && s.type === "Setoran")
       .reduce((sum, s) => sum + s.amount, 0);
     
     return {
@@ -274,6 +280,8 @@ const Reports = () => {
       totalWithdrawals,
       netSavings: totalSavingsAmount - totalWithdrawals,
       pendingSavings,
+      pendingCount,
+      partialSavings,
       membersWithOverdue,
       membersAllPaid,
       filteredTotal,
@@ -462,30 +470,38 @@ const Reports = () => {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-pink-100">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
+        <div className="bg-white rounded-lg shadow-sm p-3 border border-pink-100">
           <p className="text-xs text-gray-500">Total Anggota</p>
           <p className="text-xl font-bold text-gray-900">{summaryStats.totalMembers}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-green-100">
+        <div className="bg-white rounded-lg shadow-sm p-3 border border-green-100">
           <p className="text-xs text-gray-500">Lunas (TF)</p>
           <p className="text-xl font-bold text-green-600">{summaryStats.completedMembers}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-blue-100">
+        <div className="bg-white rounded-lg shadow-sm p-3 border border-blue-100">
           <p className="text-xs text-gray-500">Total Simpanan</p>
-          <p className="text-lg font-bold text-blue-600">{formatCurrency(summaryStats.totalSavingsAmount)}</p>
+          <p className="text-sm font-bold text-blue-600">{formatCurrency(summaryStats.totalSavingsAmount)}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-orange-100">
-          <p className="text-xs text-gray-500">Total Penarikan</p>
-          <p className="text-lg font-bold text-orange-600">{formatCurrency(summaryStats.totalWithdrawals)}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-purple-100">
+        <div className="bg-white rounded-lg shadow-sm p-3 border border-purple-100">
           <p className="text-xs text-gray-500">Saldo Bersih</p>
-          <p className="text-lg font-bold text-purple-600">{formatCurrency(summaryStats.netSavings)}</p>
+          <p className="text-sm font-bold text-purple-600">{formatCurrency(summaryStats.netSavings)}</p>
         </div>
-        <div className="bg-white rounded-lg shadow-sm p-4 border border-red-100">
+        <div className="bg-white rounded-lg shadow-sm p-3 border border-yellow-100">
+          <p className="text-xs text-gray-500">Pending</p>
+          <p className="text-xl font-bold text-yellow-600">{summaryStats.pendingCount}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-3 border border-orange-100">
+          <p className="text-xs text-gray-500">Partial</p>
+          <p className="text-xl font-bold text-orange-600">{summaryStats.partialSavings}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-3 border border-red-100">
           <p className="text-xs text-gray-500">Overdue</p>
           <p className="text-xl font-bold text-red-600">{summaryStats.membersWithOverdue}</p>
+        </div>
+        <div className="bg-white rounded-lg shadow-sm p-3 border border-teal-100">
+          <p className="text-xs text-gray-500">All Paid</p>
+          <p className="text-xl font-bold text-teal-600">{summaryStats.membersAllPaid}</p>
         </div>
       </div>
 
@@ -522,6 +538,7 @@ const Reports = () => {
                 <>
                   <option value="Approved">✅ Approved</option>
                   <option value="Pending">⏳ Pending</option>
+                  <option value="Partial">🔶 Partial</option>
                   <option value="Rejected">❌ Rejected</option>
                 </>
               ) : (
@@ -637,6 +654,7 @@ const Reports = () => {
                         <span className={`px-2 py-1 rounded-full text-xs ${
                           s.status === "Approved" ? "bg-green-100 text-green-800" :
                           s.status === "Pending" ? "bg-yellow-100 text-yellow-800" :
+                          s.status === "Partial" ? "bg-orange-100 text-orange-800" :
                           "bg-red-100 text-red-800"
                         }`}>
                           {s.status}
