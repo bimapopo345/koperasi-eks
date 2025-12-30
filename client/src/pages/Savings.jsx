@@ -724,6 +724,7 @@ const Savings = () => {
               <option value="all">Semua Status</option>
               <option value="Pending">⏳ Pending</option>
               <option value="Approved">✅ Approved</option>
+              <option value="Partial">🔶 Partial</option>
               <option value="Rejected">❌ Rejected</option>
             </select>
           </div>
