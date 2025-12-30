@@ -5,6 +5,7 @@ import { id } from "date-fns/locale";
 import { toast } from "react-toastify";
 import { API_URL } from "../api/config";
 import Pagination from "../components/Pagination.jsx";
+import ConfirmDialog from "../components/ConfirmDialog.jsx";
 
 const Savings = () => {
   const [savings, setSavings] = useState([]);
@@ -45,6 +46,22 @@ const Savings = () => {
     memberId: "",
     productId: "",
   });
+
+  // Confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: "",
+    message: "",
+    type: "warning",
+    onConfirm: () => {},
+  });
+  const [confirmLoading, setConfirmLoading] = useState(false);
+
+  // Reject modal state
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectSavingsId, setRejectSavingsId] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [rejectLoading, setRejectLoading] = useState(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -406,55 +423,86 @@ const Savings = () => {
   };
 
   // Handle delete
-  const handleDelete = async (id) => {
-    if (window.confirm("Apakah Anda yakin ingin menghapus simpanan ini?\n\nFile bukti juga akan dihapus.")) {
-      try {
-        const token = localStorage.getItem("token");
-        await axios.delete(`${API_URL}/api/admin/savings/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        toast.success("Simpanan dan bukti berhasil dihapus");
-        fetchSavings();
-      } catch {
-        toast.error("Gagal menghapus simpanan");
-      }
-    }
+  const handleDelete = (id) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Hapus Simpanan",
+      message: "Apakah Anda yakin ingin menghapus simpanan ini? File bukti juga akan dihapus.",
+      type: "danger",
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        try {
+          const token = localStorage.getItem("token");
+          await axios.delete(`${API_URL}/api/admin/savings/${id}`, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          toast.success("🗑️ Simpanan dan bukti berhasil dihapus");
+          fetchSavings();
+        } catch {
+          toast.error("Gagal menghapus simpanan");
+        } finally {
+          setConfirmLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
   };
 
-  const handleApprove = async (id) => {
-    const notes = prompt("Catatan persetujuan (opsional):");
-    if (notes !== null) { // User didn't cancel
-      try {
-        const token = localStorage.getItem("token");
-        await axios.patch(`${API_URL}/api/admin/savings/${id}/approve`, 
-          { notes }, 
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        toast.success("Simpanan berhasil disetujui");
-        fetchSavings();
-      } catch {
-        toast.error("Gagal menyetujui simpanan");
-      }
-    }
+  const handleApprove = (id) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Setujui Simpanan",
+      message: "Apakah Anda yakin ingin menyetujui simpanan ini?",
+      type: "success",
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        try {
+          const token = localStorage.getItem("token");
+          await axios.patch(`${API_URL}/api/admin/savings/${id}/approve`, 
+            { notes: "" }, 
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+          toast.success("✅ Simpanan berhasil disetujui");
+          fetchSavings();
+        } catch {
+          toast.error("Gagal menyetujui simpanan");
+        } finally {
+          setConfirmLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
   };
 
-  const handleReject = async (id) => {
-    const rejectionReason = prompt("Alasan penolakan (wajib diisi):");
-    if (rejectionReason && rejectionReason.trim()) {
-      const notes = prompt("Catatan tambahan (opsional):");
-      try {
-        const token = localStorage.getItem("token");
-        await axios.patch(`${API_URL}/api/admin/savings/${id}/reject`, 
-          { rejectionReason: rejectionReason.trim(), notes }, 
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        toast.success("Simpanan berhasil ditolak");
-        fetchSavings();
-      } catch {
-        toast.error("Gagal menolak simpanan");
-      }
-    } else if (rejectionReason !== null) {
-      toast.error("Alasan penolakan wajib diisi");
+  const handleReject = (id) => {
+    setRejectSavingsId(id);
+    setRejectionReason("");
+    setShowRejectModal(true);
+  };
+
+  const handleRejectSubmit = async () => {
+    if (!rejectionReason.trim()) {
+      toast.error("⚠️ Alasan penolakan wajib diisi");
+      return;
+    }
+
+    setRejectLoading(true);
+    try {
+      const token = localStorage.getItem("token");
+      await axios.patch(
+        `${API_URL}/api/admin/savings/${rejectSavingsId}/reject`,
+        { rejectionReason: rejectionReason.trim(), notes: "" },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      toast.success("❌ Simpanan berhasil ditolak");
+      setShowRejectModal(false);
+      setRejectSavingsId(null);
+      setRejectionReason("");
+      fetchSavings();
+    } catch {
+      toast.error("Gagal menolak simpanan");
+    } finally {
+      setRejectLoading(false);
     }
   };
 
@@ -1442,6 +1490,96 @@ const Savings = () => {
           </div>
         </div>
       )}
+
+      {/* Reject Modal */}
+      {showRejectModal && (
+        <div className="fixed inset-0 z-[9999] overflow-y-auto">
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+            onClick={() => !rejectLoading && setShowRejectModal(false)}
+          />
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative transform overflow-hidden rounded-xl bg-white shadow-2xl transition-all w-full max-w-md">
+              <div className="p-6">
+                {/* Icon */}
+                <div className="flex justify-center mb-4">
+                  <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
+                    <span className="text-3xl">❌</span>
+                  </div>
+                </div>
+
+                {/* Title */}
+                <h3 className="text-xl font-bold text-center text-gray-900 mb-2">
+                  Tolak Simpanan
+                </h3>
+
+                {/* Message */}
+                <p className="text-center text-gray-600 mb-4">
+                  Masukkan alasan penolakan simpanan ini
+                </p>
+
+                {/* Input */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Alasan Penolakan <span className="text-red-500">*</span>
+                  </label>
+                  <textarea
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    placeholder="Contoh: Bukti pembayaran tidak jelas, nominal tidak sesuai, dll..."
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500"
+                    disabled={rejectLoading}
+                  />
+                </div>
+
+                {/* Buttons */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => {
+                      setShowRejectModal(false);
+                      setRejectSavingsId(null);
+                      setRejectionReason("");
+                    }}
+                    disabled={rejectLoading}
+                    className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors disabled:opacity-50"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    onClick={handleRejectSubmit}
+                    disabled={rejectLoading || !rejectionReason.trim()}
+                    className="flex-1 px-4 py-3 bg-red-500 text-white rounded-lg font-medium hover:bg-red-600 transition-colors disabled:opacity-50"
+                  >
+                    {rejectLoading ? (
+                      <span className="flex items-center justify-center gap-2">
+                        <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                        </svg>
+                        Loading...
+                      </span>
+                    ) : (
+                      "Ya, Tolak Simpanan"
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+        loading={confirmLoading}
+      />
     </div>
   );
 };

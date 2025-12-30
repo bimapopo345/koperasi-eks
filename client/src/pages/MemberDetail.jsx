@@ -5,6 +5,7 @@ import { id } from "date-fns/locale";
 import api from "../api/index.jsx";
 import { loanApi, loanPaymentApi } from "../api/loanApi.jsx";
 import Pagination from "../components/Pagination.jsx";
+import ConfirmDialog from "../components/ConfirmDialog.jsx";
 import { toast } from "react-toastify";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
@@ -56,6 +57,16 @@ const MemberDetail = () => {
   const [showLoanDetailModal, setShowLoanDetailModal] = useState(false);
   const [showPaymentProofModal, setShowPaymentProofModal] = useState(false);
   const [selectedPaymentProof, setSelectedPaymentProof] = useState(null);
+
+  // Confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: "",
+    message: "",
+    type: "warning",
+    onConfirm: () => {},
+  });
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   useEffect(() => {
     if (uuid) {
@@ -281,10 +292,11 @@ const MemberDetail = () => {
       if (response.data.success) {
         setUpgradeCalculation(response.data.data);
         setUpgradeStep(2);
+        toast.info("📊 Kalkulasi upgrade berhasil dihitung");
       }
     } catch (err) {
       console.error("Upgrade calculation error:", err);
-      alert(err.response?.data?.message || "Gagal menghitung kompensasi upgrade");
+      toast.error(err.response?.data?.message || "Gagal menghitung kompensasi upgrade");
     } finally {
       setUpgradeLoading(false);
     }
@@ -302,7 +314,7 @@ const MemberDetail = () => {
       });
       
       if (response.data.success) {
-        alert("Upgrade produk berhasil dilakukan!");
+        toast.success("🎉 Upgrade produk berhasil dilakukan!");
         setShowUpgradeModal(false);
         setUpgradeStep(1);
         setSelectedNewProduct(null);
@@ -313,7 +325,7 @@ const MemberDetail = () => {
       }
     } catch (err) {
       console.error("Upgrade execution error:", err);
-      alert(err.response?.data?.message || "Gagal melakukan upgrade produk");
+      toast.error(err.response?.data?.message || "Gagal melakukan upgrade produk");
     } finally {
       setUpgradeLoading(false);
     }
@@ -968,18 +980,28 @@ const MemberDetail = () => {
         <div className="flex space-x-2">
           {!member.isCompleted ? (
             <button
-              onClick={async () => {
-                if (window.confirm("Apakah Anda yakin ingin menandai member ini sebagai LUNAS?\n\nIni menandakan uang tabungan sudah di-transfer ke student.")) {
-                  try {
-                    const response = await api.patch(`/api/admin/members/${member.uuid}/complete`);
-                    if (response.data.success) {
-                      toast.success("Member berhasil ditandai sebagai LUNAS!");
-                      fetchMemberDetail();
+              onClick={() => {
+                setConfirmDialog({
+                  isOpen: true,
+                  title: "Tandai Lunas",
+                  message: "Apakah Anda yakin ingin menandai member ini sebagai LUNAS?\n\nIni menandakan uang tabungan sudah di-transfer ke student.",
+                  type: "success",
+                  onConfirm: async () => {
+                    setConfirmLoading(true);
+                    try {
+                      const response = await api.patch(`/api/admin/members/${member.uuid}/complete`);
+                      if (response.data.success) {
+                        toast.success("✅ Member berhasil ditandai sebagai LUNAS!");
+                        fetchMemberDetail();
+                      }
+                    } catch (err) {
+                      toast.error(err.response?.data?.message || "Gagal menandai lunas");
+                    } finally {
+                      setConfirmLoading(false);
+                      setConfirmDialog(prev => ({ ...prev, isOpen: false }));
                     }
-                  } catch (err) {
-                    toast.error(err.response?.data?.message || "Gagal menandai lunas");
-                  }
-                }
+                  },
+                });
               }}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold text-sm"
             >
@@ -987,18 +1009,28 @@ const MemberDetail = () => {
             </button>
           ) : (
             <button
-              onClick={async () => {
-                if (window.confirm("Batalkan status lunas member ini?")) {
-                  try {
-                    const response = await api.patch(`/api/admin/members/${member.uuid}/uncomplete`);
-                    if (response.data.success) {
-                      toast.success("Status lunas berhasil dibatalkan");
-                      fetchMemberDetail();
+              onClick={() => {
+                setConfirmDialog({
+                  isOpen: true,
+                  title: "Batalkan Status Lunas",
+                  message: "Apakah Anda yakin ingin membatalkan status lunas member ini?",
+                  type: "warning",
+                  onConfirm: async () => {
+                    setConfirmLoading(true);
+                    try {
+                      const response = await api.patch(`/api/admin/members/${member.uuid}/uncomplete`);
+                      if (response.data.success) {
+                        toast.success("↩️ Status lunas berhasil dibatalkan");
+                        fetchMemberDetail();
+                      }
+                    } catch (err) {
+                      toast.error(err.response?.data?.message || "Gagal membatalkan status lunas");
+                    } finally {
+                      setConfirmLoading(false);
+                      setConfirmDialog(prev => ({ ...prev, isOpen: false }));
                     }
-                  } catch (err) {
-                    toast.error(err.response?.data?.message || "Gagal membatalkan status lunas");
-                  }
-                }
+                  },
+                });
               }}
               className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 font-semibold text-sm"
             >
@@ -2443,6 +2475,17 @@ const MemberDetail = () => {
           </div>
         </div>
       )}
+
+      {/* Confirm Dialog */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        onClose={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+        onConfirm={confirmDialog.onConfirm}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        type={confirmDialog.type}
+        loading={confirmLoading}
+      />
     </div>
   );
 };
