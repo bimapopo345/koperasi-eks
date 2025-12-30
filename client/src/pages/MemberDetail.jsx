@@ -741,6 +741,20 @@ const MemberDetail = () => {
     const upgradeInfo = member.upgradeInfo || member.currentUpgradeId;
     const hasUpgraded = member.hasUpgraded;
     
+    // Debug log upgrade info
+    console.log('=== UPGRADE DEBUG ===');
+    console.log('hasUpgraded:', hasUpgraded);
+    console.log('upgradeInfo:', upgradeInfo);
+    console.log('member.currentUpgradeId:', member.currentUpgradeId);
+    console.log('member.upgradeInfo:', member.upgradeInfo);
+    console.log('currentProductDeposit:', member.product.depositAmount);
+    if (upgradeInfo) {
+      console.log('completedPeriodsAtUpgrade:', upgradeInfo.completedPeriodsAtUpgrade);
+      console.log('oldMonthlyDeposit:', upgradeInfo.oldMonthlyDeposit);
+      console.log('newMonthlyDeposit:', upgradeInfo.newMonthlyDeposit);
+      console.log('newPaymentWithCompensation:', upgradeInfo.newPaymentWithCompensation);
+    }
+    
     for (let period = 1; period <= totalPeriods; period++) {
       // Find all transactions for this period
       const periodTransactions = savings.filter(s => s.installmentPeriod === period);
@@ -748,20 +762,41 @@ const MemberDetail = () => {
       let status = 'belum_bayar';
       let totalPaid = 0;
       
+      // Calculate total approved amount for this period FIRST
+      const approvedTransactions = periodTransactions.filter(t => t.status === 'Approved');
+      totalPaid = approvedTransactions.reduce((sum, t) => sum + t.amount, 0);
+      
       // Calculate required amount based on upgrade status
       let requiredAmount = member.product.depositAmount || 0;
       
       // If member has upgraded, adjust required amount based on period
       if (hasUpgraded && upgradeInfo) {
-        if (period <= upgradeInfo.completedPeriodsAtUpgrade) {
-          // Periods completed before upgrade use old amount
-          requiredAmount = upgradeInfo.oldMonthlyDeposit || requiredAmount;
-        } else {
-          // Periods after upgrade use new amount + compensation
-          requiredAmount = upgradeInfo.newPaymentWithCompensation || requiredAmount;
+        const completedAtUpgrade = upgradeInfo.completedPeriodsAtUpgrade ?? 0;
+        const oldDeposit = upgradeInfo.oldMonthlyDeposit ?? 0;
+        const newPayment = upgradeInfo.newPaymentWithCompensation ?? 0;
+        
+        // Debug for first few periods
+        if (period <= 5) {
+          console.log(`Period ${period}: completedAtUpgrade=${completedAtUpgrade}, oldDeposit=${oldDeposit}, newPayment=${newPayment}`);
+        }
+        
+        // IMPORTANT: Check if period is within completed periods at upgrade
+        // completedAtUpgrade could be 0 if no periods were completed before upgrade
+        if (completedAtUpgrade > 0 && period <= completedAtUpgrade && oldDeposit > 0) {
+          // Periods completed BEFORE upgrade use OLD amount
+          requiredAmount = oldDeposit;
+        } else if (newPayment > 0) {
+          // Periods AFTER upgrade (or all periods if completedAtUpgrade is 0) use new amount + compensation
+          requiredAmount = newPayment;
+        }
+        
+        if (period <= 5) {
+          console.log(`Period ${period}: requiredAmount set to ${requiredAmount}`);
         }
       }
       
+      // SMART STATUS DETECTION for upgraded members
+      // If period was completed before upgrade, check against OLD target
       let transactions = [];
       
       if (periodTransactions.length > 0) {
@@ -772,10 +807,6 @@ const MemberDetail = () => {
           ...tx,
           rejectionReason: tx.rejectionReason || null
         }));
-        
-        // Calculate total approved amount for this period
-        const approvedTransactions = periodTransactions.filter(t => t.status === 'Approved');
-        totalPaid = approvedTransactions.reduce((sum, t) => sum + t.amount, 0);
         
         // Check latest transaction status
         const latestTransaction = sortedTransactions[0];
@@ -798,7 +829,7 @@ const MemberDetail = () => {
         requiredAmount,
         remainingAmount: Math.max(0, requiredAmount - totalPaid),
         transactions,
-        percentage: requiredAmount > 0 ? (totalPaid / requiredAmount) * 100 : 0
+        percentage: requiredAmount > 0 ? Math.min((totalPaid / requiredAmount) * 100, 100) : 0
       });
     }
     
