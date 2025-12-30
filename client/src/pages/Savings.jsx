@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import axios from "axios";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
@@ -8,6 +9,7 @@ import Pagination from "../components/Pagination.jsx";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
 
 const Savings = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [savings, setSavings] = useState([]);
   const [members, setMembers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -73,6 +75,24 @@ const Savings = () => {
   const [filterProduct, setFilterProduct] = useState("all");
   const [filterMember, setFilterMember] = useState("all");
   const [sortOrder, setSortOrder] = useState("newest"); // newest, oldest
+
+  // Handle URL params from notification
+  useEffect(() => {
+    const memberParam = searchParams.get("member");
+    const statusParam = searchParams.get("status");
+    
+    if (memberParam) {
+      setFilterMember(memberParam);
+    }
+    if (statusParam) {
+      setFilterStatus(statusParam);
+    }
+    
+    // Clear URL params after applying
+    if (memberParam || statusParam) {
+      setSearchParams({});
+    }
+  }, [searchParams, setSearchParams]);
   
   // Summary state for totals
   const [summary, setSummary] = useState({
