@@ -28,16 +28,16 @@ router.post("/doku-checkout", async (req, res) => {
     }
 
     // Extract member UUID and period from invoice number
-    // Format: SAV-{uuid}-P{period}-{timestamp}
-    const invoiceParts = invoice_number.split("-");
-    if (invoiceParts.length < 3 || invoiceParts[0] !== "SAV") {
+    // Format: SAV-{fullUUID}-P{period}-{timestamp}
+    // UUID examples: JPYG57319, JPTG25060001, etc.
+    const invoiceMatch = invoice_number.match(/^SAV-(.+?)-P(\d+)-(\d+)$/);
+    if (!invoiceMatch) {
       console.error("Invalid invoice format:", invoice_number);
       return res.status(400).json({ message: "Invalid invoice format" });
     }
 
-    const memberUuid = invoiceParts[1];
-    const periodMatch = invoice_number.match(/P(\d+)/);
-    const installmentPeriod = periodMatch ? parseInt(periodMatch[1]) : 1;
+    const memberUuid = invoiceMatch[1];
+    const installmentPeriod = parseInt(invoiceMatch[2]) || 1;
 
     console.log(`Processing payment for UUID: ${memberUuid}, Period: ${installmentPeriod}, Amount: ${amount}`);
 
@@ -101,12 +101,10 @@ router.post("/doku-checkout", async (req, res) => {
       await member.save();
     }
 
-    // Check if payment already exists (avoid duplicates)
+    // Check if payment already exists by invoice number (avoid duplicates)
     const existingSaving = await Savings.findOne({
       memberId: member._id,
-      installmentPeriod: installmentPeriod,
-      status: "Approved",
-      description: { $regex: invoice_number }
+      invoiceNumber: invoice_number
     });
 
     if (existingSaving) {
@@ -114,26 +112,45 @@ router.post("/doku-checkout", async (req, res) => {
       return res.status(200).json({ message: "Payment already processed" });
     }
 
-    // Create new savings record with Approved status
+    // Calculate partial sequence for this period (same as manual flow)
+    const existingSavingsCount = await Savings.countDocuments({
+      memberId: member._id,
+      productId: product._id,
+      installmentPeriod: installmentPeriod,
+    });
+    const partialSequence = existingSavingsCount + 1;
+
+    // Auto-detect payment type (same as manual flow)
+    const parsedAmount = parseInt(amount);
+    const calculatedPaymentType = parsedAmount < product.depositAmount ? "Partial" : "Full";
+
+    // Determine status: Partial payments get "Partial" status, Full gets "Approved"
+    const savingStatus = calculatedPaymentType === "Partial" ? "Partial" : "Approved";
+
+    console.log(`DOKU Payment - Amount: ${parsedAmount}, DepositAmount: ${product.depositAmount}, PaymentType: ${calculatedPaymentType}, Status: ${savingStatus}, Sequence: ${partialSequence}`);
+
+    // Create new savings record
     const newSaving = new Savings({
       memberId: member._id,
-      productId: product._id, // Use product._id instead of member.currentProductId
+      productId: product._id,
       type: "Setoran",
-      amount: parseInt(amount),
+      amount: parsedAmount,
       installmentPeriod: installmentPeriod,
-      savingsDate: new Date(), // Add required savingsDate
-      status: "Approved", // Auto-approve payment gateway transactions
-      paymentMethod: channel ? channel.id : "Payment Gateway",
-      description: `Payment via DOKU Checkout - Invoice: ${invoice_number}`,
+      savingsDate: new Date(),
+      paymentDate: new Date(),
+      status: savingStatus,
+      paymentType: calculatedPaymentType,
+      partialSequence: partialSequence,
+      paymentMethod: channel ? channel.id : "DOKU_CHECKOUT",
+      description: `Payment via DOKU Checkout - Invoice: ${invoice_number}${partialSequence > 1 ? ` (#${partialSequence})` : ''}`,
       notes: `Auto-approved via DOKU webhook${channel ? ` - Channel: ${channel.id}` : ''}`,
-      createdBy: member._id,
-      approvedBy: member._id, // Use member._id as approver (ObjectId)
+      approvedBy: member._id,
       approvedAt: new Date(),
-      invoiceNumber: invoice_number // Store invoice number for reference
+      invoiceNumber: invoice_number
     });
 
     await newSaving.save();
-    console.log(`Savings record created successfully: ${newSaving._id}`);
+    console.log(`Savings record created successfully: ${newSaving._id}, Type: ${calculatedPaymentType}, Status: ${savingStatus}`);
 
     // Success response to DOKU
     return res.status(200).json({
@@ -206,20 +223,35 @@ router.post("/doku-qris", async (req, res) => {
       return res.status(200).json({ message: "Payment already processed" });
     }
 
+    // Get product for member
+    let qrisProduct;
+    if (member.currentProductId) {
+      qrisProduct = await Product.findById(member.currentProductId);
+    }
+    if (!qrisProduct) {
+      qrisProduct = await Product.findOne({ isActive: true }).sort({ name: 1 });
+    }
+    if (!qrisProduct) {
+      console.error(`No product found for QRIS payment`);
+      return res.status(400).json({ message: "No product found" });
+    }
+
     // Create savings record
     const newSaving = new Savings({
       memberId: member._id,
-      productId: member.currentProductId,
+      productId: qrisProduct._id,
       type: "Setoran",
       amount: parseInt(AMOUNT),
       installmentPeriod: installmentPeriod,
+      savingsDate: new Date(),
+      paymentDate: new Date(),
       status: "Approved",
       paymentMethod: "QRIS",
       description: `Payment via QRIS - Invoice: ${INVOICE}`,
       notes: `Transaction ID: ${TRANSACTIONID}, Date: ${TXNDATE}`,
-      createdBy: member._id,
-      approvedBy: "DOKU QRIS System",
-      approvedAt: new Date()
+      approvedBy: member._id,
+      approvedAt: new Date(),
+      invoiceNumber: INVOICE
     });
 
     await newSaving.save();
