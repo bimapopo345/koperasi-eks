@@ -41,6 +41,15 @@ export const loginMember = asyncHandler(async (req, res) => {
       });
     }
 
+    // Cek status verifikasi - member dari student_dashboard harus diverifikasi dulu
+    if (!member.isVerified) {
+      return res.status(403).json({
+        success: false,
+        message: "Akun belum diverifikasi oleh admin. Silakan tunggu proses verifikasi.",
+        isVerified: false,
+      });
+    }
+
     // Verifikasi password format: UUID-1234
     const expectedPassword = `${uuid}-1234`;
     

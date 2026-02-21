@@ -36,6 +36,55 @@ const memberSchema = new Schema(
       trim: true,
       default: "",
     },
+    // Field baru untuk formulir pendaftaran koperasi
+    email: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    birthPlace: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    birthDate: {
+      type: Date,
+      default: null,
+    },
+    nik: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    bankName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    accountHolderName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    // Status verifikasi
+    isVerified: {
+      type: Boolean,
+      default: false,
+    },
+    verifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    verifiedAt: {
+      type: Date,
+      default: null,
+    },
+    registrationSource: {
+      type: String,
+      enum: ["admin", "student_dashboard"],
+      default: "admin",
+    },
     user: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",

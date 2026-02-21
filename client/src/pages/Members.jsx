@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import api from "../api/index.jsx";
 import Pagination from "../components/Pagination.jsx";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
@@ -7,6 +7,7 @@ import { toast } from "react-toastify";
 
 const Members = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [members, setMembers] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +38,7 @@ const Members = () => {
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all"); // all, completed, not_completed
+  const [filterVerification, setFilterVerification] = useState("all"); // all, verified, unverified
   const [formData, setFormData] = useState({
     uuid: "",
     name: "",
@@ -52,6 +54,11 @@ const Members = () => {
   });
 
   useEffect(() => {
+    // Read URL query param for filter
+    const filterParam = searchParams.get("filter");
+    if (filterParam === "unverified") {
+      setFilterVerification("unverified");
+    }
     fetchMembers();
     fetchProducts();
     fetchAvailableUuids(); // 🔴 NEW: ambil daftar UUID dari API student
@@ -251,6 +258,54 @@ const Members = () => {
     });
   };
 
+  const handleVerify = (uuid, memberName) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Verifikasi Anggota",
+      message: `Apakah Anda yakin ingin memverifikasi anggota "${memberName}"? Setelah diverifikasi, anggota bisa mengakses fitur tabungan.`,
+      type: "warning",
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        try {
+          const response = await api.patch(`/api/admin/members/${uuid}/verify`);
+          if (response.data.success) {
+            toast.success("✅ Anggota berhasil diverifikasi");
+            fetchMembers();
+          }
+        } catch (err) {
+          toast.error(err.response?.data?.message || "Gagal memverifikasi anggota");
+        } finally {
+          setConfirmLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
+  };
+
+  const handleUnverify = (uuid, memberName) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: "Batalkan Verifikasi",
+      message: `Apakah Anda yakin ingin membatalkan verifikasi anggota "${memberName}"?`,
+      type: "danger",
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        try {
+          const response = await api.patch(`/api/admin/members/${uuid}/unverify`);
+          if (response.data.success) {
+            toast.success("Verifikasi anggota berhasil dibatalkan");
+            fetchMembers();
+          }
+        } catch (err) {
+          toast.error(err.response?.data?.message || "Gagal membatalkan verifikasi");
+        } finally {
+          setConfirmLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
+  };
+
   const handleAddNew = () => {
     setEditingMember(null);
     // 🔴 NEW: reset uuid juga
@@ -280,6 +335,13 @@ const Members = () => {
     } else if (filterStatus === "not_completed") {
       result = result.filter(member => !member.isCompleted);
     }
+
+    // Filter by verification status
+    if (filterVerification === "verified") {
+      result = result.filter(member => member.isVerified === true);
+    } else if (filterVerification === "unverified") {
+      result = result.filter(member => !member.isVerified);
+    }
     
     // Filter by search term
     if (searchTerm) {
@@ -292,7 +354,7 @@ const Members = () => {
     }
     
     return result;
-  }, [members, searchTerm, filterStatus]);
+  }, [members, searchTerm, filterStatus, filterVerification]);
 
   // Pagination logic with useMemo for performance
   const paginationData = useMemo(() => {
@@ -419,10 +481,27 @@ const Members = () => {
               <option value="not_completed">⏳ Belum Lunas</option>
             </select>
           </div>
+
+          {/* Filter Verifikasi */}
+          <div className="flex items-center gap-2">
+            <label className="text-sm text-gray-600 whitespace-nowrap">Verifikasi:</label>
+            <select
+              value={filterVerification}
+              onChange={(e) => {
+                setFilterVerification(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 text-sm"
+            >
+              <option value="all">📋 Semua</option>
+              <option value="verified">✅ Terverifikasi</option>
+              <option value="unverified">🕐 Belum Verifikasi</option>
+            </select>
+          </div>
           
           {/* Search Results Info */}
           <div className="text-sm text-gray-600">
-            {searchTerm || filterStatus !== "all" ? (
+            {searchTerm || filterStatus !== "all" || filterVerification !== "all" ? (
               <span className="flex items-center flex-wrap gap-1">
                 <span className="font-medium text-pink-600">{filteredMembers.length}</span>
                 <span>dari {members.length} anggota</span>
@@ -434,6 +513,11 @@ const Members = () => {
                 {filterStatus !== "all" && (
                   <span className={`px-2 py-1 rounded-full text-xs ${filterStatus === "completed" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}`}>
                     {filterStatus === "completed" ? "✅ Lunas" : "⏳ Belum Lunas"}
+                  </span>
+                )}
+                {filterVerification !== "all" && (
+                  <span className={`px-2 py-1 rounded-full text-xs ${filterVerification === "verified" ? "bg-green-100 text-green-800" : "bg-orange-100 text-orange-800"}`}>
+                    {filterVerification === "verified" ? "✅ Terverifikasi" : "🕐 Belum Verifikasi"}
                   </span>
                 )}
               </span>
@@ -480,6 +564,9 @@ const Members = () => {
                 Status
               </th>
               <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
+                Verifikasi
+              </th>
+              <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-pink-700 uppercase tracking-wider">
                 Aksi
               </th>
             </tr>
@@ -487,7 +574,7 @@ const Members = () => {
           <tbody className="bg-white divide-y divide-gray-200">
             {currentMembers.length === 0 ? (
               <tr>
-                <td colSpan="10" className="px-6 py-12 text-center">
+                <td colSpan="12" className="px-6 py-12 text-center">
                   <div className="flex flex-col items-center">
                     <div className="text-6xl mb-4">🔍</div>
                     <h3 className="text-lg font-medium text-gray-900 mb-2">
@@ -569,6 +656,27 @@ const Members = () => {
                       ⏳ Belum
                     </span>
                   )}
+                </td>
+                <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm">
+                  <div className="flex flex-col items-start gap-1">
+                    {member.isVerified ? (
+                      <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
+                        ✅ Terverifikasi
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handleVerify(member.uuid, member.name)}
+                        className="px-3 py-1 bg-blue-500 text-white rounded-full text-xs font-semibold hover:bg-blue-600 transition-colors"
+                      >
+                        Verifikasi
+                      </button>
+                    )}
+                    {member.registrationSource === "student_dashboard" && (
+                      <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px]">
+                        via Student
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-3 sm:px-6 py-3 sm:py-4 whitespace-nowrap text-xs sm:text-sm font-medium">
                   <div className="flex flex-col sm:flex-row space-y-1 sm:space-y-0 sm:space-x-2">

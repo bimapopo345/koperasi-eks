@@ -22,7 +22,11 @@ import {
   updateMember, 
   deleteMember,
   markAsCompleted,
-  unmarkAsCompleted
+  unmarkAsCompleted,
+  verifyMember,
+  unverifyMember,
+  getPendingCount,
+  migrateExistingMembers
 } from "../controllers/admin/member.controller.js";
 import { 
   getAllSavings, 
@@ -89,12 +93,16 @@ router.patch("/products/:id/toggle-status", verifyToken, toggleProductStatus);
 
 // Member management routes
 router.get("/members", verifyToken, getAllMembers);
+router.get("/members/pending-count", verifyToken, getPendingCount);
+router.post("/members/migrate-verified", verifyToken, migrateExistingMembers);
 router.get("/members/:uuid", verifyToken, getMemberByUuid);
 router.post("/members", verifyToken, createMember);
 router.put("/members/:uuid", verifyToken, updateMember);
 router.delete("/members/:uuid", verifyToken, deleteMember);
 router.patch("/members/:uuid/complete", verifyToken, markAsCompleted);
 router.patch("/members/:uuid/uncomplete", verifyToken, unmarkAsCompleted);
+router.patch("/members/:uuid/verify", verifyToken, verifyMember);
+router.patch("/members/:uuid/unverify", verifyToken, unverifyMember);
 
 // Savings management routes
 router.get("/savings", verifyToken, getAllSavings);

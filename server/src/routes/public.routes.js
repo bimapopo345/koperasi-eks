@@ -1,6 +1,7 @@
 import express from "express";
 const router = express.Router();
 import { Member } from "../models/member.model.js";
+import { User } from "../models/user.model.js";
 import { Product } from "../models/product.model.js";
 import { Savings } from "../models/savings.model.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
@@ -374,6 +375,179 @@ const getStudentDashboardSavings = asyncHandler(async (req, res) => {
   }
 });
 
+// POST /api/public/register-koperasi - Student dashboard registration
+const registerKoperasi = asyncHandler(async (req, res) => {
+  try {
+    const {
+      uuid,
+      name,
+      gender,
+      email,
+      phone,
+      birthPlace,
+      birthDate,
+      nik,
+      completeAddress,
+      accountNumber,
+      bankName,
+      accountHolderName,
+      productId,
+    } = req.body;
+
+    // Validate required fields
+    if (!uuid || !name || !gender) {
+      return res.status(400).json({
+        success: false,
+        message: "UUID, nama, dan jenis kelamin wajib diisi",
+      });
+    }
+
+    // Check if UUID already registered
+    const existingMember = await Member.findOne({ uuid });
+    if (existingMember) {
+      return res.status(400).json({
+        success: false,
+        message: "UUID sudah terdaftar sebagai anggota koperasi",
+        isAlreadyRegistered: true,
+        isVerified: existingMember.isVerified,
+      });
+    }
+
+    // Validate productId if provided
+    if (productId) {
+      const product = await Product.findById(productId);
+      if (!product || !product.isActive) {
+        return res.status(400).json({
+          success: false,
+          message: "Produk simpanan tidak valid atau tidak aktif",
+        });
+      }
+    }
+
+    // Generate UUID for user account
+    const generateUserUUID = () => {
+      const timestamp = Date.now().toString();
+      const random = Math.random().toString(36).substring(2, 8);
+      return `USER_${timestamp}_${random}`;
+    };
+
+    // Generate username based on name
+    const generateUsername = (name) => {
+      const cleanName = name.toLowerCase().replace(/\s+/g, "");
+      const timestamp = Date.now().toString().slice(-6);
+      return `${cleanName}_${timestamp}`;
+    };
+
+    // Create user account
+    const username = generateUsername(name);
+    const user = new User({
+      username,
+      password: "member123",
+      name,
+      role: "staff",
+      uuid: generateUserUUID(),
+    });
+    await user.save();
+
+    // Create member with isVerified: false
+    const member = new Member({
+      uuid,
+      name,
+      gender,
+      email: email || "",
+      phone: phone || "",
+      birthPlace: birthPlace || "",
+      birthDate: birthDate ? new Date(birthDate) : null,
+      nik: nik || "",
+      completeAddress: completeAddress || "",
+      accountNumber: accountNumber || "",
+      bankName: bankName || "",
+      accountHolderName: accountHolderName || "",
+      productId: productId || null,
+      user: user._id,
+      isVerified: false,
+      registrationSource: "student_dashboard",
+    });
+    await member.save();
+
+    res.status(201).json({
+      success: true,
+      message: "Pendaftaran berhasil! Menunggu verifikasi admin.",
+      data: {
+        uuid: member.uuid,
+        name: member.name,
+        isVerified: member.isVerified,
+      },
+    });
+  } catch (error) {
+    console.error("Register koperasi error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Gagal mendaftar koperasi",
+      error: error.message,
+    });
+  }
+});
+
+// GET /api/public/check-member/:uuid - Check member registration & verification status
+const checkMemberStatus = asyncHandler(async (req, res) => {
+  try {
+    const { uuid } = req.params;
+
+    if (!uuid) {
+      return res.status(400).json({
+        success: false,
+        message: "UUID wajib diisi",
+      });
+    }
+
+    const member = await Member.findOne({ uuid })
+      .populate("productId", "title depositAmount termDuration");
+
+    if (!member) {
+      return res.status(200).json({
+        success: true,
+        status: "not_registered",
+        message: "Belum terdaftar sebagai anggota koperasi",
+      });
+    }
+
+    if (!member.isVerified) {
+      return res.status(200).json({
+        success: true,
+        status: "pending_verification",
+        message: "Pendaftaran sedang menunggu verifikasi admin",
+        data: {
+          uuid: member.uuid,
+          name: member.name,
+          registeredAt: member.createdAt,
+          product: member.productId ? {
+            title: member.productId.title,
+            depositAmount: member.productId.depositAmount,
+          } : null,
+        },
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      status: "verified",
+      message: "Anggota koperasi terverifikasi",
+      data: {
+        uuid: member.uuid,
+        name: member.name,
+        isVerified: member.isVerified,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: "Gagal memeriksa status member",
+      error: error.message,
+    });
+  }
+});
+
 // Routes
 router.get("/savings", getPublicSavings);
 router.get("/members", getPublicMembers);
@@ -381,5 +555,33 @@ router.get("/products", getPublicProducts);
 router.get("/summary", getPublicSummary);
 router.get("/member/:uuid", getMemberByUuid);
 router.get("/student-dashboard/:uuid", getStudentDashboardSavings);
+router.post("/register-koperasi", registerKoperasi);
+router.get("/check-member/:uuid", checkMemberStatus);
+
+// One-time migration route (accessible via browser)
+// Usage: GET /api/public/migrate-members?key=samit-migrate-2026
+router.get("/migrate-members", asyncHandler(async (req, res) => {
+  const { key } = req.query;
+  if (key !== "samit-migrate-2026") {
+    return res.status(403).json({ success: false, message: "Invalid key" });
+  }
+
+  const result = await Member.updateMany(
+    { isVerified: { $exists: false } },
+    { $set: { isVerified: true, registrationSource: "admin" } }
+  );
+
+  const result2 = await Member.updateMany(
+    { isVerified: false, registrationSource: { $exists: false } },
+    { $set: { isVerified: true, registrationSource: "admin" } }
+  );
+
+  res.status(200).json({
+    success: true,
+    message: `Migration selesai. ${result.modifiedCount + result2.modifiedCount} member diperbarui.`,
+    batch1: result.modifiedCount,
+    batch2: result2.modifiedCount,
+  });
+}));
 
 export default router;
