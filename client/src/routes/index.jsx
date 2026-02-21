@@ -18,6 +18,10 @@ import LoanManagement from "../pages/LoanManagement.jsx";
 import Settings from "../pages/Settings.jsx";
 import Reports from "../pages/Reports.jsx";
 import PrivateRoute from "../utils/PrivateRoute.jsx";
+import ChartOfAccounts from "../pages/accounting/ChartOfAccounts.jsx";
+import Transactions from "../pages/accounting/Transactions.jsx";
+import ReconciliationPage from "../pages/accounting/Reconciliation.jsx";
+import SalesTaxes from "../pages/accounting/SalesTaxes.jsx";
 
 const router = createBrowserRouter(
   createRoutesFromElements(
@@ -40,6 +44,10 @@ const router = createBrowserRouter(
         <Route path="/loan-management" element={<LoanManagement />} />
         <Route path="/laporan" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/akuntansi/transaksi" element={<Transactions />} />
+        <Route path="/akuntansi/rekonsiliasi" element={<ReconciliationPage />} />
+        <Route path="/akuntansi/coa" element={<ChartOfAccounts />} />
+        <Route path="/akuntansi/pajak" element={<SalesTaxes />} />
       </Route>
     </Route>
   )
