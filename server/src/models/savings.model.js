@@ -77,6 +77,16 @@ const savingsSchema = new mongoose.Schema(
       type: Number,
       default: 1,
     },
+    paymentMethod: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    invoiceNumber: {
+      type: String,
+      trim: true,
+      default: "",
+    },
   },
   {
     timestamps: true,

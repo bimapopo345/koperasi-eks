@@ -22,7 +22,8 @@ app.use(
       "http://localhost:5173", 
       "http://localhost:3000",
       "http://localhost:8080",  // Added for CI4 to MERN webhook
-      "https://admin.samitcoop.com"
+      "https://admin.samitcoop.com",
+      "https://student.samit.co.id"  // Student dashboard DOKU webhook
     ],
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
