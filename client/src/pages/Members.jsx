@@ -47,6 +47,13 @@ const Members = () => {
     city: "",
     completeAddress: "",
     accountNumber: "",
+    bankName: "",
+    accountHolderName: "",
+    nik: "",
+    birthPlace: "",
+    birthDate: "",
+    email: "",
+    riplText: "",
     username: "",
     password: "",
     productId: "",
@@ -200,6 +207,13 @@ const Members = () => {
             city: "",
             completeAddress: "",
             accountNumber: "",
+            bankName: "",
+            accountHolderName: "",
+            nik: "",
+            birthPlace: "",
+            birthDate: "",
+            email: "",
+            riplText: "",
             username: "",
             password: "",
             productId: "",
@@ -224,6 +238,13 @@ const Members = () => {
       city: member.city || "",
       completeAddress: member.completeAddress || "",
       accountNumber: member.accountNumber || "",
+      bankName: member.bankName || "",
+      accountHolderName: member.accountHolderName || "",
+      nik: member.nik || "",
+      birthPlace: member.birthPlace || "",
+      birthDate: member.birthDate || "",
+      email: member.email || "",
+      riplText: member.riplText || "",
       username: member.user.username,
       password: "",
       productId: member.productId || "",
@@ -317,6 +338,13 @@ const Members = () => {
       city: "",
       completeAddress: "",
       accountNumber: "",
+      bankName: "",
+      accountHolderName: "",
+      nik: "",
+      birthPlace: "",
+      birthDate: "",
+      email: "",
+      riplText: "",
       username: "",
       password: "",
       productId: "",
@@ -909,33 +937,105 @@ const Members = () => {
                 </div>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    No Rekening
+                    Email
                   </label>
                   <input
-                    type="text"
-                    value={formData.accountNumber}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        accountNumber: e.target.value,
-                      })
-                    }
-                    placeholder="Contoh: 1234567890"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+                <div className="grid grid-cols-2 gap-3 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tempat Lahir</label>
+                    <input
+                      type="text"
+                      value={formData.birthPlace}
+                      onChange={(e) => setFormData({ ...formData, birthPlace: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal Lahir</label>
+                    <input
+                      type="date"
+                      value={formData.birthDate}
+                      onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    📅 Tanggal Mulai Tabungan (Opsional)
+                    NIK (No. KTP)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.nik}
+                    onChange={(e) => setFormData({ ...formData, nik: e.target.value })}
+                    maxLength={16}
+                    placeholder="16 digit NIK"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="mb-4 border-t pt-3">
+                  <p className="text-xs font-semibold text-gray-500 uppercase mb-2">🏦 Data Rekening Bank</p>
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nama Bank</label>
+                    <input
+                      type="text"
+                      value={formData.bankName}
+                      onChange={(e) => setFormData({ ...formData, bankName: e.target.value })}
+                      placeholder="Contoh: BCA, BNI, Mandiri"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="mb-3">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">No Rekening</label>
+                    <input
+                      type="text"
+                      value={formData.accountNumber}
+                      onChange={(e) => setFormData({ ...formData, accountNumber: e.target.value })}
+                      placeholder="Contoh: 1234567890"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Atas Nama</label>
+                    <input
+                      type="text"
+                      value={formData.accountHolderName}
+                      onChange={(e) => setFormData({ ...formData, accountHolderName: e.target.value })}
+                      placeholder="Nama pemilik rekening"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    📋 Teks RIPL (Snapshot saat daftar)
+                  </label>
+                  <textarea
+                    value={formData.riplText}
+                    onChange={(e) => setFormData({ ...formData, riplText: e.target.value })}
+                    placeholder="Teks Ringkasan Informasi Produk dan Layanan yang berlaku saat pendaftaran..."
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-xs"
+                    rows={4}
+                  />
+                  <small className="text-gray-500 mt-1 block">
+                    💡 Otomatis terisi dari teks RIPL saat student mendaftar via dashboard.
+                  </small>
+                </div>
+                <div className="mb-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    📆 Tanggal Mulai Tabungan (Opsional)
                   </label>
                   <input
                     type="date"
                     value={formData.savingsStartDate}
                     onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        savingsStartDate: e.target.value,
-                      })
+                      setFormData({ ...formData, savingsStartDate: e.target.value })
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />

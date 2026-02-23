@@ -66,6 +66,14 @@ const memberSchema = new Schema(
       trim: true,
       default: "",
     },
+    signatureImage: {
+      type: String,
+      default: "",
+    },
+    riplText: {
+      type: String,
+      default: "",
+    },
     // Status verifikasi
     isVerified: {
       type: Boolean,
