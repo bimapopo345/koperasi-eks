@@ -70,6 +70,18 @@ const memberSchema = new Schema(
       type: String,
       default: "",
     },
+    ktpImage: {
+      type: String,
+      default: "",
+    },
+    selfieImage: {
+      type: String,
+      default: "",
+    },
+    faceMatchScore: {
+      type: Number,
+      default: null,
+    },
     riplText: {
       type: String,
       default: "",

@@ -393,6 +393,9 @@ const registerKoperasi = asyncHandler(async (req, res) => {
       accountHolderName,
       productId,
       signatureImage,
+      ktpImage,
+      selfieImage,
+      faceMatchScore,
       riplText,
     } = req.body;
 
@@ -466,6 +469,9 @@ const registerKoperasi = asyncHandler(async (req, res) => {
       bankName: bankName || "",
       accountHolderName: accountHolderName || "",
       signatureImage: signatureImage || "",
+      ktpImage: ktpImage || "",
+      selfieImage: selfieImage || "",
+      faceMatchScore: faceMatchScore || null,
       riplText: riplText || "",
       productId: productId || null,
       user: user._id,
