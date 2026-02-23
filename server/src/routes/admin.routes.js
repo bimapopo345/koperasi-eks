@@ -22,7 +22,11 @@ import {
   updateMember, 
   deleteMember,
   markAsCompleted,
-  unmarkAsCompleted
+  unmarkAsCompleted,
+  verifyMember,
+  unverifyMember,
+  getPendingCount,
+  migrateExistingMembers
 } from "../controllers/admin/member.controller.js";
 import { 
   getAllSavings, 
@@ -45,6 +49,10 @@ import productUpgradeRoutes from "./admin/productUpgrade.routes.js";
 import loanRoutes from "./loan.routes.js";
 import loanPaymentRoutes from "./loanPayment.routes.js";
 import loanProductRoutes from "./loanProduct.routes.js";
+import coaRoutes from "./coa.routes.js";
+import transactionRoutes from "./transaction.routes.js";
+import reconciliationRoutes from "./reconciliation.routes.js";
+import salesTaxRoutes from "./salesTax.routes.js";
 
 import path from "path";
 import { ensureUploadsSubdirs, getUploadsDir } from "../utils/uploadsDir.js";
@@ -85,12 +93,16 @@ router.patch("/products/:id/toggle-status", verifyToken, toggleProductStatus);
 
 // Member management routes
 router.get("/members", verifyToken, getAllMembers);
+router.get("/members/pending-count", verifyToken, getPendingCount);
+router.post("/members/migrate-verified", verifyToken, migrateExistingMembers);
 router.get("/members/:uuid", verifyToken, getMemberByUuid);
 router.post("/members", verifyToken, createMember);
 router.put("/members/:uuid", verifyToken, updateMember);
 router.delete("/members/:uuid", verifyToken, deleteMember);
 router.patch("/members/:uuid/complete", verifyToken, markAsCompleted);
 router.patch("/members/:uuid/uncomplete", verifyToken, unmarkAsCompleted);
+router.patch("/members/:uuid/verify", verifyToken, verifyMember);
+router.patch("/members/:uuid/unverify", verifyToken, unverifyMember);
 
 // Savings management routes
 router.get("/savings", verifyToken, getAllSavings);
@@ -113,6 +125,12 @@ router.use("/product-upgrade", productUpgradeRoutes);
 router.use("/loans", loanRoutes);
 router.use("/loan-payments", loanPaymentRoutes);
 router.use("/loan-products", loanProductRoutes);
+
+// Accounting routes
+router.use("/coa", verifyToken, coaRoutes);
+router.use("/transactions", verifyToken, transactionRoutes);
+router.use("/reconciliation", verifyToken, reconciliationRoutes);
+router.use("/sales-tax", verifyToken, salesTaxRoutes);
 
 // System routes (danger zone)
 router.post("/system/clear-all", verifyToken, clearAllData);

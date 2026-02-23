@@ -44,7 +44,7 @@ jobs:
 
             # Persistent uploads directory on host
             UPLOADS_HOST_DIR="$APP_DIR/server/uploads"
-            mkdir -p "$UPLOADS_HOST_DIR/simpanan" "$UPLOADS_HOST_DIR/pinjaman"
+            mkdir -p "$UPLOADS_HOST_DIR/simpanan" "$UPLOADS_HOST_DIR/pinjaman" "$UPLOADS_HOST_DIR/transactions"
 
             podman build --pull-always --no-cache -t koperasi-api:latest .
             podman stop api || true

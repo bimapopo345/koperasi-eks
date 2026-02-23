@@ -7,6 +7,14 @@ import { Member } from "../models/member.model.js";
 import { LoanProduct } from "../models/loanProduct.model.js";
 import { Loan } from "../models/loan.model.js";
 import { LoanPayment } from "../models/loanPayment.model.js";
+import { CoaMaster } from "../models/coaMaster.model.js";
+import { CoaSubmenu } from "../models/coaSubmenu.model.js";
+import { CoaAccount } from "../models/coaAccount.model.js";
+import { AccountingTransaction } from "../models/accountingTransaction.model.js";
+import { TransactionSplit } from "../models/transactionSplit.model.js";
+import { BankReconciliation } from "../models/bankReconciliation.model.js";
+import { BankReconciliationItem } from "../models/bankReconciliationItem.model.js";
+import { SalesTax } from "../models/salesTax.model.js";
 
 const connectDB = async () => {
   try {
@@ -23,4 +31,4 @@ const connectDB = async () => {
 };
 
 export default connectDB;
-export { User, Product, Savings, Member, LoanProduct, Loan, LoanPayment };
+export { User, Product, Savings, Member, LoanProduct, Loan, LoanPayment, CoaMaster, CoaSubmenu, CoaAccount, AccountingTransaction, TransactionSplit, BankReconciliation, BankReconciliationItem, SalesTax };

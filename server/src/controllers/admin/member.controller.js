@@ -11,7 +11,13 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 
 // Get all members
 const getAllMembers = asyncHandler(async (req, res) => {
-  const members = await Member.find()
+  // Filter by verification status
+  const { verified } = req.query;
+  let filter = {};
+  if (verified === "true") filter.isVerified = true;
+  else if (verified === "false") filter.isVerified = false;
+
+  const members = await Member.find(filter)
     .populate("user", "username email isActive")
     .populate("product", "title depositAmount termDuration returnProfit description")
     .populate({
@@ -110,6 +116,12 @@ const createMember = asyncHandler(async (req, res) => {
     accountNumber,
     productId,
     savingsStartDate, // Tanggal mulai tabungan (opsional)
+    email,
+    birthPlace,
+    birthDate,
+    nik,
+    bankName,
+    accountHolderName,
   } = req.body;
 
   // Validate required fields
@@ -166,7 +178,7 @@ const createMember = asyncHandler(async (req, res) => {
       return `MEMBER_${timestamp}_${random}`;
     })();
 
-  // Create member
+  // Create member — admin-created members are auto-verified
   const member = new Member({
     name,
     gender,
@@ -178,6 +190,14 @@ const createMember = asyncHandler(async (req, res) => {
     uuid: memberUUID,
     productId: productId || null,
     savingsStartDate: savingsStartDate ? new Date(savingsStartDate) : null,
+    email: email || "",
+    birthPlace: birthPlace || "",
+    birthDate: birthDate ? new Date(birthDate) : null,
+    nik: nik || "",
+    bankName: bankName || "",
+    accountHolderName: accountHolderName || "",
+    isVerified: true,
+    registrationSource: "admin",
   });
 
   await member.save();
@@ -207,6 +227,12 @@ const updateMember = asyncHandler(async (req, res) => {
     accountNumber,
     productId,
     savingsStartDate, // Tanggal mulai tabungan (opsional)
+    email,
+    birthPlace,
+    birthDate,
+    nik,
+    bankName,
+    accountHolderName,
   } = req.body;
 
   const member = await Member.findOne({ uuid });
@@ -243,6 +269,12 @@ const updateMember = asyncHandler(async (req, res) => {
   if (savingsStartDate !== undefined) {
     member.savingsStartDate = savingsStartDate ? new Date(savingsStartDate) : null;
   }
+  if (email !== undefined) member.email = email;
+  if (birthPlace !== undefined) member.birthPlace = birthPlace;
+  if (birthDate !== undefined) member.birthDate = birthDate ? new Date(birthDate) : null;
+  if (nik !== undefined) member.nik = nik;
+  if (bankName !== undefined) member.bankName = bankName;
+  if (accountHolderName !== undefined) member.accountHolderName = accountHolderName;
 
   await member.save();
 
@@ -445,6 +477,97 @@ const unmarkAsCompleted = asyncHandler(async (req, res) => {
   });
 });
 
+// Verify member (admin approves registration)
+const verifyMember = asyncHandler(async (req, res) => {
+  const { uuid } = req.params;
+  const member = await Member.findOne({ uuid });
+
+  if (!member) {
+    return res.status(404).json({ success: false, message: "Member tidak ditemukan" });
+  }
+
+  if (member.isVerified) {
+    return res.status(400).json({ success: false, message: "Member sudah diverifikasi" });
+  }
+
+  member.isVerified = true;
+  member.verifiedBy = req.user._id;
+  member.verifiedAt = new Date();
+  await member.save();
+
+  const populatedMember = await Member.findById(member._id)
+    .populate("user", "username email isActive")
+    .populate("product", "title depositAmount termDuration returnProfit description");
+
+  res.status(200).json({
+    success: true,
+    data: populatedMember,
+    message: "Member berhasil diverifikasi",
+  });
+});
+
+// Unverify member
+const unverifyMember = asyncHandler(async (req, res) => {
+  const { uuid } = req.params;
+  const member = await Member.findOne({ uuid });
+
+  if (!member) {
+    return res.status(404).json({ success: false, message: "Member tidak ditemukan" });
+  }
+
+  member.isVerified = false;
+  member.verifiedBy = null;
+  member.verifiedAt = null;
+  await member.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Status verifikasi member berhasil dibatalkan",
+  });
+});
+
+// Get pending verification count
+const getPendingCount = asyncHandler(async (req, res) => {
+  const count = await Member.countDocuments({ isVerified: false });
+  res.status(200).json({ success: true, data: { count } });
+});
+
+// Migration: set all existing members as verified
+const migrateExistingMembers = asyncHandler(async (req, res) => {
+  const result = await Member.updateMany(
+    { isVerified: { $exists: false } },
+    {
+      $set: {
+        isVerified: true,
+        registrationSource: "admin",
+      },
+    }
+  );
+
+  // Also set any members that have isVerified = false but were created before this feature
+  const result2 = await Member.updateMany(
+    {
+      isVerified: false,
+      registrationSource: { $exists: false },
+    },
+    {
+      $set: {
+        isVerified: true,
+        registrationSource: "admin",
+      },
+    }
+  );
+
+  res.status(200).json({
+    success: true,
+    message: `Migration selesai. ${result.modifiedCount + result2.modifiedCount} member diperbarui.`,
+    data: {
+      batch1: result.modifiedCount,
+      batch2: result2.modifiedCount,
+    },
+  });
+});
+
 export {
   getAllMembers,
   getMemberByUuid,
@@ -454,4 +577,8 @@ export {
   validateMemberUuid,
   markAsCompleted,
   unmarkAsCompleted,
+  verifyMember,
+  unverifyMember,
+  getPendingCount,
+  migrateExistingMembers,
 };

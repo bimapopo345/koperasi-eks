@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import PropTypes from "prop-types";
@@ -51,6 +52,28 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       ],
     },
     {
+      title: "Akuntansi",
+      icon: "🏛️",
+      children: [
+        {
+          title: "Transaksi",
+          path: "/akuntansi/transaksi",
+        },
+        {
+          title: "Rekonsiliasi",
+          path: "/akuntansi/rekonsiliasi",
+        },
+        {
+          title: "Chart of Accounts",
+          path: "/akuntansi/coa",
+        },
+        {
+          title: "Pajak Penjualan",
+          path: "/akuntansi/pajak",
+        },
+      ],
+    },
+    {
       title: "Pengaturan",
       icon: "⚙️",
       path: "/settings",
@@ -59,16 +82,50 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
 
   const isActive = (path) => location.pathname === path;
 
+  const isGroupActive = (children) =>
+    children?.some((child) => location.pathname === child.path);
+
+  const [openMenus, setOpenMenus] = useState(() => {
+    const initial = {};
+    menuItems.forEach((item) => {
+      if (item.children && isGroupActive(item.children)) {
+        initial[item.title] = true;
+      }
+    });
+    return initial;
+  });
+
+  const toggleMenu = (title) => {
+    setOpenMenus((prev) => ({ ...prev, [title]: !prev[title] }));
+  };
+
   const renderMenuItems = (items) => {
     return items.map((item) => {
       if (item.children) {
+        const isOpen = openMenus[item.title] || isGroupActive(item.children);
         return (
-          <div key={item.title} className="mb-2">
-            <div className="flex items-center px-4 py-2 text-gray-600 hover:text-gray-900 cursor-pointer">
-              <span className="mr-3">{item.icon}</span>
-              <span className="font-medium">{item.title}</span>
+          <div key={item.title} className="mb-1">
+            <button
+              onClick={() => toggleMenu(item.title)}
+              className={`flex items-center justify-between w-full px-4 py-2 rounded-lg transition-colors ${
+                isGroupActive(item.children)
+                  ? "text-pink-700 bg-pink-50/50"
+                  : "text-gray-600 hover:text-gray-900 hover:bg-pink-50"
+              }`}
+            >
+              <div className="flex items-center">
+                <span className="mr-3">{item.icon}</span>
+                <span className="font-medium">{item.title}</span>
+              </div>
+              <span className={`text-xs transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}>&#9662;</span>
+            </button>
+            <div
+              className={`overflow-hidden transition-all duration-200 ease-in-out ${
+                isOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
+              }`}
+            >
+              <div className="ml-8 mt-1">{renderMenuItems(item.children)}</div>
             </div>
-            <div className="ml-8">{renderMenuItems(item.children)}</div>
           </div>
         );
       }

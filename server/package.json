@@ -7,6 +7,7 @@
   "scripts": {
     "dev": "nodemon index.js",
     "seed": "node src/db/seeder.js",
+    "seed-coa": "node src/seeds/coaSeed.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
