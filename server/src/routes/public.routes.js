@@ -392,6 +392,8 @@ const registerKoperasi = asyncHandler(async (req, res) => {
       bankName,
       accountHolderName,
       productId,
+      signatureImage,
+      riplText,
     } = req.body;
 
     // Validate required fields
@@ -463,6 +465,8 @@ const registerKoperasi = asyncHandler(async (req, res) => {
       accountNumber: accountNumber || "",
       bankName: bankName || "",
       accountHolderName: accountHolderName || "",
+      signatureImage: signatureImage || "",
+      riplText: riplText || "",
       productId: productId || null,
       user: user._id,
       isVerified: false,
