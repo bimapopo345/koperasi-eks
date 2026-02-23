@@ -12,7 +12,8 @@ const Topbar = ({ setSidebarOpen }) => {
   const { user } = useSelector((state) => state.auth);
   
   // Notification state
-  const [notifications, setNotifications] = useState([]);
+  const [pendingMembers, setPendingMembers] = useState([]);
+  const [pendingSavings, setPendingSavings] = useState([]);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const [readNotifIds, setReadNotifIds] = useState(() => {
     const saved = localStorage.getItem("readNotifIds");
@@ -20,28 +21,45 @@ const Topbar = ({ setSidebarOpen }) => {
   });
   const dropdownRef = useRef(null);
 
+  // Fetch unverified members (pendaftaran baru)
+  const fetchPendingMembers = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${API_URL}/api/admin/members?verified=false`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.data.success) {
+        const members = Array.isArray(response.data.data) ? response.data.data : [];
+        setPendingMembers(members);
+      }
+    } catch (err) {
+      console.error("Failed to fetch pending members:", err);
+    }
+  };
+
   // Fetch pending savings as notifications
-  const fetchNotifications = async () => {
+  const fetchPendingSavings = async () => {
     try {
       const token = localStorage.getItem("token");
       const response = await axios.get(`${API_URL}/api/admin/savings?status=Pending&limit=50`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      
       if (response.data.success) {
         const savingsData = response.data.data?.savings || response.data.data || [];
-        const pendingSavings = Array.isArray(savingsData) ? savingsData : [];
-        setNotifications(pendingSavings);
+        setPendingSavings(Array.isArray(savingsData) ? savingsData : []);
       }
     } catch (err) {
-      console.error("Failed to fetch notifications:", err);
+      console.error("Failed to fetch pending savings:", err);
     }
   };
 
   useEffect(() => {
-    fetchNotifications();
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchNotifications, 30000);
+    fetchPendingMembers();
+    fetchPendingSavings();
+    const interval = setInterval(() => {
+      fetchPendingMembers();
+      fetchPendingSavings();
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -56,25 +74,33 @@ const Topbar = ({ setSidebarOpen }) => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // Combined notifications: members first, then savings
+  const allNotifications = [
+    ...pendingMembers.map(m => ({ ...m, _notifType: "member" })),
+    ...pendingSavings.map(s => ({ ...s, _notifType: "savings" })),
+  ];
+
   // Count unread notifications
-  const unreadCount = notifications.filter(n => !readNotifIds.includes(n._id)).length;
+  const unreadCount = allNotifications.filter(n => !readNotifIds.includes(n._id)).length;
 
   // Handle notification click
   const handleNotifClick = (notif) => {
-    // Mark as read
     const newReadIds = [...readNotifIds, notif._id];
     setReadNotifIds(newReadIds);
     localStorage.setItem("readNotifIds", JSON.stringify(newReadIds));
-    
-    // Navigate to savings page with member filter
-    const memberId = notif.memberId?._id || notif.memberId;
-    navigate(`/simpanan?member=${memberId}&status=Pending`);
+
+    if (notif._notifType === "member") {
+      navigate(`/master/anggota?filter=unverified`);
+    } else {
+      const memberId = notif.memberId?._id || notif.memberId;
+      navigate(`/simpanan?member=${memberId}&status=Pending`);
+    }
     setShowNotifDropdown(false);
   };
 
   // Mark all as read
   const markAllAsRead = () => {
-    const allIds = notifications.map(n => n._id);
+    const allIds = allNotifications.map(n => n._id);
     setReadNotifIds(allIds);
     localStorage.setItem("readNotifIds", JSON.stringify(allIds));
   };
@@ -153,32 +179,47 @@ const Topbar = ({ setSidebarOpen }) => {
                 </div>
                 
                 <div className="overflow-y-auto max-h-72">
-                  {notifications.length === 0 ? (
+                  {allNotifications.length === 0 ? (
                     <div className="p-4 text-center text-gray-500">
                       <span className="text-2xl">✨</span>
                       <p className="mt-2 text-sm">Tidak ada notifikasi</p>
                     </div>
                   ) : (
-                    notifications.map((notif) => {
+                    allNotifications.map((notif) => {
                       const isRead = readNotifIds.includes(notif._id);
+                      const isMember = notif._notifType === "member";
                       return (
                         <div
-                          key={notif._id}
+                          key={`${notif._notifType}-${notif._id}`}
                           onClick={() => handleNotifClick(notif)}
                           className={`p-3 border-b border-gray-100 cursor-pointer hover:bg-pink-50 transition-colors ${
                             !isRead ? "bg-pink-50/50" : ""
                           }`}
                         >
                           <div className="flex items-start gap-3">
-                            <div className={`w-2 h-2 rounded-full mt-2 ${!isRead ? "bg-pink-500" : "bg-gray-300"}`} />
+                            <div className={`w-2 h-2 rounded-full mt-2 ${!isRead ? (isMember ? "bg-blue-500" : "bg-pink-500") : "bg-gray-300"}`} />
                             <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-gray-900 truncate">
-                                {notif.memberId?.name || "Unknown"} 
-                                <span className="text-gray-500 font-normal"> mengajukan simpanan</span>
-                              </p>
-                              <p className="text-xs text-gray-500 mt-1">
-                                Periode {notif.installmentPeriod} • Rp {(notif.amount || 0).toLocaleString("id-ID")}
-                              </p>
+                              {isMember ? (
+                                <>
+                                  <p className="text-sm font-medium text-gray-900 truncate">
+                                    {notif.name || "Unknown"}
+                                    <span className="text-gray-500 font-normal"> mendaftar keanggotaan</span>
+                                  </p>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    UUID: {notif.uuid} {notif.product ? `• ${notif.product.title}` : ""}
+                                  </p>
+                                </>
+                              ) : (
+                                <>
+                                  <p className="text-sm font-medium text-gray-900 truncate">
+                                    {notif.memberId?.name || "Unknown"}
+                                    <span className="text-gray-500 font-normal"> mengajukan simpanan</span>
+                                  </p>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    Periode {notif.installmentPeriod} • Rp {(notif.amount || 0).toLocaleString("id-ID")}
+                                  </p>
+                                </>
+                              )}
                               <p className="text-xs text-gray-400 mt-1">
                                 {new Date(notif.createdAt).toLocaleDateString("id-ID", {
                                   day: "numeric",
@@ -188,8 +229,12 @@ const Topbar = ({ setSidebarOpen }) => {
                                 })}
                               </p>
                             </div>
-                            <span className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
-                              Pending
+                            <span className={`px-2 py-1 text-xs rounded-full whitespace-nowrap ${
+                              isMember
+                                ? "bg-blue-100 text-blue-800"
+                                : "bg-yellow-100 text-yellow-800"
+                            }`}>
+                              {isMember ? "Baru" : "Pending"}
                             </span>
                           </div>
                         </div>
@@ -198,17 +243,30 @@ const Topbar = ({ setSidebarOpen }) => {
                   )}
                 </div>
                 
-                {notifications.length > 0 && (
-                  <div className="p-2 border-t border-gray-200 bg-gray-50">
-                    <button
-                      onClick={() => {
-                        navigate("/simpanan?status=Pending");
-                        setShowNotifDropdown(false);
-                      }}
-                      className="w-full text-center text-sm text-pink-600 hover:text-pink-800 py-1"
-                    >
-                      Lihat semua simpanan pending →
-                    </button>
+                {allNotifications.length > 0 && (
+                  <div className="p-2 border-t border-gray-200 bg-gray-50 flex gap-2">
+                    {pendingMembers.length > 0 && (
+                      <button
+                        onClick={() => {
+                          navigate("/master/anggota?filter=unverified");
+                          setShowNotifDropdown(false);
+                        }}
+                        className="flex-1 text-center text-xs text-blue-600 hover:text-blue-800 py-1"
+                      >
+                        {pendingMembers.length} pendaftaran baru
+                      </button>
+                    )}
+                    {pendingSavings.length > 0 && (
+                      <button
+                        onClick={() => {
+                          navigate("/simpanan?status=Pending");
+                          setShowNotifDropdown(false);
+                        }}
+                        className="flex-1 text-center text-xs text-pink-600 hover:text-pink-800 py-1"
+                      >
+                        {pendingSavings.length} simpanan pending
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
