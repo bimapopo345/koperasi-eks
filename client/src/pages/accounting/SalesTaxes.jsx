@@ -119,14 +119,14 @@ export default function SalesTaxes() {
 
         <div className="bg-white rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.08)] border border-gray-100">
           <div className="px-6 py-5 border-b border-gray-100">
-            <h1 className="text-xl font-bold text-gray-900">{editingTax ? "Edit Sales Tax" : "Create a Sales Tax"}</h1>
+            <h1 className="text-xl font-bold text-gray-900">{editingTax ? "Edit Sales Tax" : "Create a sales tax"}</h1>
           </div>
 
           <form onSubmit={handleSubmit} className="px-6 py-6 space-y-5">
             {/* Tax Name */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Tax Name <span className="text-red-500">*</span>
+                Tax name <span className="text-red-500">*</span>
               </label>
               <input type="text" value={form.taxName}
                 onChange={(e) => setForm({ ...form, taxName: e.target.value })}
@@ -151,12 +151,12 @@ export default function SalesTaxes() {
               <textarea value={form.description}
                 onChange={(e) => setForm({ ...form, description: e.target.value })}
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none transition resize-y"
-                rows={4} placeholder="Optional description for this tax" maxLength={500} />
+                rows={4} placeholder="Optional description for this tax" maxLength={255} />
             </div>
 
             {/* Tax Number */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1.5">Tax Number</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1.5">Your tax number</label>
               <input type="text" value={form.taxNumber}
                 onChange={(e) => setForm({ ...form, taxNumber: e.target.value })}
                 className="w-full border border-gray-300 rounded-lg px-4 py-3 text-base focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none transition"
@@ -171,12 +171,18 @@ export default function SalesTaxes() {
                   className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" />
                 <span className="text-sm text-gray-700 group-hover:text-gray-900">Show tax number on invoices</span>
               </label>
-              <label className="flex items-center gap-3 cursor-pointer group">
-                <input type="checkbox" checked={form.isRecoverable}
-                  onChange={(e) => setForm({ ...form, isRecoverable: e.target.checked })}
-                  className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" />
-                <span className="text-sm text-gray-700 group-hover:text-gray-900">This tax is recoverable</span>
-              </label>
+              <div>
+                <label className="flex items-center gap-3 cursor-pointer group">
+                  <input type="checkbox" checked={form.isRecoverable}
+                    onChange={(e) => setForm({ ...form, isRecoverable: e.target.checked })}
+                    className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" />
+                  <span className="text-sm text-gray-700 group-hover:text-gray-900">This tax is recoverable</span>
+                </label>
+                <a href="https://support.waveapps.com/hc/en-us/articles/208623426" target="_blank" rel="noopener noreferrer" className="text-xs text-pink-500 hover:text-pink-700 mt-1 inline-flex items-center gap-1">
+                  Learn more about recoverable and non-recoverable taxes
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                </a>
+              </div>
               <label className="flex items-center gap-3 cursor-pointer group">
                 <input type="checkbox" checked={form.isCompoundTax}
                   onChange={(e) => setForm({ ...form, isCompoundTax: e.target.checked })}
@@ -188,12 +194,13 @@ export default function SalesTaxes() {
             {/* Tax Rate */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">
-                Tax Rate (%) <span className="text-red-500">*</span>
+                Tax rate (%) <span className="text-red-500">*</span>
               </label>
               <input type="number" step="0.0001" min="0" max="100" value={form.taxRate}
                 onChange={(e) => setForm({ ...form, taxRate: e.target.value })}
                 className="max-w-[200px] border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none transition"
                 placeholder="0.0000" required />
+              <p className="text-xs text-gray-400 mt-1">Should be a number only, without a percent sign</p>
             </div>
 
             {/* Buttons */}
@@ -204,7 +211,7 @@ export default function SalesTaxes() {
               </button>
               <button type="submit"
                 className="px-5 py-2.5 text-sm font-medium text-white bg-pink-600 rounded-lg hover:bg-pink-700 transition shadow-sm">
-                {editingTax ? "Save Changes" : "Save Sales Tax"}
+                {editingTax ? "Save" : "Save"}
               </button>
             </div>
           </form>
@@ -219,7 +226,10 @@ export default function SalesTaxes() {
       <div className="bg-white rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.08)] border border-gray-100">
         {/* Card Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center px-6 py-5 border-b border-gray-100 gap-3">
-          <h1 className="text-xl font-bold text-gray-900">Sales Taxes</h1>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Sales Taxes</h1>
+            <p className="text-sm text-gray-500 mt-0.5">Manage your sales tax rates</p>
+          </div>
           <button onClick={openCreateForm}
             className="px-5 py-2.5 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition text-sm font-medium shadow-sm">
             + Create a Sales Tax
@@ -260,7 +270,7 @@ export default function SalesTaxes() {
               </div>
               <h3 className="text-lg font-semibold text-gray-800 mb-1">Create a sales tax</h3>
               <p className="text-sm text-gray-500 mb-4 text-center max-w-sm">
-                Sales taxes will be available for use on invoices, bills, and other transactions.
+                You have not created any sales taxes yet.
               </p>
               <button onClick={openCreateForm}
                 className="px-5 py-2.5 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition text-sm font-medium shadow-sm">
@@ -343,16 +353,19 @@ export default function SalesTaxes() {
                         {openDropdown === tax._id && (
                           <div className="absolute right-4 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 min-w-[160px]">
                             <button onClick={() => openEditForm(tax)}
-                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition">
+                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition inline-flex items-center gap-2">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                               Edit
                             </button>
                             <button onClick={() => { handleToggle(tax._id); }}
-                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition">
-                              {tax.isActive ? "Mark as Inactive" : "Mark as Active"}
+                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition inline-flex items-center gap-2">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" /></svg>
+                              {tax.isActive ? "Deactivate" : "Activate"}
                             </button>
                             <div className="border-t border-gray-100 my-1" />
                             <button onClick={() => { handleDelete(tax._id); }}
-                              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition">
+                              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition inline-flex items-center gap-2">
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                               Delete
                             </button>
                           </div>

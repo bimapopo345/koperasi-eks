@@ -868,6 +868,14 @@ export default function Transactions() {
                   </svg>
                   Add Withdrawal
                 </button>
+                <button onClick={() => { setShowAddDropdown(false); alert('Scan receipt feature coming soon'); }}
+                  className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-pink-50 transition flex items-center gap-3">
+                  <svg className="w-5 h-5 text-gray-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" />
+                    <circle cx="12" cy="13" r="4" />
+                  </svg>
+                  Scan Receipt
+                </button>
               </div>
             )}
           </div>
@@ -1175,19 +1183,13 @@ export default function Transactions() {
         <div className="flex items-center justify-center py-16">
           <div className="w-8 h-8 border-[3px] border-pink-200 border-t-pink-600 rounded-full animate-spin" />
         </div>
+      ) : transactions.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16">
+          <p className="text-sm text-gray-500">No transactions yet.</p>
+        </div>
       ) : filteredTransactions.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16">
-          <div className="w-16 h-16 rounded-full bg-pink-50 flex items-center justify-center mb-4">
-            <svg className="w-8 h-8 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-semibold text-gray-800 mb-1">No transactions found</h3>
-          <p className="text-sm text-gray-500 mb-4">Add your first transaction to get started.</p>
-          <button onClick={() => openCreateModal("Deposit")}
-            className="px-5 py-2.5 bg-pink-600 text-white rounded-full hover:bg-pink-700 text-sm font-medium shadow-sm">
-            + Add Transaction
-          </button>
+          <p className="text-sm text-gray-500">No transactions match your filters.</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.06)] border border-gray-100 overflow-hidden">

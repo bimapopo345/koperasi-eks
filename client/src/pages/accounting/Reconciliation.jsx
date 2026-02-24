@@ -35,6 +35,7 @@ export default function ReconciliationPage() {
   const [selectedTxns, setSelectedTxns] = useState(new Set());
   const [processSearch, setProcessSearch] = useState("");
   const [processSort, setProcessSort] = useState("date_desc");
+  const [processFilter, setProcessFilter] = useState("all");
   const [editingClosingBalance, setEditingClosingBalance] = useState(null);
 
   // Success modal
@@ -205,6 +206,12 @@ export default function ReconciliationPage() {
     // Filter & sort process transactions
     const filteredTxns = (transactions || [])
       .filter((txn) => {
+        // Filter by process filter
+        if (processFilter === "unmatched" && txn.isMatched) return false;
+        if (processFilter === "matched" && !txn.isMatched) return false;
+        if (processFilter === "deposits" && txn.transactionType !== "Deposit") return false;
+        if (processFilter === "withdrawals" && txn.transactionType === "Deposit") return false;
+        // Search filter
         if (!processSearch) return true;
         const q = processSearch.toLowerCase();
         return (txn.description || "").toLowerCase().includes(q) || String(txn.amount).includes(q);
@@ -215,6 +222,8 @@ export default function ReconciliationPage() {
           case "date_desc": return new Date(b.transactionDate) - new Date(a.transactionDate);
           case "amount_asc": return (a.amount || 0) - (b.amount || 0);
           case "amount_desc": return (b.amount || 0) - (a.amount || 0);
+          case "desc_az": return (a.description || "").localeCompare(b.description || "");
+          case "desc_za": return (b.description || "").localeCompare(a.description || "");
           default: return 0;
         }
       });
@@ -243,8 +252,11 @@ export default function ReconciliationPage() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
               Back to Reconciliation
             </button>
-            <h1 className="text-xl font-bold text-gray-900">Reconciliation Process</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Account: <strong>{account?.accountName}</strong></p>
+            <h1 className="text-xl font-bold text-gray-900">Transactions</h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Reconciling up to <strong>{recon.statementEndDate ? new Date(recon.statementEndDate).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }) : "-"}</strong>
+              {" "}&mdash; Account: <strong>{account?.accountName}</strong>
+            </p>
           </div>
           <button onClick={() => handleCancel(recon._id)}
             className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-sm font-medium transition">
@@ -261,10 +273,13 @@ export default function ReconciliationPage() {
             </div>
             <div className="text-center">
               <p className="text-[10px] font-bold text-pink-500 uppercase tracking-wider mb-1">Closing Balance</p>
-              <input type="number" step="0.01" value={editingClosingBalance ?? ""}
-                onChange={(e) => setEditingClosingBalance(e.target.value)}
-                onBlur={() => handleUpdateClosingBalance(recon._id)}
-                className="w-full max-w-[140px] mx-auto text-center border border-pink-300 rounded-lg px-2 py-1.5 text-sm font-mono font-bold focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none bg-white" />
+              <div className="flex items-center justify-center gap-1">
+                <span className="text-sm font-medium text-gray-500">Rp</span>
+                <input type="number" step="0.01" value={editingClosingBalance ?? ""}
+                  onChange={(e) => setEditingClosingBalance(e.target.value)}
+                  onBlur={() => handleUpdateClosingBalance(recon._id)}
+                  className="w-full max-w-[140px] text-center border border-pink-300 rounded-lg px-2 py-1.5 text-sm font-mono font-bold focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none bg-white" />
+            </div>
             </div>
             <div className="text-center hidden sm:block">
               <p className="text-2xl font-bold text-gray-400">=</p>
@@ -304,12 +319,22 @@ export default function ReconciliationPage() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <select value={processFilter} onChange={(e) => setProcessFilter(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 focus:ring-2 focus:ring-pink-500 outline-none">
+              <option value="all">All transactions</option>
+              <option value="unmatched">Unmatched</option>
+              <option value="matched">Matched</option>
+              <option value="deposits">Deposits</option>
+              <option value="withdrawals">Withdrawals</option>
+            </select>
             <select value={processSort} onChange={(e) => setProcessSort(e.target.value)}
               className="border border-gray-200 rounded-lg px-3 py-1.5 text-xs text-gray-600 focus:ring-2 focus:ring-pink-500 outline-none">
               <option value="date_desc">Newest first</option>
               <option value="date_asc">Oldest first</option>
               <option value="amount_desc">Highest amount</option>
               <option value="amount_asc">Lowest amount</option>
+              <option value="desc_az">Description A→Z</option>
+              <option value="desc_za">Description Z→A</option>
             </select>
             <div className="relative">
               <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -408,7 +433,7 @@ export default function ReconciliationPage() {
               <p className="text-sm text-gray-500 mb-6">The reconciliation has been completed successfully.</p>
               <button onClick={handleCloseSuccess}
                 className="px-6 py-2.5 bg-pink-600 text-white rounded-lg hover:bg-pink-700 text-sm font-medium transition shadow-sm">
-                Done
+                Go to reconciliation history
               </button>
             </div>
           </div>
@@ -529,10 +554,37 @@ export default function ReconciliationPage() {
           )}
         </div>
 
-        {/* Recon Status Pill */}
+        {/* Recon Status Box */}
         {selectedAccountId && reconData && (
-          <div className="flex items-center gap-2">
-            <span className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold ${
+          <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4 flex items-center gap-4">
+            <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
+              reconData.activeReconciliation
+                ? "bg-pink-100"
+                : reconData.history?.length > 0
+                  ? "bg-emerald-100"
+                  : "bg-gray-100"
+            }`}>
+              {reconData.activeReconciliation ? (
+                <svg className="w-5 h-5 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+              ) : reconData.history?.length > 0 ? (
+                <svg className="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              ) : (
+                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              )}
+            </div>
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-gray-900">
+                {reconData.activeReconciliation ? "Reconciliation in progress" : reconData.history?.length > 0 ? "Account reconciled" : "Not reconciled yet"}
+              </p>
+              <p className="text-xs text-gray-500">
+                {reconData.activeReconciliation
+                  ? `You have an unfinished reconciliation for period ending ${new Date(reconData.activeReconciliation.statementEndDate).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`
+                  : reconData.history?.length > 0
+                    ? `Last reconciled on ${reconData.history[0]?.reconciledOn ? new Date(reconData.history[0].reconciledOn).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }) : "-"}`
+                    : "This account has never been reconciled"}
+              </p>
+            </div>
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${
               reconData.activeReconciliation
                 ? "bg-pink-100 text-pink-700"
                 : reconData.history?.length > 0
@@ -565,8 +617,10 @@ export default function ReconciliationPage() {
                 <div className="flex-1">
                   <h3 className="font-bold text-gray-900 text-lg">Reconciliation in progress</h3>
                   <p className="text-sm text-gray-500 mt-1">
-                    Statement end date: <strong>{new Date(reconData.activeReconciliation.statementEndDate).toLocaleDateString("id-ID")}</strong>
-                    {" | "}Closing balance: <strong>{formatCurrency(reconData.activeReconciliation.closingBalance)}</strong>
+                    You have an unfinished reconciliation for period ending <strong>{new Date(reconData.activeReconciliation.statementEndDate).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</strong>
+                  </p>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Closing balance: <strong>{formatCurrency(reconData.activeReconciliation.closingBalance)}</strong>
                   </p>
                   <button onClick={() => handleProcess(reconData.activeReconciliation._id)}
                     className="mt-3 px-5 py-2.5 bg-pink-600 text-white rounded-lg hover:bg-pink-700 text-sm font-medium transition shadow-sm">
@@ -580,6 +634,17 @@ export default function ReconciliationPage() {
             <div>
               {!showStartForm ? (
                 <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
+                  <div className="mb-4">
+                    <h3 className="text-base font-bold text-gray-900">Grab your bank statement and start reconciling</h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Compare your bank statement to the transactions in your books to make sure they match.
+                      {" "}
+                      <a href="https://support.waveapps.com/hc/en-us/articles/208621766" target="_blank" rel="noopener noreferrer" className="text-pink-600 hover:text-pink-800 font-medium inline-flex items-center gap-0.5">
+                        Learn more
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                      </a>
+                    </p>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 items-end">
                     <div>
                       <label className="block text-xs text-gray-400 font-medium uppercase tracking-wider mb-1.5">Starting Balance</label>
@@ -602,7 +667,7 @@ export default function ReconciliationPage() {
                     </div>
                     <button onClick={handleStart}
                       className="px-5 py-2.5 bg-pink-600 text-white rounded-lg hover:bg-pink-700 text-sm font-medium transition shadow-sm h-[42px]">
-                      Start Reconciliation
+                      Start reconciling
                     </button>
                   </div>
                 </div>
@@ -659,8 +724,8 @@ export default function ReconciliationPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <h3 className="text-lg font-semibold text-gray-800 mb-1">No reconciliation history</h3>
-              <p className="text-sm text-gray-500">Start your first reconciliation by filling out the form above.</p>
+              <h3 className="text-lg font-semibold text-gray-800 mb-1">You haven't reconciled anything yet</h3>
+              <p className="text-sm text-gray-500 max-w-md text-center">It's a great time to grab that bank statement and start reconciling. Fill in the form above to get started.</p>
             </div>
           )}
         </div>
