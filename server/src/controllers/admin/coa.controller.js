@@ -2,6 +2,8 @@ import { CoaMaster } from "../../models/coaMaster.model.js";
 import { CoaSubmenu } from "../../models/coaSubmenu.model.js";
 import { CoaAccount } from "../../models/coaAccount.model.js";
 
+const MASTER_TYPES = ["Assets", "Liabilities", "Income", "Expenses", "Equity"];
+
 // Account code ranges per master type
 const CODE_RANGES = {
   Assets: 1000,
@@ -11,18 +13,130 @@ const CODE_RANGES = {
   Expenses: 5000,
 };
 
+const MASTER_TYPE_ALIASES = {
+  assets: "Assets",
+  liabilities: "Liabilities",
+  "liabilities & credit cards": "Liabilities",
+  equity: "Equity",
+  income: "Income",
+  expenses: "Expenses",
+};
+
+const SUBMENU_ORDER = {
+  Assets: [
+    "Cash and Bank",
+    "Money in Transit",
+    "Expected Payments from Customers",
+    "Inventory",
+    "Property, Plant, Equipment",
+    "Depreciation and Amortization",
+    "Vendor Prepayments and Vendor Credits",
+    "Other Short-Term Asset",
+    "Other Long-Term Asset",
+  ],
+  Liabilities: [
+    "Credit Card",
+    "Loan and Line of Credit",
+    "Expected Payments to Vendors",
+    "Sales Taxes",
+    "Due For Payroll",
+    "Due to You and Other Business Owners",
+    "Customer Prepayments and Customer Credits",
+    "Other Short-Term Liability",
+    "Other Long-Term Liability",
+  ],
+  Income: [
+    "Income",
+    "Discount",
+    "Other Income",
+    "Uncategorized Income",
+    "Gain On Foreign Exchange",
+  ],
+  Expenses: [
+    "Operating Expense",
+    "Cost of Goods Sold",
+    "Payment Processing Fee",
+    "Payroll Expense",
+    "Uncategorized Expense",
+    "Loss On Foreign Exchange",
+  ],
+  Equity: [
+    "Business Owner Contribution and Drawing",
+    "Retained Earnings: Profit",
+  ],
+};
+
+function pickBodyField(body, keys) {
+  for (const key of keys) {
+    if (body?.[key] !== undefined && body?.[key] !== null) {
+      return body[key];
+    }
+  }
+  return undefined;
+}
+
+function normalizeMasterType(rawType) {
+  if (!rawType || typeof rawType !== "string") return null;
+
+  const decoded = decodeURIComponent(rawType).replace(/\+/g, " ").trim();
+  if (MASTER_TYPES.includes(decoded)) return decoded;
+
+  const key = decoded.toLowerCase();
+  if (MASTER_TYPE_ALIASES[key]) return MASTER_TYPE_ALIASES[key];
+
+  const compact = key.replace(/[^a-z]/g, "");
+  if (compact === "liabilitiescreditcards") return "Liabilities";
+  if (compact === "liability") return "Liabilities";
+  return null;
+}
+
+function sortSubmenus(masterType, submenus) {
+  const orderedNames = SUBMENU_ORDER[masterType] || [];
+  const orderedMap = new Map(orderedNames.map((name, index) => [name, index]));
+
+  return [...submenus].sort((a, b) => {
+    const aRank = orderedMap.has(a.submenuName) ? orderedMap.get(a.submenuName) : Number.MAX_SAFE_INTEGER;
+    const bRank = orderedMap.has(b.submenuName) ? orderedMap.get(b.submenuName) : Number.MAX_SAFE_INTEGER;
+
+    if (aRank !== bRank) return aRank - bRank;
+    return a.submenuName.localeCompare(b.submenuName);
+  });
+}
+
+async function resolveMasterAndSubmenus(rawMasterType) {
+  const normalizedType = normalizeMasterType(rawMasterType);
+  if (!normalizedType) {
+    return { normalizedType: null, master: null, submenus: [] };
+  }
+
+  const master = await CoaMaster.findOne({ masterName: normalizedType, isActive: true });
+  if (!master) {
+    return { normalizedType, master: null, submenus: [] };
+  }
+
+  const submenus = await CoaSubmenu.find({ masterId: master._id, isActive: true });
+  return {
+    normalizedType,
+    master,
+    submenus: sortSubmenus(normalizedType, submenus),
+  };
+}
+
 /**
  * Get all accounts grouped by master type (with counts)
  */
 export const getAccountsByType = async (req, res) => {
   try {
-    const type = req.params.type || "Assets";
-    const validTypes = Object.keys(CODE_RANGES);
-    const currentType = validTypes.includes(type) ? type : "Assets";
+    const requestedType =
+      req.params.type ||
+      req.query.type ||
+      pickBodyField(req.body, ["masterType", "master_type"]) ||
+      "Assets";
+    const currentType = normalizeMasterType(requestedType) || "Assets";
 
     // Get account counts for all types
     const accountCounts = {};
-    for (const t of validTypes) {
+    for (const t of MASTER_TYPES) {
       const master = await CoaMaster.findOne({ masterName: t, isActive: true });
       if (master) {
         const submenus = await CoaSubmenu.find({ masterId: master._id, isActive: true });
@@ -37,11 +151,10 @@ export const getAccountsByType = async (req, res) => {
     }
 
     // Get accounts grouped by submenu for current type
-    const master = await CoaMaster.findOne({ masterName: currentType, isActive: true });
+    const { master, submenus } = await resolveMasterAndSubmenus(currentType);
     let accountsBySubtype = {};
 
     if (master) {
-      const submenus = await CoaSubmenu.find({ masterId: master._id, isActive: true }).sort({ submenuName: 1 });
       for (const sub of submenus) {
         const accounts = await CoaAccount.find({ submenuId: sub._id, isActive: true }).sort({ accountName: 1 });
         accountsBySubtype[sub.submenuName] = {
@@ -54,7 +167,7 @@ export const getAccountsByType = async (req, res) => {
     res.status(200).json({
       success: true,
       currentType,
-      accountTypes: validTypes,
+      accountTypes: MASTER_TYPES,
       accountCounts,
       accountsBySubtype,
     });
@@ -88,7 +201,11 @@ export const getAccountDetail = async (req, res) => {
  */
 export const createAccount = async (req, res) => {
   try {
-    const { accountName, submenuId, accountCode, currency, description } = req.body;
+    const accountName = String(pickBodyField(req.body, ["accountName", "account_name"]) || "").trim();
+    const submenuId = String(pickBodyField(req.body, ["submenuId", "submenu_id"]) || "").trim();
+    const accountCode = String(pickBodyField(req.body, ["accountCode", "account_code"]) || "").trim();
+    const currency = String(pickBodyField(req.body, ["currency"]) || "").trim();
+    const description = String(pickBodyField(req.body, ["description"]) || "").trim();
 
     if (!accountName || accountName.length < 3) {
       return res.status(400).json({ success: false, message: "Account name minimal 3 karakter" });
@@ -118,14 +235,17 @@ export const createAccount = async (req, res) => {
       submenuId,
       accountCode: finalCode,
       accountName,
-      currency: currency || "Rp",
-      description: description || "",
+      currency,
+      description,
       balance: 0,
       isActive: true,
     });
 
     res.status(201).json({ success: true, message: "Account created successfully", data: account });
   } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(400).json({ success: false, message: "Account code sudah ada" });
+    }
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -135,29 +255,60 @@ export const createAccount = async (req, res) => {
  */
 export const updateAccount = async (req, res) => {
   try {
-    const { accountName, accountCode, currency, description } = req.body;
+    const incomingAccountName = pickBodyField(req.body, ["accountName", "account_name"]);
+    const incomingAccountCode = pickBodyField(req.body, ["accountCode", "account_code"]);
+    const incomingCurrency = pickBodyField(req.body, ["currency"]);
+    const incomingDescription = pickBodyField(req.body, ["description"]);
+
+    const hasAccountName = incomingAccountName !== undefined;
+    const hasAccountCode = incomingAccountCode !== undefined;
+    const hasCurrency = incomingCurrency !== undefined;
+    const hasDescription = incomingDescription !== undefined;
+
     const account = await CoaAccount.findById(req.params.id);
 
     if (!account) {
       return res.status(404).json({ success: false, message: "Account not found" });
     }
 
+    if (hasAccountName) {
+      const normalizedName = String(incomingAccountName || "").trim();
+      if (!normalizedName || normalizedName.length < 3) {
+        return res.status(400).json({ success: false, message: "Account name minimal 3 karakter" });
+      }
+      account.accountName = normalizedName;
+    }
+
+    let normalizedCode = account.accountCode || "";
+    if (hasAccountCode) {
+      normalizedCode = String(incomingAccountCode || "").trim();
+    }
+
     // Check code uniqueness
-    if (accountCode && accountCode !== account.accountCode) {
-      const exists = await CoaAccount.findOne({ accountCode, _id: { $ne: account._id } });
+    if (normalizedCode && normalizedCode !== account.accountCode) {
+      const exists = await CoaAccount.findOne({ accountCode: normalizedCode, _id: { $ne: account._id } });
       if (exists) {
         return res.status(400).json({ success: false, message: "Account code sudah ada" });
       }
     }
 
-    account.accountName = accountName || account.accountName;
-    account.accountCode = accountCode || account.accountCode;
-    account.currency = currency || account.currency;
-    account.description = description !== undefined ? description : account.description;
+    if (hasAccountCode) {
+      account.accountCode = normalizedCode;
+    }
+    if (hasCurrency) {
+      account.currency = String(incomingCurrency || "").trim();
+    }
+    if (hasDescription) {
+      account.description = String(incomingDescription || "").trim();
+    }
+
     await account.save();
 
     res.status(200).json({ success: true, message: "Account updated successfully", data: account });
   } catch (error) {
+    if (error?.code === 11000) {
+      return res.status(400).json({ success: false, message: "Account code sudah ada" });
+    }
     res.status(500).json({ success: false, message: error.message });
   }
 };
@@ -186,17 +337,34 @@ export const deleteAccount = async (req, res) => {
  */
 export const getSubmenusByMasterType = async (req, res) => {
   try {
-    const { masterType } = req.params;
-    const master = await CoaMaster.findOne({ masterName: masterType, isActive: true });
+    const requestedType = req.params.masterType || pickBodyField(req.body, ["masterType", "master_type"]);
+    const { normalizedType, master, submenus } = await resolveMasterAndSubmenus(requestedType);
 
-    if (!master) {
+    if (!normalizedType || !master) {
       return res.status(404).json({ success: false, message: "Master type not found" });
     }
 
-    const submenus = await CoaSubmenu.find({ masterId: master._id, isActive: true }).sort({ submenuName: 1 });
     res.status(200).json({ success: true, data: submenus });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * Legacy endpoint compatibility for samitbank POST /chart-of-accounts/getSubmenus
+ */
+export const getSubmenusLegacy = async (req, res) => {
+  try {
+    const requestedType = req.params.masterType || pickBodyField(req.body, ["masterType", "master_type"]);
+    const { normalizedType, master, submenus } = await resolveMasterAndSubmenus(requestedType);
+
+    if (!normalizedType || !master) {
+      return res.status(200).json({ error: "Master type not found" });
+    }
+
+    return res.status(200).json(submenus);
+  } catch (error) {
+    return res.status(500).json({ error: error.message });
   }
 };
 
@@ -238,7 +406,8 @@ export const getAssetsAccounts = async (req, res) => {
       return res.status(200).json({ success: true, data: {} });
     }
 
-    const submenus = await CoaSubmenu.find({ masterId: master._id, isActive: true }).sort({ submenuName: 1 });
+    const rawSubmenus = await CoaSubmenu.find({ masterId: master._id, isActive: true });
+    const submenus = sortSubmenus("Assets", rawSubmenus);
     const grouped = {};
     for (const sub of submenus) {
       const accounts = await CoaAccount.find({ submenuId: sub._id, isActive: true }).sort({ accountName: 1 });
@@ -262,14 +431,18 @@ async function generateNextAccountCode(masterName) {
   const submenus = await CoaSubmenu.find({ masterId: master._id });
   const submenuIds = submenus.map((s) => s._id);
 
-  const lastAccount = await CoaAccount.findOne({
+  const numericAccounts = await CoaAccount.find({
     submenuId: { $in: submenuIds },
     accountCode: { $regex: /^\d+$/ },
-  }).sort({ accountCode: -1 });
+  }).select("accountCode");
 
-  if (lastAccount && !isNaN(lastAccount.accountCode)) {
-    return String(parseInt(lastAccount.accountCode) + 1);
+  let maxCode = baseCode;
+  for (const account of numericAccounts) {
+    const parsed = parseInt(account.accountCode, 10);
+    if (!Number.isNaN(parsed) && parsed > maxCode) {
+      maxCode = parsed;
+    }
   }
 
-  return String(baseCode + 1);
+  return String(maxCode + 1);
 }

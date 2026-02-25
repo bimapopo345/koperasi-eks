@@ -53,6 +53,14 @@ import coaRoutes from "./coa.routes.js";
 import transactionRoutes from "./transaction.routes.js";
 import reconciliationRoutes from "./reconciliation.routes.js";
 import salesTaxRoutes from "./salesTax.routes.js";
+import {
+  getAccountsByType,
+  getAccountDetail,
+  createAccount,
+  updateAccount,
+  deleteAccount,
+  getSubmenusLegacy,
+} from "../controllers/admin/coa.controller.js";
 
 import path from "path";
 import { ensureUploadsSubdirs, getUploadsDir } from "../utils/uploadsDir.js";
@@ -131,6 +139,17 @@ router.use("/coa", verifyToken, coaRoutes);
 router.use("/transactions", verifyToken, transactionRoutes);
 router.use("/reconciliation", verifyToken, reconciliationRoutes);
 router.use("/sales-tax", verifyToken, salesTaxRoutes);
+
+// Legacy compatibility routes (samitbank-style path naming)
+router.get("/chart-of-accounts", verifyToken, getAccountsByType);
+router.get("/chart-of-accounts/create", verifyToken, getAccountsByType);
+router.post("/chart-of-accounts/create", verifyToken, createAccount);
+router.get("/chart-of-accounts/edit/:id", verifyToken, getAccountDetail);
+router.post("/chart-of-accounts/edit/:id", verifyToken, updateAccount);
+router.get("/chart-of-accounts/delete/:id", verifyToken, deleteAccount);
+router.post("/chart-of-accounts/delete/:id", verifyToken, deleteAccount);
+router.post("/chart-of-accounts/getSubmenus", verifyToken, getSubmenusLegacy);
+router.get("/chart-of-accounts/:type", verifyToken, getAccountsByType);
 
 // System routes (danger zone)
 router.post("/system/clear-all", verifyToken, clearAllData);
