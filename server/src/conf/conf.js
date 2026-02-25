@@ -1,8 +1,13 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+const mongodbUri =
+  process.env.MONGO_DB_URL ||
+  process.env.MONGODB_URI ||
+  "";
+
 const conf = {
-  mongodbUri: String(process.env.MONGO_DB_URL),
+  mongodbUri: String(mongodbUri),
   jwtSecret: String(process.env.JWT_SECRET),
   stripeSecretKey: String(process.env.STRIPE_SECRET_KEY),
   port: String(process.env.PORT),

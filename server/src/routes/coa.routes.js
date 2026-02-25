@@ -6,6 +6,7 @@ import {
   updateAccount,
   deleteAccount,
   getSubmenusByMasterType,
+  getSubmenusLegacy,
   getAllCategories,
   getAssetsAccounts,
 } from "../controllers/admin/coa.controller.js";
@@ -20,6 +21,9 @@ router.get("/assets-accounts", getAssetsAccounts);
 
 // GET /api/admin/coa/submenus/:masterType - get submenus by master type
 router.get("/submenus/:masterType", getSubmenusByMasterType);
+
+// POST /api/admin/coa/getSubmenus - legacy payload compatibility (master_type)
+router.post("/getSubmenus", getSubmenusLegacy);
 
 // GET /api/admin/coa/account/:id - get account detail
 router.get("/account/:id", getAccountDetail);

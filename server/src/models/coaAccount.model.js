@@ -20,7 +20,7 @@ const coaAccountSchema = new mongoose.Schema(
     currency: {
       type: String,
       trim: true,
-      default: "Rp",
+      default: "",
       maxlength: [10, "Currency maksimal 10 karakter"],
     },
     description: {
@@ -46,7 +46,7 @@ const coaAccountSchema = new mongoose.Schema(
 );
 
 coaAccountSchema.index({ submenuId: 1, accountName: 1 });
-coaAccountSchema.index({ accountCode: 1 });
+coaAccountSchema.index({ accountCode: 1 }, { unique: true, sparse: true });
 
 const CoaAccount = mongoose.model("CoaAccount", coaAccountSchema);
 

@@ -5,7 +5,6 @@ import {
 } from "react-router-dom";
 import MainLayout from "../Layout/MainLayout";
 import AuthLayout from "../Layout/AuthLayout";
-import Home from "../pages/Home.jsx";
 import Login from "../pages/Login.jsx";
 import Dashboard from "../pages/Dashboard.jsx";
 import Members from "../pages/Members.jsx";
@@ -47,6 +46,12 @@ const router = createBrowserRouter(
         <Route path="/akuntansi/transaksi" element={<Transactions />} />
         <Route path="/akuntansi/rekonsiliasi" element={<ReconciliationPage />} />
         <Route path="/akuntansi/coa" element={<ChartOfAccounts />} />
+        <Route path="/akuntansi/chart-of-accounts" element={<ChartOfAccounts />} />
+        <Route path="/chart-of-accounts" element={<ChartOfAccounts />} />
+        <Route path="/chart-of-accounts/create" element={<ChartOfAccounts />} />
+        <Route path="/chart-of-accounts/edit/:id" element={<ChartOfAccounts />} />
+        <Route path="/chart-of-accounts/delete/:id" element={<ChartOfAccounts />} />
+        <Route path="/chart-of-accounts/:type" element={<ChartOfAccounts />} />
         <Route path="/akuntansi/pajak" element={<SalesTaxes />} />
       </Route>
     </Route>

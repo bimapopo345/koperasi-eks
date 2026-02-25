@@ -1,14 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   getAccountsByType,
+  getAccountDetail,
   createAccount,
   updateAccount,
   deleteAccount,
   getSubmenusByMasterType,
 } from "../../api/accountingApi";
 
-const TABS = ["Assets", "Liabilities", "Equity", "Income", "Expenses"];
+const TABS = ["Assets", "Liabilities", "Income", "Expenses", "Equity"];
 const TAB_DISPLAY = { Assets: "Assets", Liabilities: "Liabilities & Credit Cards", Equity: "Equity", Income: "Income", Expenses: "Expenses" };
 
 // Account types that show the currency field (conditional, matching samitbank)
@@ -173,7 +175,27 @@ const getCurrencySymbol = (currency) => {
   return found ? found.symbol : currency;
 };
 
+const normalizeMasterType = (rawType) => {
+  if (!rawType || typeof rawType !== "string") return null;
+  const decoded = decodeURIComponent(rawType).replace(/\+/g, " ").trim();
+  if (TABS.includes(decoded)) return decoded;
+
+  const key = decoded.toLowerCase();
+  if (key === "liabilities & credit cards") return "Liabilities";
+  if (key === "liabilities") return "Liabilities";
+  if (key === "assets") return "Assets";
+  if (key === "income") return "Income";
+  if (key === "expenses") return "Expenses";
+  if (key === "equity") return "Equity";
+  return null;
+};
+
 export default function ChartOfAccounts() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const params = useParams();
+  const isLegacyPath = location.pathname.startsWith("/chart-of-accounts");
+
   const [currentType, setCurrentType] = useState("Assets");
   const [accountCounts, setAccountCounts] = useState({});
   const [accountsBySubtype, setAccountsBySubtype] = useState({});
@@ -192,11 +214,12 @@ export default function ChartOfAccounts() {
     currency: "",
     description: "",
   });
-  const [preSelectedSubmenu, setPreSelectedSubmenu] = useState("");
 
   // Dropdown state
   const [openDropdown, setOpenDropdown] = useState(null);
   const dropdownRef = useRef(null);
+  const handledLegacyPathRef = useRef("");
+  const deletingFromLegacyRef = useRef(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -215,6 +238,16 @@ export default function ChartOfAccounts() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Keep active tab synced when legacy route includes account type
+  useEffect(() => {
+    const typeFromPath = normalizeMasterType(params.type);
+    const typeFromQuery = normalizeMasterType(new URLSearchParams(location.search).get("type"));
+    const nextType = typeFromPath || typeFromQuery;
+    if (nextType && nextType !== currentType) {
+      setCurrentType(nextType);
+    }
+  }, [params.type, location.search, currentType]);
+
   // Close dropdown on outside click
   useEffect(() => {
     const handleClick = (e) => {
@@ -224,32 +257,48 @@ export default function ChartOfAccounts() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, []);
 
-  const openCreateModal = async (submenuId = "") => {
+  const openCreateModal = async (options = {}) => {
+    const resolvedOptions =
+      typeof options === "string"
+        ? { submenuId: options }
+        : options;
+    const submenuId = resolvedOptions.submenuId || "";
+    const masterType = normalizeMasterType(resolvedOptions.masterType) || currentType;
+    const submenuName = resolvedOptions.submenuName || "";
+
     setEditingAccount(null);
-    setPreSelectedSubmenu(submenuId);
-    const defaultType = currentType;
+    const defaultType = masterType;
     setForm({
       masterType: defaultType,
       accountName: "",
-      submenuId: submenuId,
+      submenuId,
       accountCode: "",
-      currency: CURRENCY_TYPES.includes(defaultType) ? "IDR" : "",
+      currency: "",
       description: "",
     });
+
     setLoadingSubmenus(true);
     try {
       const res = await getSubmenusByMasterType(defaultType);
-      setSubmenus(res.data || []);
+      const fetchedSubmenus = res.data || [];
+      setSubmenus(fetchedSubmenus);
+
+      if (!submenuId && submenuName) {
+        const matchedSubmenu = fetchedSubmenus.find((s) => s.submenuName === submenuName);
+        if (matchedSubmenu) {
+          setForm((prev) => ({ ...prev, submenuId: matchedSubmenu._id }));
+        }
+      }
     } catch { setSubmenus([]); }
     setLoadingSubmenus(false);
+    setOpenDropdown(null);
     setShowModal(true);
   };
 
-  const openEditModal = async (acc, submenuName) => {
-    setEditingAccount({ ...acc, _submenuName: submenuName, _masterType: currentType });
-    setPreSelectedSubmenu("");
+  const openEditModal = async (acc, submenuName, masterType = currentType) => {
+    setEditingAccount({ ...acc, _submenuName: submenuName, _masterType: masterType });
     setForm({
-      masterType: currentType,
+      masterType: masterType,
       accountName: acc.accountName,
       submenuId: acc.submenuId?._id || acc.submenuId,
       accountCode: acc.accountCode || "",
@@ -261,13 +310,20 @@ export default function ChartOfAccounts() {
     setShowModal(true);
   };
 
+  const handleTabChange = (newType) => {
+    setCurrentType(newType);
+    if (isLegacyPath) {
+      navigate(`/chart-of-accounts/${encodeURIComponent(newType)}`, { replace: true });
+    }
+  };
+
   /** Handle Account Type change in Create mode — reloads submenus */
   const handleMasterTypeChange = async (newType) => {
     setForm((prev) => ({
       ...prev,
       masterType: newType,
       submenuId: "",
-      currency: CURRENCY_TYPES.includes(newType) ? (prev.currency || "IDR") : "",
+      currency: CURRENCY_TYPES.includes(newType) ? (prev.currency || "") : "",
     }));
     if (!newType) { setSubmenus([]); return; }
     setLoadingSubmenus(true);
@@ -276,6 +332,125 @@ export default function ChartOfAccounts() {
       setSubmenus(res.data || []);
     } catch { setSubmenus([]); }
     setLoadingSubmenus(false);
+  };
+
+  // Legacy route behavior to mirror samitbank URL patterns
+  useEffect(() => {
+    if (!isLegacyPath) return;
+
+    const pathKey = `${location.pathname}${location.search}`;
+    const isLegacyActionPath = /^\/chart-of-accounts\/(create|edit\/[^/]+|delete\/[^/]+)$/.test(
+      location.pathname
+    );
+
+    if (!isLegacyActionPath) {
+      handledLegacyPathRef.current = "";
+      return;
+    }
+
+    if (handledLegacyPathRef.current === pathKey) return;
+
+    const createMatch = location.pathname === "/chart-of-accounts/create";
+    if (createMatch) {
+      handledLegacyPathRef.current = pathKey;
+      const paramsQuery = new URLSearchParams(location.search);
+      const requestedType = normalizeMasterType(paramsQuery.get("type")) || currentType;
+      const requestedSubtype = paramsQuery.get("subtype") || "";
+
+      if (requestedType !== currentType) {
+        setCurrentType(requestedType);
+      }
+      openCreateModal({
+        masterType: requestedType,
+        submenuName: requestedSubtype,
+      });
+      return;
+    }
+
+    const editMatch = location.pathname.match(/^\/chart-of-accounts\/edit\/([^/]+)$/);
+    if (editMatch?.[1]) {
+      handledLegacyPathRef.current = pathKey;
+      const accountId = editMatch[1];
+
+      (async () => {
+        try {
+          const res = await getAccountDetail(accountId);
+          const account = res?.data;
+          if (!res?.success || !account) {
+            toast.error("Account not found");
+            navigate("/chart-of-accounts", { replace: true });
+            return;
+          }
+
+          const masterType =
+            normalizeMasterType(account?.submenuId?.masterId?.masterName) || currentType;
+          const submenuName = account?.submenuId?.submenuName || "";
+          if (masterType !== currentType) {
+            setCurrentType(masterType);
+          }
+          openEditModal(account, submenuName, masterType);
+        } catch {
+          toast.error("Failed to load account detail");
+          navigate("/chart-of-accounts", { replace: true });
+        }
+      })();
+
+      return;
+    }
+
+    const deleteMatch = location.pathname.match(/^\/chart-of-accounts\/delete\/([^/]+)$/);
+    if (deleteMatch?.[1] && !deletingFromLegacyRef.current) {
+      handledLegacyPathRef.current = pathKey;
+      deletingFromLegacyRef.current = true;
+      const accountId = deleteMatch[1];
+
+      (async () => {
+        try {
+          const detailRes = await getAccountDetail(accountId);
+          const masterType =
+            normalizeMasterType(detailRes?.data?.submenuId?.masterId?.masterName) || currentType;
+          await handleDelete(accountId, { skipConfirm: true });
+          navigate(`/chart-of-accounts/${encodeURIComponent(masterType)}`, { replace: true });
+        } finally {
+          deletingFromLegacyRef.current = false;
+        }
+      })();
+    }
+  }, [location.pathname, location.search, isLegacyPath, currentType]);
+
+  const openCreateFromUi = (submenuId = "", submenuName = "") => {
+    if (isLegacyPath) {
+      const paramsQuery = new URLSearchParams({ type: currentType });
+      if (submenuName) paramsQuery.set("subtype", submenuName);
+      navigate(`/chart-of-accounts/create?${paramsQuery.toString()}`);
+      return;
+    }
+    openCreateModal({ submenuId, submenuName, masterType: currentType });
+  };
+
+  const openEditFromUi = (account, submenuName) => {
+    if (isLegacyPath) {
+      navigate(`/chart-of-accounts/edit/${account._id}`);
+      return;
+    }
+    openEditModal(account, submenuName, currentType);
+  };
+
+  const deleteFromUi = async (accountId) => {
+    if (isLegacyPath) {
+      const confirmed = confirm("Are you sure you want to delete this account?");
+      if (!confirmed) return;
+      navigate(`/chart-of-accounts/delete/${accountId}`);
+      return;
+    }
+    await handleDelete(accountId);
+  };
+
+  const closeModal = () => {
+    setShowModal(false);
+    if (isLegacyPath && /\/chart-of-accounts\/(create|edit\/)/.test(location.pathname)) {
+      navigate(`/chart-of-accounts/${encodeURIComponent(currentType)}`, { replace: true });
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -295,20 +470,36 @@ export default function ChartOfAccounts() {
         const res = await createAccount(payload);
         if (res.success) toast.success("Account created");
       }
+
+      const targetType =
+        (editingAccount?._masterType || form.masterType || currentType);
+
       setShowModal(false);
       fetchData();
+
+      if (isLegacyPath && /\/chart-of-accounts\/(create|edit\/)/.test(location.pathname)) {
+        navigate(`/chart-of-accounts/${encodeURIComponent(targetType)}`, { replace: true });
+      }
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to save");
     }
   };
 
-  const handleDelete = async (id) => {
-    if (!confirm("Are you sure you want to delete this account?")) return;
+  const handleDelete = async (id, options = {}) => {
+    const skipConfirm = options.skipConfirm === true;
+    if (!skipConfirm && !confirm("Are you sure you want to delete this account?")) return false;
     try {
       const res = await deleteAccount(id);
-      if (res.success) { toast.success("Account deleted"); setOpenDropdown(null); fetchData(); }
+      if (res.success) {
+        toast.success("Account deleted");
+        setOpenDropdown(null);
+        fetchData();
+        return true;
+      }
+      return false;
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to delete");
+      return false;
     }
   };
 
@@ -337,7 +528,7 @@ export default function ChartOfAccounts() {
             </nav>
             <h1 className="text-xl font-bold text-gray-900">Chart of Accounts</h1>
           </div>
-          <button onClick={() => openCreateModal()}
+          <button onClick={() => openCreateFromUi()}
             className="px-5 py-2.5 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition text-sm font-medium shadow-sm">
             + Add a New Account
           </button>
@@ -351,7 +542,7 @@ export default function ChartOfAccounts() {
           <div className="hidden sm:block w-12 h-px bg-gray-300 mr-3" />
           <div className="inline-flex bg-pink-50 rounded-full p-1 gap-0.5">
             {TABS.map((tab) => (
-              <button key={tab} onClick={() => setCurrentType(tab)}
+              <button key={tab} onClick={() => handleTabChange(tab)}
                 className={`relative px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 ${
                   currentType === tab
                     ? "bg-white text-pink-700 shadow-[0_0_9px_1px_rgba(236,72,153,0.2)]"
@@ -386,7 +577,7 @@ export default function ChartOfAccounts() {
           </div>
           <h3 className="text-lg font-semibold text-gray-800 mb-1">No accounts for {currentType}</h3>
           <p className="text-sm text-gray-500 mb-4">Start by adding your first account in this category.</p>
-          <button onClick={() => openCreateModal()}
+          <button onClick={() => openCreateFromUi()}
             className="px-5 py-2.5 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition text-sm font-medium shadow-sm">
             + Add a New Account
           </button>
@@ -439,7 +630,7 @@ export default function ChartOfAccounts() {
                             </button>
                             {openDropdown === acc._id && (
                               <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 min-w-[140px]">
-                                <button onClick={() => openEditModal(acc, submenuName)}
+                                <button onClick={() => openEditFromUi(acc, submenuName)}
                                   className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2">
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -447,7 +638,7 @@ export default function ChartOfAccounts() {
                                   Edit
                                 </button>
                                 <div className="border-t border-gray-100 my-1" />
-                                <button onClick={() => handleDelete(acc._id)}
+                                <button onClick={() => deleteFromUi(acc._id)}
                                   className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2">
                                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -470,7 +661,7 @@ export default function ChartOfAccounts() {
 
               {/* Add account link at bottom of section */}
               <div className="px-6 py-3 border-t border-gray-50">
-                <button onClick={() => openCreateModal(data.submenuId || "")}
+                <button onClick={() => openCreateFromUi(data.submenuId || "", submenuName)}
                   className="text-sm text-pink-600 hover:text-pink-800 font-medium transition">
                   + Add a new account
                 </button>
@@ -482,7 +673,7 @@ export default function ChartOfAccounts() {
 
       {/* ===== Modal for Create/Edit ===== */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={() => setShowModal(false)}>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={closeModal}>
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="px-6 py-5 border-b border-gray-100">
               <h2 className="text-lg font-bold text-gray-900">{editingAccount ? "Edit Account" : "Add a New Account"}</h2>
@@ -601,7 +792,7 @@ export default function ChartOfAccounts() {
 
               {/* --- Form Actions --- */}
               <div className="flex justify-end gap-3 pt-3 border-t border-gray-100">
-                <button type="button" onClick={() => setShowModal(false)}
+                <button type="button" onClick={closeModal}
                   className="px-5 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition">
                   Cancel
                 </button>
