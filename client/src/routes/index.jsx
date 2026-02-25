@@ -44,6 +44,8 @@ const router = createBrowserRouter(
         <Route path="/laporan" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/akuntansi/transaksi" element={<Transactions />} />
+        <Route path="/transactions" element={<Transactions />} />
+        <Route path="/transactions/upload" element={<Transactions />} />
         <Route path="/akuntansi/rekonsiliasi" element={<ReconciliationPage />} />
         <Route path="/akuntansi/coa" element={<ChartOfAccounts />} />
         <Route path="/akuntansi/chart-of-accounts" element={<ChartOfAccounts />} />

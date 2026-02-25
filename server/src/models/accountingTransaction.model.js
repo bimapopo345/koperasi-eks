@@ -35,6 +35,11 @@ const accountingTransactionSchema = new mongoose.Schema(
       enum: ["master", "submenu", "account", null],
       default: null,
     },
+    customerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Member",
+      default: null,
+    },
     includeSalesTax: {
       type: Boolean,
       default: false,

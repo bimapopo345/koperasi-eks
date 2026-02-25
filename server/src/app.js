@@ -45,6 +45,13 @@ app.use("/uploads", express.static(getUploadsDir(), {
   maxAge: "1h",
 }));
 
+// Legacy compatibility with samitbank-style receipt URLs
+app.use("/upload", express.static(getUploadsDir(), {
+  fallthrough: true,
+  etag: true,
+  maxAge: "1h",
+}));
+
 import Routes from "./routes/index.js";
 import adminRoutes from "./routes/admin.routes.js";
 import webhookRoutes from "./routes/webhook.routes.js";
