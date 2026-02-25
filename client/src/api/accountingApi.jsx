@@ -59,6 +59,12 @@ export const getAssetsAccounts = async () => {
   return res.data;
 };
 
+export const getMembers = async (verified = "") => {
+  const params = verified ? `?verified=${verified}` : "";
+  const res = await api.get(`/members${params}`);
+  return res.data;
+};
+
 // ========================
 // Transactions
 // ========================

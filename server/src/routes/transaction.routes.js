@@ -1,6 +1,7 @@
 import express from "express";
 import multer from "multer";
 import path from "path";
+import { ensureUploadsSubdirs } from "../utils/uploadsDir.js";
 import {
   getTransactions,
   getTransaction,
@@ -13,11 +14,12 @@ import {
 } from "../controllers/admin/transaction.controller.js";
 
 const router = express.Router();
+const { transactions: transactionsUploadDir } = ensureUploadsSubdirs();
 
 // Multer config for receipt file upload
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    cb(null, "uploads/transactions");
+    cb(null, transactionsUploadDir);
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname);
@@ -39,6 +41,11 @@ const upload = multer({
   },
 });
 
+const uploadReceipt = upload.fields([
+  { name: "receiptFile", maxCount: 1 },
+  { name: "receipt_file", maxCount: 1 },
+]);
+
 // GET /api/admin/transactions - list all transactions
 router.get("/", getTransactions);
 
@@ -49,10 +56,10 @@ router.get("/account-currency/:id", getAccountCurrency);
 router.get("/:id", getTransaction);
 
 // POST /api/admin/transactions - create
-router.post("/", upload.single("receiptFile"), createTransaction);
+router.post("/", uploadReceipt, createTransaction);
 
 // PUT /api/admin/transactions/:id - update
-router.put("/:id", upload.single("receiptFile"), updateTransaction);
+router.put("/:id", uploadReceipt, updateTransaction);
 
 // DELETE /api/admin/transactions/:id - delete
 router.delete("/:id", deleteTransaction);

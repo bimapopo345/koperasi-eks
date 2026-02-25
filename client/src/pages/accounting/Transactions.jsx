@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useLocation, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
   getTransactions,
@@ -10,11 +11,13 @@ import {
   getAllCategories,
   getAssetsAccounts,
   getSalesTaxes,
+  getMembers,
   getReconciliation,
   toggleMatch,
   completeReconciliation,
   updateClosingBalance,
 } from "../../api/accountingApi";
+import { API_URL } from "../../api/config";
 
 // ==================== UTILITY FUNCTIONS ====================
 function formatNumber(num) {
@@ -243,9 +246,14 @@ export default function Transactions() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedAccountId, setSelectedAccountId] = useState("");
+  const location = useLocation();
+  const [, setSearchParams] = useSearchParams();
+  const isLegacyTransactionsPath = location.pathname === "/transactions" || location.pathname === "/transactions/upload";
   const [assetsAccounts, setAssetsAccounts] = useState({});
   const [categories, setCategories] = useState([]);
   const [salesTaxes, setSalesTaxes] = useState([]);
+  const [customers, setCustomers] = useState([]);
+  const [customVendors, setCustomVendors] = useState([]);
 
   // ===== Dropdown Visibility =====
   const [showAccountDropdown, setShowAccountDropdown] = useState(false);
@@ -303,6 +311,34 @@ export default function Transactions() {
   const [selectedRows, setSelectedRows] = useState(new Set());
   const rowDropdownRef = useRef(null);
 
+  const syncLegacyAccountQuery = useCallback((accountId) => {
+    if (!isLegacyTransactionsPath) return;
+    const params = new URLSearchParams(location.search);
+    if (accountId) params.set("account", accountId);
+    else params.delete("account");
+    setSearchParams(params, { replace: true });
+  }, [isLegacyTransactionsPath, location.search, setSearchParams]);
+
+  const handleSelectAccount = useCallback((accountId) => {
+    setSelectedAccountId(accountId || "");
+    setShowAccountDropdown(false);
+    setReconMode(false);
+    syncLegacyAccountQuery(accountId || "");
+  }, [syncLegacyAccountQuery]);
+
+  useEffect(() => {
+    if (!isLegacyTransactionsPath) return;
+    const params = new URLSearchParams(location.search);
+    const accountFromQuery = params.get("account") || "";
+    setSelectedAccountId((prev) => (prev === accountFromQuery ? prev : accountFromQuery));
+  }, [isLegacyTransactionsPath, location.search]);
+
+  useEffect(() => {
+    if (location.pathname === "/transactions/upload") {
+      setShowUploadModal(true);
+    }
+  }, [location.pathname]);
+
   // ==================== DATA FETCHING ====================
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -312,18 +348,27 @@ export default function Transactions() {
         getAssetsAccounts(),
         getAllCategories(),
         getSalesTaxes("active"),
+        getMembers(),
       ];
       if (selectedAccountId) {
         promises.push(getReconciliation(selectedAccountId));
       }
       const results = await Promise.all(promises);
-      const [txnRes, assetsRes, catRes, taxRes] = results;
+      const [txnRes, assetsRes, catRes, taxRes, membersRes, reconRes] = results;
       if (txnRes.success) setTransactions(txnRes.data || []);
       if (assetsRes.success) setAssetsAccounts(assetsRes.data || {});
       if (catRes.success) setCategories(catRes.data || []);
       if (taxRes.success) setSalesTaxes(taxRes.data || []);
-      if (selectedAccountId && results[4]) {
-        const reconRes = results[4];
+      if (membersRes.success) {
+        const mappedMembers = (membersRes.data || []).map((member) => ({
+          id: member._id,
+          name: member.name || "-",
+          email: member.email || member.user?.email || "",
+          uuid: member.uuid || "",
+        }));
+        setCustomers(mappedMembers);
+      }
+      if (selectedAccountId && reconRes) {
         if (reconRes.success && reconRes.data) {
           const active = reconRes.data.find?.((r) => r.status === "in_progress") || reconRes.data;
           if (active && active.status === "in_progress") {
@@ -409,6 +454,21 @@ export default function Transactions() {
     });
     return groups;
   }, [assetsAccounts]);
+
+  const vendorOptions = useMemo(() => {
+    const names = new Set(
+      customVendors
+        .map((name) => (typeof name === "string" ? name.trim() : ""))
+        .filter(Boolean)
+    );
+
+    transactions.forEach((txn) => {
+      const name = typeof txn.vendorId === "string" ? txn.vendorId.trim() : "";
+      if (name) names.add(name);
+    });
+
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [transactions, customVendors]);
 
   // Filter account options for filter dropdown
   const filterAccountOptions = useMemo(() => {
@@ -567,7 +627,7 @@ export default function Transactions() {
       includeSalesTax: !!txn.salesTaxId,
       salesTaxId: txn.salesTaxId || "",
       vendorId: txn.vendorId || "",
-      customerId: txn.customerId || "",
+      customerId: txn.customerId?._id || txn.customerId || "",
     });
     if (txn.isSplit && txn.splitCategories) {
       setSplits(txn.splitCategories.map((s) => ({
@@ -583,6 +643,20 @@ export default function Transactions() {
     setReceiptFile(null);
     setOpenRowDropdown(null);
     setShowModal(true);
+  };
+
+  const handleAddVendor = () => {
+    const value = window.prompt("Masukkan nama vendor:");
+    if (value === null) return;
+
+    const normalized = value.trim();
+    if (!normalized) {
+      toast.error("Nama vendor tidak boleh kosong");
+      return;
+    }
+
+    setCustomVendors((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+    setForm((prev) => ({ ...prev, vendorId: normalized }));
   };
 
   // ==================== FORM SUBMISSION ====================
@@ -629,7 +703,7 @@ export default function Transactions() {
           if (k === "splits") fd.append(k, JSON.stringify(v));
           else if (v !== undefined && v !== null) fd.append(k, v);
         });
-        fd.append("receipt_file", receiptFile);
+        fd.append("receiptFile", receiptFile);
         data = fd;
       }
 
@@ -769,7 +843,7 @@ export default function Transactions() {
         setReconMode(true);
       } else {
         // Redirect to reconciliation page to start one
-        window.location.href = `/accounting/reconciliation?accountId=${selectedAccountId}`;
+        window.location.href = `/akuntansi/rekonsiliasi?accountId=${selectedAccountId}`;
       }
     } else {
       setReconMode(false);
@@ -946,7 +1020,7 @@ export default function Transactions() {
                   <div className="px-5 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-wider">{group}</div>
                   {accounts.map((a) => (
                     <button key={a._id}
-                      onClick={() => { setSelectedAccountId(a._id); setShowAccountDropdown(false); setReconMode(false); }}
+                      onClick={() => handleSelectAccount(a._id)}
                       className={`w-full text-left px-5 py-2.5 text-sm hover:bg-pink-50 transition flex items-center gap-3 ${
                         selectedAccountId === a._id ? "text-pink-700 font-semibold bg-pink-50/50" : "text-gray-700"
                       }`}>
@@ -964,7 +1038,7 @@ export default function Transactions() {
                 </div>
               ))}
               {/* All accounts summary */}
-              <button onClick={() => { setSelectedAccountId(""); setShowAccountDropdown(false); setReconMode(false); }}
+              <button onClick={() => handleSelectAccount("")}
                 className={`w-full text-left px-5 py-3 text-sm hover:bg-pink-50 transition flex justify-between ${
                   !selectedAccountId ? "text-pink-700 font-semibold bg-pink-50/50" : "text-gray-700"
                 }`}>
@@ -1000,7 +1074,7 @@ export default function Transactions() {
       {/* ==================== RECONCILIATION MODE - BACK LINK + STATS BAR ==================== */}
       {reconMode && activeRecon && (
         <>
-          <a href={`/accounting/reconciliation?accountId=${selectedAccountId}`}
+          <a href={`/akuntansi/rekonsiliasi?accountId=${selectedAccountId}`}
             className="inline-flex items-center gap-1.5 text-sm text-pink-600 hover:text-pink-800 mb-4 font-medium">
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M19 12H5M12 19l-7-7 7-7" />
@@ -1320,7 +1394,7 @@ export default function Transactions() {
                           {/* Receipt button */}
                           <button
                             onClick={() => {
-                              if (txn.receiptFile) window.open(`/upload/transactions/${txn.receiptFile}`, "_blank");
+                              if (txn.receiptFile) window.open(`${API_URL}/uploads/transactions/${encodeURIComponent(txn.receiptFile)}`, "_blank", "noopener,noreferrer");
                               else toast("No receipt file available");
                             }}
                             className={`w-7 h-7 rounded-full flex items-center justify-center transition ${
@@ -1499,19 +1573,26 @@ export default function Transactions() {
                       <select value={form.vendorId} onChange={(e) => setForm({ ...form, vendorId: e.target.value })}
                         className="flex-1 border border-blue-200 rounded-md px-3 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none">
                         <option value="">Choose vendor...</option>
-                        {/* Vendors would come from API - placeholder */}
+                        {vendorOptions.map((vendorName) => (
+                          <option key={vendorName} value={vendorName}>
+                            {vendorName}
+                          </option>
+                        ))}
                       </select>
-                      <span className="text-xs text-pink-600 hover:text-pink-800 cursor-pointer font-medium whitespace-nowrap">+ Add vendor</span>
+                      <button type="button" onClick={handleAddVendor}
+                        className="text-xs text-pink-600 hover:text-pink-800 cursor-pointer font-medium whitespace-nowrap">
+                        + Add vendor
+                      </button>
                     </div>
                   </div>
                 )}
 
                 {/* Customer Section */}
                 <div>
-                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Customer</label>
+                  <label className="block text-sm font-semibold text-gray-700 mb-1.5">Customer (from Anggota)</label>
                   <CustomerCombobox value={form.customerId}
                     onChange={(v) => setForm({ ...form, customerId: v })}
-                    customers={[]} /* Customers would come from API */ />
+                    customers={customers} />
                 </div>
 
                 {/* Sender Name */}
