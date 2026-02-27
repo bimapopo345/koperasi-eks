@@ -53,6 +53,7 @@ import coaRoutes from "./coa.routes.js";
 import transactionRoutes from "./transaction.routes.js";
 import reconciliationRoutes from "./reconciliation.routes.js";
 import salesTaxRoutes from "./salesTax.routes.js";
+import reportsRoutes from "./reports.routes.js";
 import {
   getAccountsByType,
   getAccountDetail,
@@ -139,6 +140,7 @@ router.use("/coa", verifyToken, coaRoutes);
 router.use("/transactions", verifyToken, transactionRoutes);
 router.use("/reconciliation", verifyToken, reconciliationRoutes);
 router.use("/sales-tax", verifyToken, salesTaxRoutes);
+router.use("/reports", verifyToken, reportsRoutes);
 
 // Legacy compatibility routes (samitbank-style path naming)
 router.get("/chart-of-accounts", verifyToken, getAccountsByType);

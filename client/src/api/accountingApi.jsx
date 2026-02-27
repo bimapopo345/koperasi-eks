@@ -115,6 +115,69 @@ export const getAccountCurrency = async (id) => {
 };
 
 // ========================
+// Reports
+// ========================
+
+export const getProfitLossReport = async (params = {}) => {
+  const res = await api.get("/reports/profit-loss", { params });
+  return res.data;
+};
+
+export const filterProfitLossReport = async (payload = {}) => {
+  const res = await api.post("/reports/profit-loss/filter", payload);
+  return res.data;
+};
+
+export const exportProfitLossCsv = async (params = {}) => {
+  const res = await api.get("/reports/profit-loss/export-csv", {
+    params,
+    responseType: "blob",
+  });
+  return res;
+};
+
+export const getBalanceSheetReport = async (params = {}) => {
+  const res = await api.get("/reports/balance-sheet", { params });
+  return res.data;
+};
+
+export const filterBalanceSheetReport = async (payload = {}) => {
+  const res = await api.post("/reports/balance-sheet/filter", payload);
+  return res.data;
+};
+
+export const exportBalanceSheetCsv = async (params = {}) => {
+  const res = await api.get("/reports/balance-sheet/export-csv", {
+    params,
+    responseType: "blob",
+  });
+  return res;
+};
+
+export const checkBalanceSheetSplitIssues = async () => {
+  const res = await api.get("/reports/balance-sheet/check-splits");
+  return res.data;
+};
+
+export const getAccountTransactionsReport = async (params = {}) => {
+  const res = await api.get("/reports/account-transactions", { params });
+  return res.data;
+};
+
+export const filterAccountTransactionsReport = async (payload = {}) => {
+  const res = await api.post("/reports/account-transactions/filter", payload);
+  return res.data;
+};
+
+export const exportAccountTransactionsCsv = async (params = {}) => {
+  const res = await api.get("/reports/account-transactions/export-csv", {
+    params,
+    responseType: "blob",
+  });
+  return res;
+};
+
+// ========================
 // Bank Reconciliation
 // ========================
 
