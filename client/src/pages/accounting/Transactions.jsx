@@ -276,6 +276,8 @@ export default function Transactions() {
   const [appliedFilters, setAppliedFilters] = useState({
     type: "", description: "", account: "", category: "", reviewed: "", dateFrom: "", dateTo: "", amountMin: "", amountMax: "",
   });
+  const [reportHighlightId, setReportHighlightId] = useState("");
+  const highlightedRowRef = useRef(null);
 
   // ===== Reconciliation State =====
   const [reconMode, setReconMode] = useState(false);
@@ -338,6 +340,35 @@ export default function Transactions() {
       setShowUploadModal(true);
     }
   }, [location.pathname]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const filterByAccount = params.get("filter_account");
+    const filterByCategory = params.get("filter_category");
+    const filterDateFrom = params.get("filter_date_from");
+    const filterDateTo = params.get("filter_date_to");
+    const highlightId = params.get("highlight");
+
+    setReportHighlightId(highlightId || "");
+
+    if (!filterByAccount && !filterByCategory && !filterDateFrom && !filterDateTo) return;
+
+    setFilters((prev) => ({
+      ...prev,
+      account: filterByAccount || prev.account,
+      category: filterByCategory || prev.category,
+      dateFrom: filterDateFrom || prev.dateFrom,
+      dateTo: filterDateTo || prev.dateTo,
+    }));
+
+    setAppliedFilters((prev) => ({
+      ...prev,
+      account: filterByAccount || prev.account,
+      category: filterByCategory || prev.category,
+      dateFrom: filterDateFrom || prev.dateFrom,
+      dateTo: filterDateTo || prev.dateTo,
+    }));
+  }, [location.search]);
 
   // ==================== DATA FETCHING ====================
   const fetchData = useCallback(async () => {
@@ -569,6 +600,16 @@ export default function Transactions() {
 
     return result;
   }, [transactions, appliedFilters, searchQuery, sortBy]);
+
+  useEffect(() => {
+    if (!reportHighlightId) return;
+    const hasHighlightRow = filteredTransactions.some((txn) => String(txn._id) === String(reportHighlightId));
+    if (!hasHighlightRow) return;
+    const timer = setTimeout(() => {
+      highlightedRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+    return () => clearTimeout(timer);
+  }, [filteredTransactions, reportHighlightId]);
 
   // ==================== FILTER ACTIONS ====================
   const applyFilters = () => {
@@ -1300,14 +1341,17 @@ export default function Transactions() {
                   const isDeposit = txn.transactionType === "Deposit";
                   const invoiceId = detectInvoiceId(txn.description);
                   const isJournalEntry = txn.entryType === "journal_entry";
+                  const isReportHighlighted = reportHighlightId && String(txn._id) === String(reportHighlightId);
 
                   if (reconMode && activeRecon) {
                     // ===== RECONCILIATION MODE ROW =====
                     return (
-                      <tr key={txn._id}
+                      <tr
+                        key={txn._id}
+                        ref={isReportHighlighted ? highlightedRowRef : null}
                         className={`border-b border-gray-50 transition ${
                           txn.isMatched ? "bg-pink-50/40 shadow-[inset_3px_0_0_theme(colors.pink.500)]" : "hover:bg-gray-50"
-                        }`}>
+                        } ${isReportHighlighted ? "bg-amber-50 shadow-[inset_3px_0_0_theme(colors.amber.500)]" : ""}`}>
                         <td className="px-4 py-3.5">
                           <input type="checkbox" checked={!!txn.isMatched} onChange={() => handleToggleMatch(txn._id)}
                             className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" />
@@ -1344,10 +1388,12 @@ export default function Transactions() {
 
                   // ===== NORMAL MODE ROW =====
                   return (
-                    <tr key={txn._id}
+                    <tr
+                      key={txn._id}
+                      ref={isReportHighlighted ? highlightedRowRef : null}
                       className={`border-b border-gray-50 hover:bg-pink-50/20 transition ${
                         txn.isReconciled ? "shadow-[inset_3px_0_0_theme(colors.pink.500)] bg-pink-50/30" : ""
-                      }`}>
+                      } ${isReportHighlighted ? "bg-amber-50 shadow-[inset_3px_0_0_theme(colors.amber.500)]" : ""}`}>
                       <td className="px-4 py-3.5">
                         <input type="checkbox" checked={selectedRows.has(txn._id)}
                           onChange={() => toggleRowSelect(txn._id)}

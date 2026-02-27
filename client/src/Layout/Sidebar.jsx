@@ -60,6 +60,24 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
           path: "/akuntansi/transaksi",
         },
         {
+          title: "Reports",
+          icon: "📘",
+          children: [
+            {
+              title: "Profit & Loss",
+              path: "/reports/profit-loss",
+            },
+            {
+              title: "Balance Sheet",
+              path: "/reports/balance-sheet",
+            },
+            {
+              title: "Account Transactions",
+              path: "/reports/account-transactions",
+            },
+          ],
+        },
+        {
           title: "Rekonsiliasi",
           path: "/akuntansi/rekonsiliasi",
         },
@@ -82,8 +100,13 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
 
   const isActive = (path) => location.pathname === path;
 
-  const isGroupActive = (children) =>
-    children?.some((child) => location.pathname === child.path);
+  const isItemActive = (item) => {
+    if (item.path) return isActive(item.path);
+    if (item.children) return item.children.some((child) => isItemActive(child));
+    return false;
+  };
+
+  const isGroupActive = (children) => children?.some((child) => isItemActive(child));
 
   const [openMenus, setOpenMenus] = useState(() => {
     const initial = {};

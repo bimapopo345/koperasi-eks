@@ -21,6 +21,9 @@ import ChartOfAccounts from "../pages/accounting/ChartOfAccounts.jsx";
 import Transactions from "../pages/accounting/Transactions.jsx";
 import ReconciliationPage from "../pages/accounting/Reconciliation.jsx";
 import SalesTaxes from "../pages/accounting/SalesTaxes.jsx";
+import ProfitLoss from "../pages/accounting/reports/ProfitLoss.jsx";
+import BalanceSheet from "../pages/accounting/reports/BalanceSheet.jsx";
+import AccountTransactions from "../pages/accounting/reports/AccountTransactions.jsx";
 
 const router = createBrowserRouter(
   createRoutesFromElements(
@@ -46,6 +49,9 @@ const router = createBrowserRouter(
         <Route path="/akuntansi/transaksi" element={<Transactions />} />
         <Route path="/transactions" element={<Transactions />} />
         <Route path="/transactions/upload" element={<Transactions />} />
+        <Route path="/reports/profit-loss" element={<ProfitLoss />} />
+        <Route path="/reports/balance-sheet" element={<BalanceSheet />} />
+        <Route path="/reports/account-transactions" element={<AccountTransactions />} />
         <Route path="/akuntansi/rekonsiliasi" element={<ReconciliationPage />} />
         <Route path="/akuntansi/coa" element={<ChartOfAccounts />} />
         <Route path="/akuntansi/chart-of-accounts" element={<ChartOfAccounts />} />
