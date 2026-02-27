@@ -16,6 +16,11 @@ const accountingTransactionSchema = new mongoose.Schema(
       ref: "CoaAccount",
       required: [true, "Account ID wajib diisi"],
     },
+    expenseId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Expense",
+      default: null,
+    },
     transactionType: {
       type: String,
       enum: ["Deposit", "Withdrawal"],
@@ -86,6 +91,7 @@ const accountingTransactionSchema = new mongoose.Schema(
 accountingTransactionSchema.index({ accountId: 1, transactionDate: -1 });
 accountingTransactionSchema.index({ transactionDate: -1 });
 accountingTransactionSchema.index({ reviewed: 1 });
+accountingTransactionSchema.index({ expenseId: 1 }, { sparse: true });
 
 const AccountingTransaction = mongoose.model(
   "AccountingTransaction",

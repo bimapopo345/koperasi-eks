@@ -178,6 +178,96 @@ export const exportAccountTransactionsCsv = async (params = {}) => {
 };
 
 // ========================
+// Expenses
+// ========================
+
+export const getExpenseAdminDashboard = async (params = {}) => {
+  const res = await api.get("/expenses/admin", { params });
+  return res.data;
+};
+
+export const getExpenseReportData = async (params = {}) => {
+  const res = await api.get("/expenses/report", { params });
+  return res.data;
+};
+
+export const getExpenseDetailApi = async (id) => {
+  const res = await api.get(`/expenses/${id}`);
+  return res.data;
+};
+
+export const createExpenseApi = async (data) => {
+  const res = await api.post("/expenses", data, {
+    headers: data instanceof FormData ? { "Content-Type": "multipart/form-data" } : {},
+  });
+  return res.data;
+};
+
+export const updateExpenseApi = async (id, data) => {
+  const res = await api.put(`/expenses/${id}`, data, {
+    headers: data instanceof FormData ? { "Content-Type": "multipart/form-data" } : {},
+  });
+  return res.data;
+};
+
+export const approveExpenseApi = async (id) => {
+  const res = await api.post(`/expenses/${id}/approve`);
+  return res.data;
+};
+
+export const rejectExpenseApi = async (id, payload) => {
+  const res = await api.post(`/expenses/${id}/reject`, payload);
+  return res.data;
+};
+
+export const markExpensePaidApi = async (id, data) => {
+  const res = await api.post(`/expenses/${id}/mark-paid`, data, {
+    headers: data instanceof FormData ? { "Content-Type": "multipart/form-data" } : {},
+  });
+  return res.data;
+};
+
+export const deleteExpenseApi = async (id) => {
+  const res = await api.delete(`/expenses/${id}`);
+  return res.data;
+};
+
+export const deleteExpenseAttachmentApi = async (id) => {
+  const res = await api.delete(`/expenses/attachments/${id}`);
+  return res.data;
+};
+
+export const deleteExpensePaymentProofApi = async (id) => {
+  const res = await api.delete(`/expenses/payment-proofs/${id}`);
+  return res.data;
+};
+
+// ========================
+// Finance Export
+// ========================
+
+export const getFinanceExportData = async (params = {}) => {
+  const res = await api.get("/finance/export", { params });
+  return res.data;
+};
+
+export const exportFinanceExcelApi = async (params = {}) => {
+  const res = await api.get("/finance/export/excel", {
+    params,
+    responseType: "blob",
+  });
+  return res;
+};
+
+export const exportFinancePdfApi = async (params = {}) => {
+  const res = await api.get("/finance/export/pdf", {
+    params,
+    responseType: "blob",
+  });
+  return res;
+};
+
+// ========================
 // Bank Reconciliation
 // ========================
 

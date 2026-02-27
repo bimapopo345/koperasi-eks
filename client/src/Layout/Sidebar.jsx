@@ -92,6 +92,28 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       ],
     },
     {
+      title: "Expenses",
+      icon: "💸",
+      children: [
+        {
+          title: "Expenses Management",
+          path: "/expense/admin",
+        },
+        {
+          title: "Create Expenses",
+          path: "/expense/new",
+        },
+        {
+          title: "Report",
+          path: "/expense/report",
+        },
+        {
+          title: "Export Transactions",
+          path: "/finance/export",
+        },
+      ],
+    },
+    {
       title: "Pengaturan",
       icon: "⚙️",
       path: "/settings",

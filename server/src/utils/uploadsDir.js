@@ -17,12 +17,16 @@ export function ensureUploadsSubdirs() {
   const simpanan = path.join(base, "simpanan");
   const pinjaman = path.join(base, "pinjaman");
   const transactions = path.join(base, "transactions");
+  const expenses = path.join(base, "expenses");
+  const expensePaymentProofs = path.join(base, "expense-payment-proofs");
 
   fs.mkdirSync(simpanan, { recursive: true });
   fs.mkdirSync(pinjaman, { recursive: true });
   fs.mkdirSync(transactions, { recursive: true });
+  fs.mkdirSync(expenses, { recursive: true });
+  fs.mkdirSync(expensePaymentProofs, { recursive: true });
 
-  return { base, simpanan, pinjaman, transactions };
+  return { base, simpanan, pinjaman, transactions, expenses, expensePaymentProofs };
 }
 
 /**

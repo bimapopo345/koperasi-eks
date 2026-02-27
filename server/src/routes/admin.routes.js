@@ -54,6 +54,8 @@ import transactionRoutes from "./transaction.routes.js";
 import reconciliationRoutes from "./reconciliation.routes.js";
 import salesTaxRoutes from "./salesTax.routes.js";
 import reportsRoutes from "./reports.routes.js";
+import expenseRoutes from "./expense.routes.js";
+import financeExportRoutes from "./financeExport.routes.js";
 import {
   getAccountsByType,
   getAccountDetail,
@@ -141,6 +143,8 @@ router.use("/transactions", verifyToken, transactionRoutes);
 router.use("/reconciliation", verifyToken, reconciliationRoutes);
 router.use("/sales-tax", verifyToken, salesTaxRoutes);
 router.use("/reports", verifyToken, reportsRoutes);
+router.use("/expenses", verifyToken, expenseRoutes);
+router.use("/finance/export", verifyToken, financeExportRoutes);
 
 // Legacy compatibility routes (samitbank-style path naming)
 router.get("/chart-of-accounts", verifyToken, getAccountsByType);

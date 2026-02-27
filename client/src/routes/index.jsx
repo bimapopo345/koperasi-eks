@@ -24,6 +24,12 @@ import SalesTaxes from "../pages/accounting/SalesTaxes.jsx";
 import ProfitLoss from "../pages/accounting/reports/ProfitLoss.jsx";
 import BalanceSheet from "../pages/accounting/reports/BalanceSheet.jsx";
 import AccountTransactions from "../pages/accounting/reports/AccountTransactions.jsx";
+import ExpenseAdmin from "../pages/expense/ExpenseAdmin.jsx";
+import ExpenseCreate from "../pages/expense/ExpenseCreate.jsx";
+import ExpenseReport from "../pages/expense/ExpenseReport.jsx";
+import ExpenseDetail from "../pages/expense/ExpenseDetail.jsx";
+import ExpenseEdit from "../pages/expense/ExpenseEdit.jsx";
+import FinanceExport from "../pages/expense/FinanceExport.jsx";
 
 const router = createBrowserRouter(
   createRoutesFromElements(
@@ -52,6 +58,12 @@ const router = createBrowserRouter(
         <Route path="/reports/profit-loss" element={<ProfitLoss />} />
         <Route path="/reports/balance-sheet" element={<BalanceSheet />} />
         <Route path="/reports/account-transactions" element={<AccountTransactions />} />
+        <Route path="/expense/admin" element={<ExpenseAdmin />} />
+        <Route path="/expense/new" element={<ExpenseCreate />} />
+        <Route path="/expense/report" element={<ExpenseReport />} />
+        <Route path="/expense/detail/:id" element={<ExpenseDetail />} />
+        <Route path="/expense/edit/:id" element={<ExpenseEdit />} />
+        <Route path="/finance/export" element={<FinanceExport />} />
         <Route path="/akuntansi/rekonsiliasi" element={<ReconciliationPage />} />
         <Route path="/akuntansi/coa" element={<ChartOfAccounts />} />
         <Route path="/akuntansi/chart-of-accounts" element={<ChartOfAccounts />} />
