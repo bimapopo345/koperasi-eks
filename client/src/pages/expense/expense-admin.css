@@ -1,0 +1,136 @@
+.exp-grid-3 {
+  grid-column: span 3 / span 3;
+}
+
+.exp-admin-stat {
+  min-height: 94px;
+}
+
+.exp-admin-stat-value {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.exp-admin-section-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin-bottom: 10px;
+  color: #0f172a;
+}
+
+.exp-bars {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.exp-bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.exp-bar-track {
+  width: 100%;
+  max-width: 28px;
+  height: 190px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  display: flex;
+  align-items: flex-end;
+  padding: 3px;
+}
+
+.exp-bar-fill {
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #0f766e, #14b8a6);
+}
+
+.exp-bar-label {
+  font-size: 0.72rem;
+  color: #6b7280;
+}
+
+.exp-admin-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.exp-admin-list-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+
+.exp-admin-name {
+  font-size: 0.88rem;
+  color: #111827;
+  font-weight: 600;
+}
+
+.exp-admin-money {
+  font-size: 0.86rem;
+  color: #0f766e;
+  font-weight: 700;
+}
+
+.exp-mini-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.exp-mini {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px;
+  text-align: left;
+  background: #fff;
+  cursor: pointer;
+}
+
+.exp-mini:hover {
+  border-color: #99f6e4;
+  box-shadow: 0 8px 18px rgba(2, 132, 199, 0.1);
+}
+
+.exp-mini-top {
+  margin-bottom: 8px;
+}
+
+.exp-mini-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 2px;
+}
+
+.exp-mini-meta {
+  font-size: 0.78rem;
+  color: #64748b;
+}
+
+.exp-mini-total {
+  margin-top: 6px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+@media (max-width: 960px) {
+  .exp-grid-3 {
+    grid-column: span 12 / span 12;
+  }
+
+  .exp-bars {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
