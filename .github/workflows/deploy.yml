@@ -32,12 +32,14 @@ jobs:
               cd "$APP_DIR"
             }
 
-            git config --global --add safe.directory "$APP_DIR"
-
-            BRANCH="${GITHUB_REF_NAME:-main}"
-            git fetch --all --prune
-            git checkout "$BRANCH" || git checkout main
-            git reset --hard "origin/$BRANCH" || git reset --hard origin/main
+            BRANCH="${{ github.ref_name }}"
+            [ -n "$BRANCH" ] || BRANCH="main"
+            git_safe() {
+              git -c safe.directory="$APP_DIR" "$@"
+            }
+            git_safe fetch --all --prune
+            git_safe checkout "$BRANCH" || git_safe checkout main
+            git_safe reset --hard "origin/$BRANCH" || git_safe reset --hard origin/main
 
             echo "📦 Backend"
             cd "$APP_DIR/server"
