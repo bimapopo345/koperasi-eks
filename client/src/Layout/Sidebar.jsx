@@ -60,24 +60,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
           path: "/akuntansi/transaksi",
         },
         {
-          title: "Reports",
-          icon: "📘",
-          children: [
-            {
-              title: "Profit & Loss",
-              path: "/reports/profit-loss",
-            },
-            {
-              title: "Balance Sheet",
-              path: "/reports/balance-sheet",
-            },
-            {
-              title: "Account Transactions",
-              path: "/reports/account-transactions",
-            },
-          ],
-        },
-        {
           title: "Rekonsiliasi",
           path: "/akuntansi/rekonsiliasi",
         },
@@ -88,6 +70,24 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
         {
           title: "Pajak Penjualan",
           path: "/akuntansi/pajak",
+        },
+      ],
+    },
+    {
+      title: "Reports",
+      icon: "📘",
+      children: [
+        {
+          title: "Profit & Loss",
+          path: "/reports/profit-loss",
+        },
+        {
+          title: "Balance Sheet",
+          path: "/reports/balance-sheet",
+        },
+        {
+          title: "Account Transactions",
+          path: "/reports/account-transactions",
         },
       ],
     },
