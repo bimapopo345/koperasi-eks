@@ -48,9 +48,11 @@ import {
   createDonationCampaign,
   updateDonationCampaign,
   activateDonationCampaign,
+  deleteDonationCampaign,
   getDonations,
   approveDonation,
   rejectDonation,
+  deleteDonation,
 } from "../controllers/admin/donation.controller.js";
 import { clearAllData } from "../controllers/admin/system.controller.js";
 import { verifyToken } from "../middlewares/auth.middleware.js";
@@ -144,10 +146,12 @@ router.get("/donations/overview", verifyToken, getDonationOverview);
 router.get("/donations", verifyToken, getDonations);
 router.patch("/donations/:id/approve", verifyToken, approveDonation);
 router.patch("/donations/:id/reject", verifyToken, rejectDonation);
+router.delete("/donations/:id", verifyToken, deleteDonation);
 router.get("/donation-campaigns", verifyToken, getDonationCampaigns);
 router.post("/donation-campaigns", verifyToken, createDonationCampaign);
 router.put("/donation-campaigns/:id", verifyToken, updateDonationCampaign);
 router.patch("/donation-campaigns/:id/activate", verifyToken, activateDonationCampaign);
+router.delete("/donation-campaigns/:id", verifyToken, deleteDonationCampaign);
 
 // Product upgrade routes
 router.use("/product-upgrade", productUpgradeRoutes);
