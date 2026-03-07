@@ -2,271 +2,315 @@ import express from "express";
 import { Savings } from "../models/savings.model.js";
 import { Member } from "../models/member.model.js";
 import { Product } from "../models/product.model.js";
-import mongoose from "mongoose";
+import { Donation } from "../models/donation.model.js";
+import { DonationCampaign } from "../models/donationCampaign.model.js";
+import { CheckoutIntent } from "../models/checkoutIntent.model.js";
+import { buildStudentDonationCode } from "../utils/donation.js";
 
 const router = express.Router();
 
-// DOKU Checkout Webhook - No authentication needed  
+async function findMemberByUuid(memberUuid) {
+  if (!memberUuid) return null;
+
+  let member = await Member.findOne({ uuid: memberUuid });
+  if (member) return member;
+
+  const regex = new RegExp(`^${memberUuid}`);
+  member = await Member.findOne({ uuid: regex });
+  if (member) return member;
+
+  const altUuid = `${memberUuid}-1234`;
+  member = await Member.findOne({ uuid: altUuid });
+  if (member) return member;
+
+  const regexWithSuffix = new RegExp(`^${memberUuid}.*(-1234)?$`);
+  return Member.findOne({ uuid: regexWithSuffix });
+}
+
+async function resolveProductForMember(member) {
+  if (!member) return null;
+
+  if (member.productId) {
+    const product = await Product.findById(member.productId);
+    if (product) return product;
+  }
+
+  if (member.currentProductId) {
+    const product = await Product.findById(member.currentProductId);
+    if (product) return product;
+  }
+
+  return Product.findOne({ isActive: true }).sort({ createdAt: 1 });
+}
+
+function formatRupiah(amount) {
+  return Number(amount || 0).toLocaleString("id-ID");
+}
+
+async function createSavingsFromIntent({ member, intent, channelId }) {
+  if (!intent || !member || !intent.savingsAmount) {
+    return null;
+  }
+
+  const existingSaving = await Savings.findOne({
+    memberId: member._id,
+    invoiceNumber: intent.invoiceNumber,
+  });
+
+  if (existingSaving) {
+    return existingSaving;
+  }
+
+  const product = await resolveProductForMember(member);
+  if (!product) {
+    throw new Error("Produk simpanan member tidak ditemukan");
+  }
+
+  const installmentPeriod = parseInt(intent.installmentPeriod, 10) || 1;
+  const existingSavingsCount = await Savings.countDocuments({
+    memberId: member._id,
+    productId: product._id,
+    installmentPeriod,
+  });
+  const partialSequence = existingSavingsCount + 1;
+
+  const projectionAmount = Number(intent.projectionAmount) || Number(product.depositAmount) || 0;
+  const paidAmountBefore = Number(intent.alreadyPaidAmount) || 0;
+  const paymentAmount = Number(intent.savingsAmount) || 0;
+  const donationAmount = Number(intent.donationAmount) || 0;
+  const finalPaidAmount = paidAmountBefore + paymentAmount;
+  const calculatedPaymentType = paymentAmount < projectionAmount ? "Partial" : "Full";
+  const savingStatus = projectionAmount > 0 && finalPaidAmount >= projectionAmount ? "Approved" : "Partial";
+  const donationSuffix = donationAmount > 0 ? ` + Donasi Rp ${formatRupiah(donationAmount)}` : "";
+  const description = `Pembayaran Simpanan Periode - ${installmentPeriod}${partialSequence > 1 ? ` (#${partialSequence})` : ""}${donationSuffix}`;
+
+  const newSaving = new Savings({
+    memberId: member._id,
+    productId: product._id,
+    type: "Setoran",
+    amount: paymentAmount,
+    installmentPeriod,
+    savingsDate: new Date(),
+    paymentDate: new Date(),
+    status: savingStatus,
+    paymentType: calculatedPaymentType,
+    partialSequence,
+    paymentMethod: channelId && String(channelId).toUpperCase().includes("QRIS") ? "QRIS" : "DOKU_CHECKOUT",
+    description,
+    notes: `Auto-approved via DOKU webhook${channelId ? ` - Channel: ${channelId}` : ""} - Invoice: ${intent.invoiceNumber}`,
+    approvedBy: null,
+    approvedAt: new Date(),
+    invoiceNumber: intent.invoiceNumber,
+  });
+
+  await newSaving.save();
+  return newSaving;
+}
+
+async function createDonationFromIntent({ member, intent, channelId }) {
+  if (!intent || !intent.donationAmount) {
+    return null;
+  }
+
+  const existingDonation = await Donation.findOne({
+    invoiceNumber: intent.invoiceNumber,
+  });
+
+  if (existingDonation) {
+    return existingDonation;
+  }
+
+  const campaign = intent.campaignId
+    ? await DonationCampaign.findById(intent.campaignId)
+    : await DonationCampaign.findOne({ isActive: true }).sort({ collectUntil: -1 });
+
+  const studentUuid = String(intent.studentUuid || member?.uuid || "").trim();
+  const studentName = String(intent.studentName || member?.name || studentUuid || "Student").trim();
+
+  const donation = new Donation({
+    studentUuid,
+    studentName,
+    studentCode: buildStudentDonationCode(studentUuid),
+    memberId: member?._id || null,
+    campaignId: campaign?._id || null,
+    campaignTitle: campaign?.title || "",
+    beneficiaryName: campaign?.beneficiaryName || "",
+    amount: Number(intent.donationAmount),
+    paymentMethod: channelId && String(channelId).toUpperCase().includes("QRIS") ? "QRIS" : "DOKU_CHECKOUT",
+    source: intent.source === "savings_payment" ? "savings_payment" : "donation_page",
+    status: "Approved",
+    description:
+      intent.source === "savings_payment"
+        ? `Donasi ikut pembayaran tabungan - Invoice: ${intent.invoiceNumber}`
+        : `Donasi via QRIS - Invoice: ${intent.invoiceNumber}`,
+    notes: `Auto-approved via DOKU webhook${channelId ? ` - Channel: ${channelId}` : ""}`,
+    invoiceNumber: intent.invoiceNumber,
+    installmentPeriod: intent.installmentPeriod || null,
+    paymentDate: new Date(),
+    approvedAt: new Date(),
+    checkoutIntentId: intent._id,
+  });
+
+  await donation.save();
+  return donation;
+}
+
+async function createLegacySaving({ invoiceNumber, amount, channelId }) {
+  const invoiceMatch = invoiceNumber.match(/^SAV-(.+?)-P(\d+)-(\d+)$/);
+  if (!invoiceMatch) {
+    throw new Error("Invalid invoice format");
+  }
+
+  const memberUuid = invoiceMatch[1];
+  const installmentPeriod = parseInt(invoiceMatch[2], 10) || 1;
+  const member = await findMemberByUuid(memberUuid);
+
+  if (!member) {
+    throw new Error(`Member not found for UUID: ${memberUuid}`);
+  }
+
+  const existingSaving = await Savings.findOne({
+    memberId: member._id,
+    invoiceNumber,
+  });
+
+  if (existingSaving) {
+    return { saving: existingSaving, member };
+  }
+
+  const product = await resolveProductForMember(member);
+  if (!product) {
+    throw new Error("Produk simpanan member tidak ditemukan");
+  }
+
+  const existingSavingsCount = await Savings.countDocuments({
+    memberId: member._id,
+    productId: product._id,
+    installmentPeriod,
+  });
+  const partialSequence = existingSavingsCount + 1;
+
+  const parsedAmount = parseInt(amount, 10) || 0;
+  const calculatedPaymentType = parsedAmount < product.depositAmount ? "Partial" : "Full";
+  const savingStatus = calculatedPaymentType === "Partial" ? "Partial" : "Approved";
+  const description = `Pembayaran Simpanan Periode - ${installmentPeriod}${partialSequence > 1 ? ` (#${partialSequence})` : ""}`;
+
+  const saving = await Savings.create({
+    memberId: member._id,
+    productId: product._id,
+    type: "Setoran",
+    amount: parsedAmount,
+    installmentPeriod,
+    savingsDate: new Date(),
+    paymentDate: new Date(),
+    status: savingStatus,
+    paymentType: calculatedPaymentType,
+    partialSequence,
+    paymentMethod: channelId && String(channelId).toUpperCase().includes("QRIS") ? "QRIS" : "DOKU_CHECKOUT",
+    description,
+    notes: `Auto-approved via DOKU webhook${channelId ? ` - Channel: ${channelId}` : ""} - Invoice: ${invoiceNumber}`,
+    approvedBy: null,
+    approvedAt: new Date(),
+    invoiceNumber,
+  });
+
+  return { saving, member };
+}
+
+async function processSuccessfulPayment({ invoiceNumber, amount, channelId }) {
+  const intent = await CheckoutIntent.findOne({ invoiceNumber });
+
+  if (intent) {
+    if (intent.status === "Paid") {
+      return { message: "Payment already processed" };
+    }
+
+    const member = await findMemberByUuid(intent.studentUuid);
+    if (intent.savingsAmount > 0 && !member) {
+      throw new Error(`Member not found for UUID: ${intent.studentUuid}`);
+    }
+
+    const [saving, donation] = await Promise.all([
+      createSavingsFromIntent({ member, intent, channelId }),
+      createDonationFromIntent({ member, intent, channelId }),
+    ]);
+
+    intent.status = "Paid";
+    intent.processedAt = new Date();
+    await intent.save();
+
+    return {
+      message: "Payment processed successfully",
+      savingId: saving?._id || null,
+      donationId: donation?._id || null,
+    };
+  }
+
+  const { saving } = await createLegacySaving({ invoiceNumber, amount, channelId });
+  return {
+    message: "Payment processed successfully",
+    savingId: saving?._id || null,
+  };
+}
+
 router.post("/doku-checkout", async (req, res) => {
   try {
     console.log("DOKU Checkout Webhook received:", JSON.stringify(req.body, null, 2));
 
     const { order, transaction, channel } = req.body;
-
     if (!order || !transaction) {
-      console.error("Missing required fields in DOKU webhook");
       return res.status(400).json({ message: "Missing required fields" });
     }
 
-    const { invoice_number, amount } = order;
-    const { status } = transaction;
+    const invoiceNumber = order.invoice_number;
+    const amount = order.amount;
+    const status = transaction.status;
+    const channelId = channel?.id || transaction.payment_channel || null;
 
-    // Only process successful payments
     if (status !== "SUCCESS") {
-      console.log(`Payment status ${status} for invoice ${invoice_number}, skipping`);
       return res.status(200).json({ message: "Webhook received" });
     }
 
-    // Extract member UUID and period from invoice number
-    // Format: SAV-{fullUUID}-P{period}-{timestamp}
-    // UUID examples: JPYG57319, JPTG25060001, etc.
-    const invoiceMatch = invoice_number.match(/^SAV-(.+?)-P(\d+)-(\d+)$/);
-    if (!invoiceMatch) {
-      console.error("Invalid invoice format:", invoice_number);
-      return res.status(400).json({ message: "Invalid invoice format" });
-    }
-
-    const memberUuid = invoiceMatch[1];
-    const installmentPeriod = parseInt(invoiceMatch[2]) || 1;
-
-    console.log(`Processing payment for UUID: ${memberUuid}, Period: ${installmentPeriod}, Amount: ${amount}`);
-
-    // Find member by UUID (handle partial UUID from invoice)
-    let member = await Member.findOne({ uuid: memberUuid });
-    
-    if (!member) {
-      // Try to find by partial UUID (invoice might have truncated UUID)
-      // For example: invoice has JPSB3714 but DB has JPSB37142
-      const regex = new RegExp(`^${memberUuid}`);
-      member = await Member.findOne({ uuid: regex });
-      
-      if (!member) {
-        // Try alternative UUID format with -1234 suffix
-        const altUuid = `${memberUuid}-1234`;
-        member = await Member.findOne({ uuid: altUuid });
-        
-        if (!member) {
-          // Last attempt - find by regex with suffix
-          const regexWithSuffix = new RegExp(`^${memberUuid}.*(-1234)?$`);
-          member = await Member.findOne({ uuid: regexWithSuffix });
-          
-          if (!member) {
-            console.error(`Member not found for UUID: ${memberUuid} (tried regex and variants)`);
-            return res.status(404).json({ message: "Member not found" });
-          }
-        }
-      }
-    }
-
-    console.log(`Found member: ${member.name}, ID: ${member._id}`);
-
-    // Get member's current product or use default
-    let product;
-    if (member.currentProductId) {
-      product = await Product.findById(member.currentProductId);
-    }
-    
-    // If no product, find or create a default one
-    if (!product) {
-      console.warn(`Member ${member.name} has no current product, using default`);
-      
-      // Find default product or first available
-      product = await Product.findOne({ isActive: true }).sort({ name: 1 });
-      
-      if (!product) {
-        // Create a default product if none exists
-        product = await Product.create({
-          name: "Simpanan Pokok",
-          code: "SP001", 
-          description: "Simpanan Pokok Anggota",
-          type: "Setoran",
-          isActive: true,
-          createdBy: member._id
-        });
-        console.log("Created default product:", product.name);
-      }
-      
-      // Update member with this product
-      member.currentProductId = product._id;
-      await member.save();
-    }
-
-    // Check if payment already exists by invoice number (avoid duplicates)
-    const existingSaving = await Savings.findOne({
-      memberId: member._id,
-      invoiceNumber: invoice_number
+    const result = await processSuccessfulPayment({
+      invoiceNumber,
+      amount,
+      channelId,
     });
 
-    if (existingSaving) {
-      console.log(`Payment already exists for invoice ${invoice_number}`);
-      return res.status(200).json({ message: "Payment already processed" });
-    }
-
-    // Calculate partial sequence for this period (same as manual flow)
-    const existingSavingsCount = await Savings.countDocuments({
-      memberId: member._id,
-      productId: product._id,
-      installmentPeriod: installmentPeriod,
-    });
-    const partialSequence = existingSavingsCount + 1;
-
-    // Auto-detect payment type (same as manual flow)
-    const parsedAmount = parseInt(amount);
-    const calculatedPaymentType = parsedAmount < product.depositAmount ? "Partial" : "Full";
-
-    // Determine status: Partial payments get "Partial" status, Full gets "Approved"
-    const savingStatus = calculatedPaymentType === "Partial" ? "Partial" : "Approved";
-
-    console.log(`DOKU Payment - Amount: ${parsedAmount}, DepositAmount: ${product.depositAmount}, PaymentType: ${calculatedPaymentType}, Status: ${savingStatus}, Sequence: ${partialSequence}`);
-
-    // Create new savings record
-    const newSaving = new Savings({
-      memberId: member._id,
-      productId: product._id,
-      type: "Setoran",
-      amount: parsedAmount,
-      installmentPeriod: installmentPeriod,
-      savingsDate: new Date(),
-      paymentDate: new Date(),
-      status: savingStatus,
-      paymentType: calculatedPaymentType,
-      partialSequence: partialSequence,
-      paymentMethod: channel ? channel.id : "DOKU_CHECKOUT",
-      description: `Payment via DOKU Checkout - Invoice: ${invoice_number}${partialSequence > 1 ? ` (#${partialSequence})` : ''}`,
-      notes: `Auto-approved via DOKU webhook${channel ? ` - Channel: ${channel.id}` : ''}`,
-      approvedBy: member._id,
-      approvedAt: new Date(),
-      invoiceNumber: invoice_number
-    });
-
-    await newSaving.save();
-    console.log(`Savings record created successfully: ${newSaving._id}, Type: ${calculatedPaymentType}, Status: ${savingStatus}`);
-
-    // Success response to DOKU
-    return res.status(200).json({
-      message: "Payment processed successfully",
-      savingId: newSaving._id
-    });
-
+    return res.status(200).json(result);
   } catch (error) {
     console.error("Error processing DOKU webhook:", error);
     return res.status(500).json({
       message: "Internal server error",
-      error: error.message
+      error: error.message,
     });
   }
 });
 
-// Alternative webhook for QRIS notifications (if needed)
 router.post("/doku-qris", async (req, res) => {
   try {
     console.log("DOKU QRIS Webhook received:", JSON.stringify(req.body, null, 2));
 
-    // QRIS has different notification format
-    const {
-      INVOICE,
-      AMOUNT,
-      TXNSTATUS,
-      MERCHANTPAN,
-      TRANSACTIONID,
-      TXNDATE
-    } = req.body;
+    const invoiceNumber = req.body.INVOICE;
+    const amount = req.body.AMOUNT;
+    const txnStatus = req.body.TXNSTATUS;
 
-    if (TXNSTATUS !== "S") {
-      console.log(`QRIS Payment status ${TXNSTATUS} for invoice ${INVOICE}, skipping`);
+    if (txnStatus !== "S") {
       return res.status(200).json({ message: "Webhook received" });
     }
 
-    // Extract member UUID and period from invoice number
-    const invoiceParts = INVOICE.split("-");
-    if (invoiceParts.length < 3 || invoiceParts[0] !== "SAVING") {
-      console.error("Invalid QRIS invoice format:", INVOICE);
-      return res.status(400).json({ message: "Invalid invoice format" });
-    }
-
-    const memberUuid = invoiceParts[1];
-    const periodMatch = INVOICE.match(/P(\d+)/);
-    const installmentPeriod = periodMatch ? parseInt(periodMatch[1]) : 1;
-
-    // Find member
-    let member = await Member.findOne({ uuid: memberUuid });
-    if (!member) {
-      const altUuid = `${memberUuid}-1234`;
-      member = await Member.findOne({ uuid: altUuid });
-    }
-
-    if (!member) {
-      console.error(`Member not found for QRIS payment: ${memberUuid}`);
-      return res.status(404).json({ message: "Member not found" });
-    }
-
-    // Check for duplicate
-    const existingSaving = await Savings.findOne({
-      memberId: member._id,
-      installmentPeriod: installmentPeriod,
-      status: "Approved",
-      description: { $regex: INVOICE }
+    const result = await processSuccessfulPayment({
+      invoiceNumber,
+      amount,
+      channelId: "QRIS",
     });
 
-    if (existingSaving) {
-      console.log(`QRIS Payment already exists for invoice ${INVOICE}`);
-      return res.status(200).json({ message: "Payment already processed" });
-    }
-
-    // Get product for member
-    let qrisProduct;
-    if (member.currentProductId) {
-      qrisProduct = await Product.findById(member.currentProductId);
-    }
-    if (!qrisProduct) {
-      qrisProduct = await Product.findOne({ isActive: true }).sort({ name: 1 });
-    }
-    if (!qrisProduct) {
-      console.error(`No product found for QRIS payment`);
-      return res.status(400).json({ message: "No product found" });
-    }
-
-    // Create savings record
-    const newSaving = new Savings({
-      memberId: member._id,
-      productId: qrisProduct._id,
-      type: "Setoran",
-      amount: parseInt(AMOUNT),
-      installmentPeriod: installmentPeriod,
-      savingsDate: new Date(),
-      paymentDate: new Date(),
-      status: "Approved",
-      paymentMethod: "QRIS",
-      description: `Payment via QRIS - Invoice: ${INVOICE}`,
-      notes: `Transaction ID: ${TRANSACTIONID}, Date: ${TXNDATE}`,
-      approvedBy: member._id,
-      approvedAt: new Date(),
-      invoiceNumber: INVOICE
-    });
-
-    await newSaving.save();
-    console.log(`QRIS Savings record created: ${newSaving._id}`);
-
-    return res.status(200).json({
-      message: "QRIS Payment processed successfully",
-      savingId: newSaving._id
-    });
-
+    return res.status(200).json(result);
   } catch (error) {
     console.error("Error processing DOKU QRIS webhook:", error);
     return res.status(500).json({
       message: "Internal server error",
-      error: error.message
+      error: error.message,
     });
   }
 });

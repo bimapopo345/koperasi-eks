@@ -12,6 +12,7 @@ import MemberDetail from "../pages/MemberDetail.jsx";
 import Products from "../pages/Products.jsx";
 import Savings from "../pages/Savings.jsx";
 import Loans from "../pages/Loans.jsx";
+import Donations from "../pages/Donations.jsx";
 import LoanProducts from "../pages/LoanProducts.jsx";
 import LoanManagement from "../pages/LoanManagement.jsx";
 import Settings from "../pages/Settings.jsx";
@@ -49,6 +50,7 @@ const router = createBrowserRouter(
         <Route path="/master/loan-products" element={<LoanProducts />} />
         <Route path="/simpanan" element={<Savings />} />
         <Route path="/pinjaman" element={<Loans />} />
+        <Route path="/donasi" element={<Donations />} />
         <Route path="/loan-management" element={<LoanManagement />} />
         <Route path="/laporan" element={<Reports />} />
         <Route path="/settings" element={<Settings />} />
