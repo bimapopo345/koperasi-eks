@@ -42,6 +42,16 @@ import {
   markAsPartial,
   getSavingsPeriodSummary 
 } from "../controllers/admin/savingsApproval.controller.js";
+import {
+  getDonationOverview,
+  getDonationCampaigns,
+  createDonationCampaign,
+  updateDonationCampaign,
+  activateDonationCampaign,
+  getDonations,
+  approveDonation,
+  rejectDonation,
+} from "../controllers/admin/donation.controller.js";
 import { clearAllData } from "../controllers/admin/system.controller.js";
 import { verifyToken } from "../middlewares/auth.middleware.js";
 import multer from "multer";
@@ -128,6 +138,16 @@ router.patch("/savings/:id/approve", verifyToken, approveSavings);
 router.patch("/savings/:id/reject", verifyToken, rejectSavings);
 router.patch("/savings/:id/partial", verifyToken, markAsPartial);
 router.get("/savings/period-summary/:memberId/:productId/:installmentPeriod", verifyToken, getSavingsPeriodSummary);
+
+// Donation routes
+router.get("/donations/overview", verifyToken, getDonationOverview);
+router.get("/donations", verifyToken, getDonations);
+router.patch("/donations/:id/approve", verifyToken, approveDonation);
+router.patch("/donations/:id/reject", verifyToken, rejectDonation);
+router.get("/donation-campaigns", verifyToken, getDonationCampaigns);
+router.post("/donation-campaigns", verifyToken, createDonationCampaign);
+router.put("/donation-campaigns/:id", verifyToken, updateDonationCampaign);
+router.patch("/donation-campaigns/:id/activate", verifyToken, activateDonationCampaign);
 
 // Product upgrade routes
 router.use("/product-upgrade", productUpgradeRoutes);

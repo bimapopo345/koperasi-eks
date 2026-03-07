@@ -24,6 +24,11 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       path: "/pinjaman",
     },
     {
+      title: "Donasi",
+      icon: "🎁",
+      path: "/donasi",
+    },
+    {
       title: "Manajemen Pinjaman",
       icon: "🏦",
       path: "/loan-management",

@@ -5,6 +5,31 @@ import { User } from "../models/user.model.js";
 import { Product } from "../models/product.model.js";
 import { Savings } from "../models/savings.model.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import multer from "multer";
+import path from "path";
+import { ensureUploadsSubdirs } from "../utils/uploadsDir.js";
+import {
+  getDonationOverview,
+  createDonation,
+  createCheckoutIntent,
+} from "../controllers/public/donation.controller.js";
+
+const { donasi: donasiDir } = ensureUploadsSubdirs();
+
+const donationStorage = multer.diskStorage({
+  destination: function destination(req, file, cb) {
+    cb(null, donasiDir + path.sep);
+  },
+  filename: function filename(req, file, cb) {
+    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
+    cb(null, "donasi-" + uniqueSuffix + "-" + file.originalname);
+  },
+});
+
+const donationUpload = multer({
+  storage: donationStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
 
 // Public API untuk integrasi eksternal (tanpa auth)
 // GET /api/public/savings - Ambil semua data savings dengan detail lengkap
@@ -567,6 +592,9 @@ router.get("/member/:uuid", getMemberByUuid);
 router.get("/student-dashboard/:uuid", getStudentDashboardSavings);
 router.post("/register-koperasi", registerKoperasi);
 router.get("/check-member/:uuid", checkMemberStatus);
+router.get("/donations/overview/:studentUuid", getDonationOverview);
+router.post("/donations", donationUpload.single("proofFile"), createDonation);
+router.post("/donations/checkout-intents", createCheckoutIntent);
 
 // One-time migration route (accessible via browser)
 // Usage: GET /api/public/migrate-members?key=samit-migrate-2026
