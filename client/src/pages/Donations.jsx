@@ -148,6 +148,25 @@ const Donations = () => {
     }
   };
 
+  const handleDeleteCampaign = async (campaignId, title) => {
+    const confirmed = window.confirm(
+      `Hapus campaign "${title}"?\n\nCampaign hanya bisa dihapus kalau semua transaksi donasinya sudah dihapus.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`/api/admin/donation-campaigns/${campaignId}`);
+      toast.success("Campaign donasi berhasil dihapus");
+      if (editingCampaignId === campaignId) {
+        resetForm();
+      }
+      await loadData();
+    } catch (error) {
+      console.error("Failed to delete campaign:", error);
+      toast.error(error.response?.data?.message || "Gagal menghapus campaign");
+    }
+  };
+
   const handleApproveDonation = async (donationId) => {
     try {
       await api.patch(`/api/admin/donations/${donationId}/approve`);
@@ -170,6 +189,22 @@ const Donations = () => {
     } catch (error) {
       console.error("Failed to reject donation:", error);
       toast.error(error.response?.data?.message || "Gagal menolak donasi");
+    }
+  };
+
+  const handleDeleteDonation = async (donationId, donationCode) => {
+    const confirmed = window.confirm(
+      `Hapus transaksi donasi ${donationCode || ""}?\n\nTindakan ini dipakai untuk cleanup data testing dan tidak bisa dibatalkan.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await api.delete(`/api/admin/donations/${donationId}`);
+      toast.success("Transaksi donasi berhasil dihapus");
+      await loadData();
+    } catch (error) {
+      console.error("Failed to delete donation:", error);
+      toast.error(error.response?.data?.message || "Gagal menghapus transaksi donasi");
     }
   };
 
@@ -395,6 +430,13 @@ const Donations = () => {
                       >
                         Edit
                       </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCampaign(campaign._id, campaign.title)}
+                        className="rounded-xl border border-rose-200 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-50"
+                      >
+                        Hapus
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -521,9 +563,25 @@ const Donations = () => {
                         >
                           Reject
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDonation(donation._id, donation.donationCode)}
+                          className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50"
+                        >
+                          Hapus
+                        </button>
                       </div>
                     ) : (
-                      <span className="text-xs text-slate-400">Tidak ada aksi</span>
+                      <div className="flex flex-col gap-2">
+                        <span className="text-xs text-slate-400">Tidak ada approval</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteDonation(donation._id, donation.donationCode)}
+                          className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50"
+                        >
+                          Hapus
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>

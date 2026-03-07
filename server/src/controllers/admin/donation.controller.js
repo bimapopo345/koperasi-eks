@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { DonationCampaign } from "../../models/donationCampaign.model.js";
 import { Donation } from "../../models/donation.model.js";
+import { CheckoutIntent } from "../../models/checkoutIntent.model.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
@@ -210,6 +211,25 @@ export const activateDonationCampaign = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, campaign, "Campaign donasi aktif berhasil diubah"));
 });
 
+export const deleteDonationCampaign = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const campaign = await DonationCampaign.findById(id);
+
+  if (!campaign) {
+    throw new ApiError(404, "Campaign donasi tidak ditemukan");
+  }
+
+  const relatedDonations = await Donation.countDocuments({ campaignId: campaign._id });
+  if (relatedDonations > 0) {
+    throw new ApiError(400, "Campaign masih punya transaksi donasi. Hapus transaksi donasinya dulu.");
+  }
+
+  await CheckoutIntent.deleteMany({ campaignId: campaign._id });
+  await campaign.deleteOne();
+
+  res.status(200).json(new ApiResponse(200, { id }, "Campaign donasi berhasil dihapus"));
+});
+
 export const getDonations = asyncHandler(async (req, res) => {
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 200);
@@ -292,4 +312,19 @@ export const rejectDonation = asyncHandler(async (req, res) => {
   await donation.save();
 
   res.status(200).json(new ApiResponse(200, donation, "Donasi berhasil ditolak"));
+});
+
+export const deleteDonation = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const donation = await Donation.findById(id);
+
+  if (!donation) {
+    throw new ApiError(404, "Data donasi tidak ditemukan");
+  }
+
+  await donation.deleteOne();
+
+  res.status(200).json(
+    new ApiResponse(200, { id, donationCode: donation.donationCode }, "Donasi berhasil dihapus")
+  );
 });
