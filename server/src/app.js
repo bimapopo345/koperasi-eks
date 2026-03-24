@@ -6,7 +6,11 @@ import conf from "./conf/conf.js";
 import { ensureUploadsSubdirs, getUploadsDir } from "./utils/uploadsDir.js";
 
 const app = express();
-app.use(bodyParser.json());
+const BODY_LIMIT = "150mb";
+
+app.use(bodyParser.json({ limit: BODY_LIMIT }));
+app.use(express.json({ limit: BODY_LIMIT }));
+app.use(express.urlencoded({ limit: BODY_LIMIT, extended: true }));
 
 // app.use(
 //   cors({
@@ -30,7 +34,6 @@ app.use(
   })
 );
 
-app.use(express.json());
 app.use(express.static("public"));
 app.use(cookieParser());
 
