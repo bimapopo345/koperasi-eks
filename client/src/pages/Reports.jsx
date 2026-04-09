@@ -1,504 +1,1087 @@
-import { useState, useEffect, useMemo } from "react";
-import { format, startOfMonth, endOfMonth, parseISO } from "date-fns";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { endOfMonth, format, startOfMonth } from "date-fns";
 import { id } from "date-fns/locale";
 import api from "../api/index.jsx";
-import Pagination from "../components/Pagination.jsx";
 import { toast } from "react-toastify";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 
+const ITEMS_PER_PAGE = 15;
+const SAVINGS_FILTERS = ["paid", "partial", "pending", "rejected"];
+const MEMBER_FILTERS = ["completed", "not_completed", "has_overdue", "has_partial", "all_paid"];
+
+const STATUS_META = {
+  paid: {
+    label: "Paid",
+    badgeClass: "border border-emerald-200 bg-emerald-50 text-emerald-700",
+    dotClass: "bg-emerald-500",
+  },
+  partial: {
+    label: "Partial",
+    badgeClass: "border border-amber-200 bg-amber-50 text-amber-700",
+    dotClass: "bg-amber-500",
+  },
+  pending: {
+    label: "Pending",
+    badgeClass: "border border-sky-200 bg-sky-50 text-sky-700",
+    dotClass: "bg-sky-500",
+  },
+  rejected: {
+    label: "Rejected",
+    badgeClass: "border border-rose-200 bg-rose-50 text-rose-700",
+    dotClass: "bg-rose-500",
+  },
+  unknown: {
+    label: "Draft",
+    badgeClass: "border border-slate-200 bg-slate-50 text-slate-600",
+    dotClass: "bg-slate-400",
+  },
+};
+
+const MEMBER_STATUS_META = {
+  completed: {
+    label: "Lunas (TF)",
+    badgeClass: "border border-emerald-200 bg-emerald-50 text-emerald-700",
+    dotClass: "bg-emerald-500",
+  },
+  overdue: {
+    label: "Overdue",
+    badgeClass: "border border-rose-200 bg-rose-50 text-rose-700",
+    dotClass: "bg-rose-500",
+  },
+  partial: {
+    label: "Partial",
+    badgeClass: "border border-amber-200 bg-amber-50 text-amber-700",
+    dotClass: "bg-amber-500",
+  },
+  all_paid: {
+    label: "All Paid",
+    badgeClass: "border border-teal-200 bg-teal-50 text-teal-700",
+    dotClass: "bg-teal-500",
+  },
+  active: {
+    label: "Aktif",
+    badgeClass: "border border-sky-200 bg-sky-50 text-sky-700",
+    dotClass: "bg-sky-500",
+  },
+  no_product: {
+    label: "Belum Ambil Produk",
+    badgeClass: "border border-slate-200 bg-slate-50 text-slate-600",
+    dotClass: "bg-slate-400",
+  },
+};
+
+const currencyFormatter = new Intl.NumberFormat("id-ID", {
+  style: "currency",
+  currency: "IDR",
+  minimumFractionDigits: 0,
+});
+
+const compactNumberFormatter = new Intl.NumberFormat("id-ID");
+
+const normalizeId = (value) => {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "object" && value._id) return String(value._id);
+  return String(value);
+};
+
+const formatCurrency = (amount) => currencyFormatter.format(Number(amount) || 0);
+
+const formatLongDate = (value) => {
+  if (!value) return "-";
+  return format(new Date(value), "dd MMM yyyy", { locale: id });
+};
+
+const formatShortDate = (value) => {
+  if (!value) return "-";
+  return format(new Date(value), "dd/MM/yyyy", { locale: id });
+};
+
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+const getRequiredAmountForPeriod = (member, fallbackProduct, installmentPeriod) => {
+  const baseProduct = member?.product || fallbackProduct || {};
+  const upgradeInfo = member?.currentUpgradeId;
+  const period = Number(installmentPeriod) || 1;
+  let requiredAmount = Number(baseProduct.depositAmount) || 0;
+
+  if (member?.hasUpgraded && upgradeInfo && typeof upgradeInfo === "object") {
+    const completedPeriodsAtUpgrade = Number(upgradeInfo.completedPeriodsAtUpgrade) || 0;
+    const oldMonthlyDeposit = Number(upgradeInfo.oldMonthlyDeposit) || 0;
+    const newPaymentWithCompensation =
+      Number(upgradeInfo.newPaymentWithCompensation) || requiredAmount;
+
+    if (period <= completedPeriodsAtUpgrade && oldMonthlyDeposit > 0) {
+      requiredAmount = oldMonthlyDeposit;
+    } else if (newPaymentWithCompensation > 0) {
+      requiredAmount = newPaymentWithCompensation;
+    }
+  }
+
+  return requiredAmount;
+};
+
+const getMemberPaymentStatus = (member, memberSavings) => {
+  const product = member?.product;
+  if (!product) {
+    return {
+      totalPaid: 0,
+      totalRequired: 0,
+      paidPeriods: 0,
+      partialPeriods: 0,
+      overduePeriods: 0,
+      unpaidPeriods: 0,
+      progress: 0,
+    };
+  }
+
+  const totalPeriods = Number(product.termDuration) || 0;
+  const startDate = member?.savingsStartDate
+    ? new Date(member.savingsStartDate)
+    : new Date(member?.createdAt || Date.now());
+  const today = new Date();
+  const currentMonth = today.getMonth();
+  const currentYear = today.getFullYear();
+
+  let totalPaid = 0;
+  let totalRequired = 0;
+  let paidPeriods = 0;
+  let partialPeriods = 0;
+  let overduePeriods = 0;
+
+  for (let period = 1; period <= totalPeriods; period += 1) {
+    const periodSavings = memberSavings.filter(
+      (saving) =>
+        Number(saving.installmentPeriod) === period &&
+        (saving.status === "Approved" || saving.status === "Partial")
+    );
+    const paid = periodSavings.reduce((sum, saving) => sum + (Number(saving.amount) || 0), 0);
+    const required = getRequiredAmountForPeriod(member, product, period);
+    const dueDate = new Date(startDate);
+    dueDate.setMonth(dueDate.getMonth() + period - 1);
+
+    const isPastMonth =
+      dueDate.getFullYear() < currentYear ||
+      (dueDate.getFullYear() === currentYear && dueDate.getMonth() < currentMonth);
+    const isCurrentMonth =
+      dueDate.getFullYear() === currentYear && dueDate.getMonth() === currentMonth;
+
+    if (paid >= required && required > 0) {
+      paidPeriods += 1;
+    } else if (paid > 0) {
+      partialPeriods += 1;
+      if (isPastMonth) overduePeriods += 1;
+    } else if (required > 0 && (isPastMonth || isCurrentMonth)) {
+      overduePeriods += 1;
+    }
+
+    totalPaid += paid;
+    totalRequired += required;
+  }
+
+  const unpaidPeriods = Math.max(0, totalPeriods - paidPeriods - partialPeriods);
+  const progress = totalRequired > 0 ? Math.min(100, (totalPaid / totalRequired) * 100) : 0;
+
+  return {
+    totalPaid,
+    totalRequired,
+    paidPeriods,
+    partialPeriods,
+    overduePeriods,
+    unpaidPeriods,
+    progress,
+  };
+};
+
+const getTransactionStatusKey = (saving, projectionAmount) => {
+  if (saving.status === "Rejected") return "rejected";
+  if (saving.status === "Pending") return "pending";
+
+  const amount = Number(saving.amount) || 0;
+  const isPartial =
+    saving.status === "Partial" ||
+    saving.paymentType === "Partial" ||
+    (projectionAmount > 0 && amount < projectionAmount);
+
+  if (isPartial) return "partial";
+  if (saving.status === "Approved") return "paid";
+  return "unknown";
+};
+
+const getDifferenceClass = (statusKey, differenceAmount) => {
+  if (differenceAmount === 0) return "text-emerald-600";
+  if (statusKey === "partial") return "text-amber-600";
+  if (statusKey === "pending") return "text-sky-600";
+  if (statusKey === "rejected") return "text-rose-600";
+  return differenceAmount > 0 ? "text-rose-600" : "text-emerald-600";
+};
+
+const getRangeLabel = (dateFrom, dateTo) => {
+  if (!dateFrom || !dateTo) return format(new Date(), "MMMM yyyy", { locale: id });
+
+  const start = new Date(dateFrom);
+  const end = new Date(dateTo);
+  const sameMonth = format(start, "yyyy-MM") === format(end, "yyyy-MM");
+  const sameDay = format(start, "yyyy-MM-dd") === format(end, "yyyy-MM-dd");
+
+  if (sameDay) return format(start, "dd MMMM yyyy", { locale: id });
+  if (sameMonth) return format(start, "MMMM yyyy", { locale: id });
+  return `${format(start, "dd MMM yyyy", { locale: id })} - ${format(end, "dd MMM yyyy", {
+    locale: id,
+  })}`;
+};
+
+const buildSavingsExcelDocument = (rows, summary, rangeLabel) => {
+  const bodyRows = rows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeHtml(row.invoiceNumber)}</td>
+          <td>${escapeHtml(formatLongDate(row.transactionDate))}</td>
+          <td>${escapeHtml(row.customerName)}</td>
+          <td>${escapeHtml(row.customerCode)}</td>
+          <td>${escapeHtml(row.productTitle)}</td>
+          <td>${escapeHtml(row.installmentPeriod)}</td>
+          <td>${escapeHtml(formatCurrency(row.projectionAmount))}</td>
+          <td>${escapeHtml(formatCurrency(row.realizedAmount))}</td>
+          <td>${escapeHtml(
+            `${row.differenceAmount >= 0 ? "+" : "-"}${formatCurrency(Math.abs(row.differenceAmount))}`
+          )}</td>
+          <td>${escapeHtml(row.statusLabel)}</td>
+          <td>${escapeHtml(row.description)}</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  return `
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          body { font-family: Arial, sans-serif; padding: 24px; color: #0f172a; }
+          h1 { margin: 0 0 4px; font-size: 24px; }
+          p { margin: 0 0 12px; color: #475569; }
+          .summary { margin: 18px 0 24px; border-collapse: collapse; }
+          .summary td { padding: 10px 12px; border: 1px solid #cbd5e1; }
+          .summary td:first-child { font-weight: 700; background: #e0f2fe; }
+          table.report { width: 100%; border-collapse: collapse; }
+          table.report th { background: #111827; color: #ffffff; padding: 10px 12px; text-align: left; }
+          table.report td { border: 1px solid #cbd5e1; padding: 9px 12px; vertical-align: top; }
+        </style>
+      </head>
+      <body>
+        <h1>Laporan Koperasi</h1>
+        <p>Periode ${escapeHtml(rangeLabel)}</p>
+        <table class="summary">
+          <tr><td>Total Proyeksi</td><td>${escapeHtml(formatCurrency(summary.totalProjection))}</td></tr>
+          <tr><td>Total Realisasi</td><td>${escapeHtml(formatCurrency(summary.totalRealization))}</td></tr>
+          <tr><td>Total Selisih</td><td>${escapeHtml(
+            `${summary.totalDifference >= 0 ? "+" : "-"}${formatCurrency(Math.abs(summary.totalDifference))}`
+          )}</td></tr>
+          <tr><td>Total Data</td><td>${escapeHtml(summary.totalRecords)}</td></tr>
+        </table>
+        <table class="report">
+          <thead>
+            <tr>
+              <th>Invoice</th>
+              <th>Tanggal Aktivitas</th>
+              <th>Customer</th>
+              <th>Kode</th>
+              <th>Produk</th>
+              <th>Periode</th>
+              <th>Proyeksi</th>
+              <th>Realisasi</th>
+              <th>Selisih</th>
+              <th>Status</th>
+              <th>Keterangan</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${bodyRows}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+};
+
+const buildMembersExcelDocument = (rows, summary, rangeLabel) => {
+  const bodyRows = rows
+    .map(
+      (row) => `
+        <tr>
+          <td>${escapeHtml(row.uuid)}</td>
+          <td>${escapeHtml(row.name)}</td>
+          <td>${escapeHtml(row.productTitle)}</td>
+          <td>${escapeHtml(formatCurrency(row.totalPaid))}</td>
+          <td>${escapeHtml(formatCurrency(row.totalRequired))}</td>
+          <td>${escapeHtml(row.progressText)}</td>
+          <td>${escapeHtml(row.overduePeriods)}</td>
+          <td>${escapeHtml(row.partialPeriods)}</td>
+          <td>${escapeHtml(row.statusLabel)}</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  return `
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          body { font-family: Arial, sans-serif; padding: 24px; color: #0f172a; }
+          h1 { margin: 0 0 4px; font-size: 24px; }
+          p { margin: 0 0 12px; color: #475569; }
+          .summary { margin: 18px 0 24px; border-collapse: collapse; }
+          .summary td { padding: 10px 12px; border: 1px solid #cbd5e1; }
+          .summary td:first-child { font-weight: 700; background: #e0f2fe; }
+          table.report { width: 100%; border-collapse: collapse; }
+          table.report th { background: #111827; color: #ffffff; padding: 10px 12px; text-align: left; }
+          table.report td { border: 1px solid #cbd5e1; padding: 9px 12px; vertical-align: top; }
+        </style>
+      </head>
+      <body>
+        <h1>Status Anggota Koperasi</h1>
+        <p>Periode ${escapeHtml(rangeLabel)}</p>
+        <table class="summary">
+          <tr><td>Total Anggota</td><td>${escapeHtml(summary.totalMembers)}</td></tr>
+          <tr><td>Lunas (TF)</td><td>${escapeHtml(summary.completedMembers)}</td></tr>
+          <tr><td>Overdue</td><td>${escapeHtml(summary.membersWithOverdue)}</td></tr>
+          <tr><td>Partial</td><td>${escapeHtml(summary.membersWithPartial)}</td></tr>
+        </table>
+        <table class="report">
+          <thead>
+            <tr>
+              <th>UUID</th>
+              <th>Anggota</th>
+              <th>Produk</th>
+              <th>Total Bayar</th>
+              <th>Total Wajib</th>
+              <th>Progress</th>
+              <th>Overdue</th>
+              <th>Partial</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${bodyRows}
+          </tbody>
+        </table>
+      </body>
+    </html>
+  `;
+};
+
+const downloadBlob = (blob, filename) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
+const HeroIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6">
+    <path
+      d="M4 18h16M7 15V9m5 6V6m5 9v-4"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const TargetIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" className="h-7 w-7">
+    <circle cx="12" cy="12" r="7.5" stroke="currentColor" strokeWidth="1.8" />
+    <circle cx="12" cy="12" r="3.2" stroke="currentColor" strokeWidth="1.8" />
+    <path
+      d="M12 2.5v3M21.5 12h-3M12 18.5v3M5.5 12h-3"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
+const CashIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" className="h-7 w-7">
+    <path
+      d="M3.5 7.5A2.5 2.5 0 0 1 6 5h12a2.5 2.5 0 0 1 2.5 2.5v9A2.5 2.5 0 0 1 18 19H6a2.5 2.5 0 0 1-2.5-2.5v-9Z"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    />
+    <circle cx="12" cy="12" r="2.8" stroke="currentColor" strokeWidth="1.8" />
+    <path
+      d="M6.5 9.5h.01M17.5 14.5h.01"
+      stroke="currentColor"
+      strokeWidth="2.4"
+      strokeLinecap="round"
+    />
+  </svg>
+);
+
+const BalanceIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" className="h-7 w-7">
+    <path
+      d="M12 4v15m0-15 5 3m-5-3-5 3M5 9h14M7 9l-2.5 4.5A2.5 2.5 0 0 0 6.7 17h.6A2.5 2.5 0 0 0 9.5 13.5L7 9Zm10 0-2.5 4.5A2.5 2.5 0 0 0 16.7 17h.6a2.5 2.5 0 0 0 2.2-3.5L17 9Z"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
+const StatusBadge = ({ statusKey }) => {
+  const status = STATUS_META[statusKey] || STATUS_META.unknown;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${status.badgeClass}`}
+    >
+      <span className={`h-2 w-2 rounded-full ${status.dotClass}`} />
+      {status.label}
+    </span>
+  );
+};
+
+const MemberStatusBadge = ({ statusKey }) => {
+  const status = MEMBER_STATUS_META[statusKey] || MEMBER_STATUS_META.active;
+
+  return (
+    <span
+      className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${status.badgeClass}`}
+    >
+      <span className={`h-2 w-2 rounded-full ${status.dotClass}`} />
+      {status.label}
+    </span>
+  );
+};
+
+const SummaryCard = ({ label, value, helper, valueClassName, accentClassName, icon }) => (
+  <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_18px_45px_-36px_rgba(15,23,42,0.7)]">
+    <div className="grid min-h-[132px] grid-cols-[92px_1fr]">
+      <div className={`flex items-center justify-center text-white ${accentClassName}`}>{icon}</div>
+      <div className="flex flex-col justify-center px-5 py-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">{label}</p>
+        <h3 className={`mt-2 text-xl font-bold sm:text-2xl ${valueClassName}`}>{value}</h3>
+        <p className="mt-2 text-sm text-slate-500">{helper}</p>
+      </div>
+    </div>
+  </div>
+);
+
+const MetricPill = ({ label, value }) => (
+  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">{label}</p>
+    <p className="mt-1 text-lg font-semibold text-slate-900">{value}</p>
+  </div>
+);
+
+const ReportPagination = ({ currentPage, totalPages, totalItems, onPageChange }) => {
+  if (totalItems === 0 || totalPages <= 1) return null;
+
+  const start = (currentPage - 1) * ITEMS_PER_PAGE + 1;
+  const end = Math.min(currentPage * ITEMS_PER_PAGE, totalItems);
+  const pages = [];
+
+  for (let page = Math.max(1, currentPage - 2); page <= Math.min(totalPages, currentPage + 2); page += 1) {
+    pages.push(page);
+  }
+
+  if (!pages.includes(1)) pages.unshift(1);
+  if (!pages.includes(totalPages)) pages.push(totalPages);
+
+  return (
+    <div className="flex flex-col gap-4 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-sm text-slate-500">
+        Menampilkan <span className="font-semibold text-slate-900">{start}</span> -
+        <span className="font-semibold text-slate-900"> {end}</span> dari{" "}
+        <span className="font-semibold text-slate-900">{totalItems}</span> data
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => onPageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+          className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          Sebelumnya
+        </button>
+        {pages.map((page, index) => {
+          const previousPage = pages[index - 1];
+          const hasGap = previousPage && page - previousPage > 1;
+          return (
+            <div key={page} className="flex items-center gap-2">
+              {hasGap ? <span className="px-1 text-sm text-slate-400">...</span> : null}
+              <button
+                type="button"
+                onClick={() => onPageChange(page)}
+                className={`h-10 min-w-10 rounded-full px-3 text-sm font-semibold transition ${
+                  page === currentPage
+                    ? "bg-slate-900 text-white shadow-lg shadow-slate-900/15"
+                    : "border border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50"
+                }`}
+              >
+                {page}
+              </button>
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          onClick={() => onPageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+          className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+        >
+          Berikutnya
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const Reports = () => {
   const [members, setMembers] = useState([]);
   const [savings, setSavings] = useState([]);
+  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  
-  // Filter states - default 1 tahun terakhir
-  const [dateFrom, setDateFrom] = useState(() => {
-    const d = new Date();
-    d.setFullYear(d.getFullYear() - 1);
-    return format(d, "yyyy-MM-dd");
-  });
-  const [dateTo, setDateTo] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [dateFrom, setDateFrom] = useState(() => format(startOfMonth(new Date()), "yyyy-MM-dd"));
+  const [dateTo, setDateTo] = useState(() => format(endOfMonth(new Date()), "yyyy-MM-dd"));
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterMember, setFilterMember] = useState("all");
   const [filterProduct, setFilterProduct] = useState("all");
-  const [products, setProducts] = useState([]);
-  
-  // Pagination
+  const [activeTab, setActiveTab] = useState("savings");
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 15;
-
-  // Tab state
-  const [activeTab, setActiveTab] = useState("savings"); // savings, members, overdue
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const tableContainerRef = useRef(null);
 
   useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+
+      try {
+        const [membersRes, productsRes] = await Promise.all([
+          api.get("/api/admin/members"),
+          api.get("/api/admin/products"),
+        ]);
+
+        if (membersRes.data.success) {
+          setMembers(membersRes.data.data || []);
+        }
+
+        if (productsRes.data.success) {
+          setProducts(productsRes.data.data || []);
+        }
+
+        let allSavings = [];
+        let page = 1;
+        let hasMore = true;
+
+        while (hasMore) {
+          const savingsRes = await api.get(`/api/admin/savings?limit=100&page=${page}`);
+
+          if (!savingsRes.data.success) {
+            hasMore = false;
+            continue;
+          }
+
+          const pageSavings = Array.isArray(savingsRes.data.data)
+            ? savingsRes.data.data
+            : savingsRes.data.data?.savings || [];
+          const totalItems =
+            savingsRes.data.data?.pagination?.totalItems ||
+            savingsRes.data.pagination?.totalItems ||
+            0;
+
+          allSavings = [...allSavings, ...pageSavings];
+          hasMore = pageSavings.length > 0 && allSavings.length < totalItems;
+          page += 1;
+
+          if (page > 20) hasMore = false;
+        }
+
+        setSavings(allSavings);
+      } catch (error) {
+        toast.error(
+          `Gagal memuat data laporan: ${error.response?.data?.message || error.message}`
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchData();
   }, []);
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      console.log("Fetching data...");
-      
-      // Fetch members
-      const membersRes = await api.get("/api/admin/members");
-      console.log("Members response:", membersRes.data);
-      if (membersRes.data.success) {
-        setMembers(membersRes.data.data || []);
-      }
-      
-      // Fetch savings - dengan pagination untuk ambil semua data
-      let allSavings = [];
-      let page = 1;
-      let hasMore = true;
-      
-      while (hasMore) {
-        const savingsRes = await api.get(`/api/admin/savings?limit=100&page=${page}`);
-        console.log(`Savings page ${page}:`, savingsRes.data);
-        
-        if (savingsRes.data.success) {
-          let savingsData = [];
-          if (Array.isArray(savingsRes.data.data)) {
-            savingsData = savingsRes.data.data;
-          } else if (savingsRes.data.data?.savings) {
-            savingsData = savingsRes.data.data.savings;
-          }
-          
-          allSavings = [...allSavings, ...savingsData];
-          
-          // Check if there's more data
-          const total = savingsRes.data.data?.pagination?.totalItems || savingsRes.data.pagination?.totalItems || 0;
-          hasMore = allSavings.length < total && savingsData.length > 0;
-          page++;
-        } else {
-          hasMore = false;
-        }
-        
-        // Safety limit - max 10 pages (1000 records)
-        if (page > 10) hasMore = false;
-      }
-      
-      console.log("Total savings loaded:", allSavings.length);
-      setSavings(allSavings);
-      
-      // Fetch products
-      const productsRes = await api.get("/api/admin/products");
-      console.log("Products response:", productsRes.data);
-      if (productsRes.data.success) {
-        setProducts(productsRes.data.data || []);
-      }
-    } catch (err) {
-      console.error("Fetch error:", err);
-      console.error("Error response:", err.response?.data);
-      toast.error("Gagal memuat data: " + (err.response?.data?.message || err.message));
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [dateFrom, dateTo, filterStatus, filterMember, filterProduct, activeTab]);
 
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat("id-ID", {
-      style: "currency",
-      currency: "IDR",
-      minimumFractionDigits: 0,
-    }).format(amount || 0);
-  };
+  const memberLookup = useMemo(() => {
+    const lookup = new Map();
 
-  // Calculate member payment status for each period
-  const getMemberPaymentStatus = (member) => {
-    if (!member.product) return { status: "no_product", periods: [], paidPeriods: 0, totalPaid: 0 };
-    
-    // Find all savings for this member - check multiple ways
-    const memberSavings = savings.filter(s => {
-      const savingMemberId = s.memberId?._id || s.memberId;
-      const memberIdStr = member._id?.toString() || member._id;
-      return savingMemberId === memberIdStr || 
-             savingMemberId === member._id ||
-             s.memberId?.uuid === member.uuid;
+    members.forEach((member) => {
+      if (member?._id) lookup.set(String(member._id), member);
+      if (member?.uuid) lookup.set(member.uuid, member);
     });
-    
-    // Debug log
-    if (memberSavings.length > 0) {
-      console.log(`Member ${member.name} (${member.uuid}): Found ${memberSavings.length} savings`);
-    }
-    
-    const totalPeriods = member.product.termDuration || 36;
-    let depositAmount = member.product.depositAmount || 0;
-    const periods = [];
-    
-    let totalPaid = 0;
-    let paidPeriods = 0;
-    let partialPeriods = 0;
-    let overduePeriods = 0;
-    
-    // Check if member has upgraded
-    const hasUpgraded = member.hasUpgraded;
-    const upgradeInfo = member.currentUpgradeId;
-    
-    // Calculate start date for periods
-    const startDate = member.savingsStartDate 
-      ? new Date(member.savingsStartDate) 
-      : new Date(member.createdAt);
-    
-    // Get current date for comparison
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
-    
-    for (let period = 1; period <= totalPeriods; period++) {
-      // Adjust deposit amount based on upgrade
-      let requiredAmount = depositAmount;
-      if (hasUpgraded && upgradeInfo) {
-        const completedAtUpgrade = upgradeInfo.completedPeriodsAtUpgrade || 0;
-        if (period <= completedAtUpgrade && upgradeInfo.oldMonthlyDeposit > 0) {
-          requiredAmount = upgradeInfo.oldMonthlyDeposit;
-        } else if (upgradeInfo.newPaymentWithCompensation > 0) {
-          requiredAmount = upgradeInfo.newPaymentWithCompensation;
-        }
-      }
-      
-      const periodSavings = memberSavings.filter(s => s.installmentPeriod === period && s.status === "Approved");
-      const periodTotal = periodSavings.reduce((sum, s) => sum + s.amount, 0);
-      
-      // Calculate due date for this period (period 1 = startDate month)
-      const dueDate = new Date(startDate);
-      dueDate.setMonth(dueDate.getMonth() + period - 1);
-      const dueMonth = dueDate.getMonth();
-      const dueYear = dueDate.getFullYear();
-      
-      // Check if this period is in the current month
-      const isCurrentMonth = dueMonth === currentMonth && dueYear === currentYear;
-      
-      // Check if this period is overdue (past months, not current month)
-      const isOverdue = (dueYear < currentYear || (dueYear === currentYear && dueMonth < currentMonth)) && periodTotal < requiredAmount;
-      
-      // Check if this period is partial (current month, not yet paid full)
-      const isPartial = isCurrentMonth && periodTotal < requiredAmount;
-      
-      let status = "unpaid";
-      if (periodTotal >= requiredAmount) {
-        status = "paid";
-        paidPeriods++;
-      } else if (isOverdue) {
-        // Overdue: past months that haven't been paid
-        status = "overdue";
-        overduePeriods++;
-      } else if (isPartial) {
-        // Partial: current month not yet paid
-        status = "partial";
-        partialPeriods++;
-      } else if (periodTotal > 0) {
-        // Has some payment but not full (for future periods)
-        status = "partial";
-        partialPeriods++;
-      }
-      
-      totalPaid += periodTotal;
-      
-      periods.push({
-        period,
-        dueDate,
-        required: requiredAmount,
-        paid: periodTotal,
-        remaining: Math.max(0, requiredAmount - periodTotal),
-        status,
-        isOverdue,
-        isPartial,
-        isCurrentMonth
+
+    return lookup;
+  }, [members]);
+
+  const savingsByMember = useMemo(() => {
+    const grouped = new Map();
+
+    savings.forEach((saving) => {
+      const keys = [normalizeId(saving.memberId), saving.memberId?.uuid].filter(Boolean);
+
+      keys.forEach((key) => {
+        const current = grouped.get(key) || [];
+        current.push(saving);
+        grouped.set(key, current);
       });
-    }
-    
+    });
+
+    return grouped;
+  }, [savings]);
+
+  const memberMetrics = useMemo(() => {
+    let membersWithOverdue = 0;
+    let membersWithPartial = 0;
+    let membersAllPaid = 0;
+
+    members.forEach((member) => {
+      const memberSavings =
+        savingsByMember.get(String(member._id)) || savingsByMember.get(member.uuid) || [];
+      const paymentStatus = getMemberPaymentStatus(member, memberSavings);
+
+      if (paymentStatus.overduePeriods > 0) membersWithOverdue += 1;
+      if (paymentStatus.partialPeriods > 0) membersWithPartial += 1;
+      if (
+        member.product &&
+        paymentStatus.totalRequired > 0 &&
+        paymentStatus.overduePeriods === 0 &&
+        paymentStatus.totalPaid >= paymentStatus.totalRequired
+      ) {
+        membersAllPaid += 1;
+      }
+    });
+
     return {
-      totalPaid,
-      totalRequired: totalPeriods * depositAmount,
-      paidPeriods,
-      partialPeriods,
-      overduePeriods,
-      unpaidPeriods: totalPeriods - paidPeriods - partialPeriods - overduePeriods,
-      periods,
-      progress: totalPeriods > 0 ? (paidPeriods / totalPeriods) * 100 : 0
-    };
-  };
-
-  // Filter savings by date range
-  const filteredSavings = useMemo(() => {
-    let result = [...savings];
-    
-    console.log("Total savings before filter:", result.length);
-    
-    // Filter by date range - make it more lenient
-    if (dateFrom && dateTo) {
-      const startDate = new Date(dateFrom);
-      startDate.setHours(0, 0, 0, 0);
-      const endDate = new Date(dateTo);
-      endDate.setHours(23, 59, 59, 999);
-      
-      result = result.filter(s => {
-        const savingDate = new Date(s.savingsDate || s.createdAt);
-        return savingDate >= startDate && savingDate <= endDate;
-      });
-      
-      console.log("After date filter:", result.length);
-    }
-    
-    // Filter by status - only for savings tab
-    if (filterStatus !== "all" && activeTab === "savings") {
-      result = result.filter(s => s.status === filterStatus);
-    }
-    
-    // Filter by member
-    if (filterMember !== "all") {
-      result = result.filter(s => 
-        s.memberId?._id === filterMember || 
-        s.memberId === filterMember
-      );
-    }
-    
-    // Filter by product
-    if (filterProduct !== "all") {
-      result = result.filter(s => 
-        s.productId?._id === filterProduct || 
-        s.productId === filterProduct
-      );
-    }
-    
-    console.log("Final filtered savings:", result.length);
-    
-    return result.sort((a, b) => new Date(b.savingsDate || b.createdAt) - new Date(a.savingsDate || a.createdAt));
-  }, [savings, dateFrom, dateTo, filterStatus, filterMember, filterProduct, activeTab]);
-
-  // Member report with payment status
-  const memberReport = useMemo(() => {
-    let result = members.map(member => ({
-      ...member,
-      paymentStatus: getMemberPaymentStatus(member)
-    }));
-    
-    // Filter by product
-    if (filterProduct !== "all") {
-      result = result.filter(m => m.productId === filterProduct || m.product?._id === filterProduct);
-    }
-    
-    // Filter by completion status
-    if (filterStatus === "completed") {
-      result = result.filter(m => m.isCompleted);
-    } else if (filterStatus === "not_completed") {
-      result = result.filter(m => !m.isCompleted);
-    } else if (filterStatus === "has_overdue") {
-      result = result.filter(m => m.paymentStatus.overduePeriods > 0);
-    } else if (filterStatus === "has_partial") {
-      // Partial: bulan ini belum bayar (tapi tidak ada overdue)
-      result = result.filter(m => m.paymentStatus.partialPeriods > 0 && m.paymentStatus.overduePeriods === 0);
-    } else if (filterStatus === "all_paid") {
-      result = result.filter(m => m.paymentStatus.unpaidPeriods === 0 && m.paymentStatus.partialPeriods === 0);
-    }
-    
-    return result;
-  }, [members, savings, filterProduct, filterStatus]);
-
-  // Summary statistics
-  const summaryStats = useMemo(() => {
-    const totalMembers = members.length;
-    const completedMembers = members.filter(m => m.isCompleted).length;
-    
-    const totalSavingsAmount = savings
-      .filter(s => (s.status === "Approved" || s.status === "Partial") && s.type === "Setoran")
-      .reduce((sum, s) => sum + s.amount, 0);
-    
-    const totalWithdrawals = savings
-      .filter(s => s.status === "Approved" && s.type === "Penarikan")
-      .reduce((sum, s) => sum + s.amount, 0);
-    
-    const pendingSavings = savings
-      .filter(s => s.status === "Pending")
-      .reduce((sum, s) => sum + s.amount, 0);
-    
-    const partialSavingsCount = savings
-      .filter(s => s.status === "Partial" || s.paymentType === "Partial")
-      .length;
-    
-    const pendingCount = savings.filter(s => s.status === "Pending").length;
-    
-    const membersWithOverdue = memberReport.filter(m => m.paymentStatus.overduePeriods > 0).length;
-    // Partial: anggota yang di bulan ini belum bayar (tapi tidak overdue)
-    const membersWithPartial = memberReport.filter(m => 
-      m.paymentStatus.partialPeriods > 0 && m.paymentStatus.overduePeriods === 0
-    ).length;
-    const membersAllPaid = memberReport.filter(m => 
-      m.paymentStatus.unpaidPeriods === 0 && m.paymentStatus.partialPeriods === 0 && m.product
-    ).length;
-    
-    // Period stats in date range
-    const filteredTotal = filteredSavings
-      .filter(s => (s.status === "Approved" || s.status === "Partial") && s.type === "Setoran")
-      .reduce((sum, s) => sum + s.amount, 0);
-    
-    return {
-      totalMembers,
-      completedMembers,
-      totalSavingsAmount,
-      totalWithdrawals,
-      netSavings: totalSavingsAmount - totalWithdrawals,
-      pendingSavings,
-      pendingCount,
-      partialSavingsCount,
+      totalMembers: members.length,
       membersWithOverdue,
       membersWithPartial,
       membersAllPaid,
-      filteredTotal,
-      filteredCount: filteredSavings.length
     };
-  }, [members, savings, memberReport, filteredSavings]);
+  }, [members, savingsByMember]);
 
-  // Pagination
-  const paginatedData = useMemo(() => {
-    const data = activeTab === "savings" ? filteredSavings : memberReport;
-    const totalPages = Math.ceil(data.length / itemsPerPage);
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const currentData = data.slice(startIndex, startIndex + itemsPerPage);
-    return { totalPages, currentData, totalItems: data.length };
-  }, [activeTab, filteredSavings, memberReport, currentPage, itemsPerPage]);
+  const dashboardStats = useMemo(() => {
+    const totalSavingsAmount = savings
+      .filter(
+        (saving) =>
+          saving.type === "Setoran" &&
+          (saving.status === "Approved" || saving.status === "Partial")
+      )
+      .reduce((sum, saving) => sum + (Number(saving.amount) || 0), 0);
 
-  // Export to PDF
-  const exportToPDF = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.width;
-    
-    // Header
-    doc.setFontSize(16);
-    doc.setFont("helvetica", "bold");
-    doc.text("LAPORAN KOPERASI LPK SAMIT", pageWidth / 2, 20, { align: "center" });
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(`Periode: ${format(parseISO(dateFrom), "dd MMM yyyy", { locale: id })} - ${format(parseISO(dateTo), "dd MMM yyyy", { locale: id })}`, pageWidth / 2, 28, { align: "center" });
-    doc.text(`Dicetak: ${format(new Date(), "dd MMM yyyy HH:mm", { locale: id })}`, pageWidth / 2, 34, { align: "center" });
-    
-    // Summary
-    doc.setFontSize(12);
-    doc.setFont("helvetica", "bold");
-    doc.text("RINGKASAN", 14, 45);
-    
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    const summaryData = [
-      ["Total Anggota", summaryStats.totalMembers.toString()],
-      ["Anggota Lunas (TF)", summaryStats.completedMembers.toString()],
-      ["Total Simpanan", formatCurrency(summaryStats.totalSavingsAmount)],
-      ["Total Penarikan", formatCurrency(summaryStats.totalWithdrawals)],
-      ["Saldo Bersih", formatCurrency(summaryStats.netSavings)],
-      ["Anggota Overdue", summaryStats.membersWithOverdue.toString()],
-      ["Anggota Partial (Bulan Ini)", summaryStats.membersWithPartial.toString()],
-    ];
-    
-    doc.autoTable({
-      startY: 50,
-      head: [["Keterangan", "Nilai"]],
-      body: summaryData,
-      theme: "grid",
-      headStyles: { fillColor: [236, 72, 153] },
-      margin: { left: 14, right: 14 },
-      tableWidth: 80
-    });
-    
-    // Transaction table
-    if (activeTab === "savings") {
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "bold");
-      doc.text("DAFTAR TRANSAKSI", 14, doc.lastAutoTable.finalY + 15);
-      
-      const tableData = filteredSavings.slice(0, 50).map(s => [
-        format(new Date(s.savingsDate || s.createdAt), "dd/MM/yy"),
-        s.memberId?.name || "-",
-        s.type,
-        `Periode ${s.installmentPeriod || "-"}`,
-        formatCurrency(s.amount),
-        s.status
-      ]);
-      
-      doc.autoTable({
-        startY: doc.lastAutoTable.finalY + 20,
-        head: [["Tanggal", "Anggota", "Tipe", "Periode", "Jumlah", "Status"]],
-        body: tableData,
-        theme: "striped",
-        headStyles: { fillColor: [236, 72, 153] },
-        styles: { fontSize: 8 }
-      });
-    } else {
-      doc.setFontSize(12);
-      doc.setFont("helvetica", "bold");
-      doc.text("DAFTAR ANGGOTA", 14, doc.lastAutoTable.finalY + 15);
-      
-      const tableData = memberReport.slice(0, 50).map(m => {
-        const status = m.isCompleted ? "Lunas" : 
-                       m.paymentStatus.overduePeriods > 0 ? "Overdue" : 
-                       m.paymentStatus.partialPeriods > 0 ? "Partial" : "Aktif";
-        return [
-          m.uuid,
-          m.name,
-          m.product?.title || "-",
-          formatCurrency(m.paymentStatus.totalPaid),
-          `${m.paymentStatus.paidPeriods}/${m.product?.termDuration || 0}`,
-          m.paymentStatus.overduePeriods > 0 ? `${m.paymentStatus.overduePeriods}` : "-",
-          m.paymentStatus.partialPeriods > 0 ? `${m.paymentStatus.partialPeriods}` : "-",
-          status
-        ];
-      });
-      
-      doc.autoTable({
-        startY: doc.lastAutoTable.finalY + 20,
-        head: [["UUID", "Nama", "Produk", "Total Bayar", "Progress", "Overdue", "Partial", "Status"]],
-        body: tableData,
-        theme: "striped",
-        headStyles: { fillColor: [236, 72, 153] },
-        styles: { fontSize: 7 }
+    const totalWithdrawals = savings
+      .filter((saving) => saving.type === "Penarikan" && saving.status === "Approved")
+      .reduce((sum, saving) => sum + (Number(saving.amount) || 0), 0);
+
+    const pendingCount = savings.filter((saving) => saving.status === "Pending").length;
+    const partialSavingsCount = savings.filter(
+      (saving) => saving.status === "Partial" || saving.paymentType === "Partial"
+    ).length;
+
+    return {
+      totalMembers: members.length,
+      completedMembers: members.filter((member) => member.isCompleted).length,
+      totalSavingsAmount,
+      netSavings: totalSavingsAmount - totalWithdrawals,
+      pendingCount,
+      partialSavingsCount,
+      membersWithOverdue: memberMetrics.membersWithOverdue,
+      membersWithPartial: memberMetrics.membersWithPartial,
+      membersAllPaid: memberMetrics.membersAllPaid,
+    };
+  }, [members, savings, memberMetrics]);
+
+  const filteredSavingsBase = useMemo(() => {
+    let result = savings.filter((saving) => saving.type === "Setoran");
+
+    if (dateFrom && dateTo) {
+      const start = new Date(dateFrom);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(dateTo);
+      end.setHours(23, 59, 59, 999);
+
+      result = result.filter((saving) => {
+        const activityDate = new Date(saving.savingsDate || saving.createdAt);
+        return activityDate >= start && activityDate <= end;
       });
     }
-    
+
+    if (filterMember !== "all") {
+      result = result.filter((saving) => normalizeId(saving.memberId) === filterMember);
+    }
+
+    if (filterProduct !== "all") {
+      result = result.filter((saving) => normalizeId(saving.productId) === filterProduct);
+    }
+
+    return result.sort(
+      (first, second) =>
+        new Date(second.savingsDate || second.createdAt) -
+        new Date(first.savingsDate || first.createdAt)
+    );
+  }, [savings, dateFrom, dateTo, filterMember, filterProduct]);
+
+  const transactionBaseRows = useMemo(() => {
+    return filteredSavingsBase.map((saving, index) => {
+      const memberKey = normalizeId(saving.memberId);
+      const member = memberLookup.get(memberKey) || memberLookup.get(saving.memberId?.uuid) || null;
+      const product = saving.productId || member?.product || null;
+      const projectionAmount = getRequiredAmountForPeriod(member, product, saving.installmentPeriod);
+      const realizedAmount = Number(saving.amount) || 0;
+      const differenceAmount = projectionAmount - realizedAmount;
+      const statusKey = getTransactionStatusKey(saving, projectionAmount);
+      const invoiceNumber =
+        saving.invoiceNumber ||
+        saving.uuid ||
+        `SAV-${saving.memberId?.uuid || member?.uuid || "NA"}-P${
+          saving.installmentPeriod || "-"
+        }-${index + 1}`;
+
+      return {
+        id: saving._id || `${invoiceNumber}-${index}`,
+        invoiceNumber,
+        transactionDate: saving.savingsDate || saving.createdAt,
+        customerName: saving.memberId?.name || member?.name || "-",
+        customerCode: saving.memberId?.uuid || member?.uuid || "-",
+        productTitle: product?.title || member?.product?.title || "-",
+        installmentPeriod: saving.installmentPeriod || "-",
+        projectionAmount,
+        realizedAmount,
+        differenceAmount,
+        statusKey,
+        statusLabel: STATUS_META[statusKey]?.label || STATUS_META.unknown.label,
+        description: saving.description || "-",
+      };
+    });
+  }, [filteredSavingsBase, memberLookup]);
+
+  const transactionRows = useMemo(() => {
+    if (!SAVINGS_FILTERS.includes(filterStatus)) return transactionBaseRows;
+    return transactionBaseRows.filter((row) => row.statusKey === filterStatus);
+  }, [transactionBaseRows, filterStatus]);
+
+  const reportSummary = useMemo(() => {
+    const totalProjection = transactionRows.reduce((sum, row) => sum + row.projectionAmount, 0);
+    const totalRealization = transactionRows.reduce((sum, row) => sum + row.realizedAmount, 0);
+    const totalDifference = totalProjection - totalRealization;
+
+    return {
+      totalProjection,
+      totalRealization,
+      totalDifference,
+      totalRecords: transactionRows.length,
+      paidCount: transactionRows.filter((row) => row.statusKey === "paid").length,
+      partialCount: transactionRows.filter((row) => row.statusKey === "partial").length,
+      pendingCount: transactionRows.filter((row) => row.statusKey === "pending").length,
+      rejectedCount: transactionRows.filter((row) => row.statusKey === "rejected").length,
+    };
+  }, [transactionRows]);
+
+  const memberBaseRows = useMemo(() => {
+    let rows = members.map((member) => {
+      const memberSavings =
+        savingsByMember.get(String(member._id)) || savingsByMember.get(member.uuid) || [];
+      const paymentStatus = getMemberPaymentStatus(member, memberSavings);
+      const product = member.product || {};
+      const progressPercent = Number(paymentStatus.progress || 0);
+
+      let statusKey = "active";
+      if (!member.product) {
+        statusKey = "no_product";
+      } else if (member.isCompleted) {
+        statusKey = "completed";
+      } else if (paymentStatus.overduePeriods > 0) {
+        statusKey = "overdue";
+      } else if (paymentStatus.partialPeriods > 0) {
+        statusKey = "partial";
+      } else if (
+        paymentStatus.totalRequired > 0 &&
+        paymentStatus.totalPaid >= paymentStatus.totalRequired
+      ) {
+        statusKey = "all_paid";
+      }
+
+      return {
+        id: member._id,
+        memberId: String(member._id),
+        uuid: member.uuid || "-",
+        name: member.name || "-",
+        productId: normalizeId(member.product?._id || member.productId),
+        productTitle: product.title || "-",
+        totalPaid: paymentStatus.totalPaid,
+        totalRequired: paymentStatus.totalRequired,
+        paidPeriods: paymentStatus.paidPeriods,
+        partialPeriods: paymentStatus.partialPeriods,
+        overduePeriods: paymentStatus.overduePeriods,
+        unpaidPeriods: paymentStatus.unpaidPeriods,
+        progressPercent,
+        progressText: `${Math.round(progressPercent)}%`,
+        statusKey,
+        statusLabel: MEMBER_STATUS_META[statusKey]?.label || "Aktif",
+      };
+    });
+
+    if (filterMember !== "all") {
+      rows = rows.filter((row) => row.memberId === filterMember);
+    }
+
+    if (filterProduct !== "all") {
+      rows = rows.filter((row) => row.productId === filterProduct);
+    }
+
+    return rows.sort((first, second) => first.name.localeCompare(second.name, "id-ID"));
+  }, [members, savingsByMember, filterMember, filterProduct]);
+
+  const memberStatusRows = useMemo(() => {
+    if (filterStatus === "completed") {
+      return memberBaseRows.filter((row) => row.statusKey === "completed");
+    }
+    if (filterStatus === "not_completed") {
+      return memberBaseRows.filter((row) => row.statusKey !== "completed");
+    }
+    if (filterStatus === "has_overdue") {
+      return memberBaseRows.filter((row) => row.overduePeriods > 0);
+    }
+    if (filterStatus === "has_partial") {
+      return memberBaseRows.filter((row) => row.partialPeriods > 0);
+    }
+    if (filterStatus === "all_paid") {
+      return memberBaseRows.filter((row) => row.statusKey === "all_paid");
+    }
+    return memberBaseRows;
+  }, [memberBaseRows, filterStatus]);
+
+  const withdrawalAmount = useMemo(() => {
+    let result = savings.filter(
+      (saving) => saving.type === "Penarikan" && saving.status === "Approved"
+    );
+
+    if (dateFrom && dateTo) {
+      const start = new Date(dateFrom);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(dateTo);
+      end.setHours(23, 59, 59, 999);
+
+      result = result.filter((saving) => {
+        const activityDate = new Date(saving.savingsDate || saving.createdAt);
+        return activityDate >= start && activityDate <= end;
+      });
+    }
+
+    if (filterMember !== "all") {
+      result = result.filter((saving) => normalizeId(saving.memberId) === filterMember);
+    }
+
+    if (filterProduct !== "all") {
+      result = result.filter((saving) => normalizeId(saving.productId) === filterProduct);
+    }
+
+    return result.reduce((sum, saving) => sum + (Number(saving.amount) || 0), 0);
+  }, [savings, dateFrom, dateTo, filterMember, filterProduct]);
+
+  const activeRows = activeTab === "savings" ? transactionRows : memberStatusRows;
+  const totalPages = Math.max(1, Math.ceil(activeRows.length / ITEMS_PER_PAGE));
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
+
+  const paginatedRows = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return activeRows.slice(start, start + ITEMS_PER_PAGE);
+  }, [activeRows, currentPage]);
+
+  const rangeLabel = useMemo(() => getRangeLabel(dateFrom, dateTo), [dateFrom, dateTo]);
+
+  useEffect(() => {
+    const element = tableContainerRef.current;
+    if (!element) return undefined;
+
+    const updateScrollState = () => {
+      const hasOverflow = element.scrollWidth > element.clientWidth + 8;
+      setCanScrollLeft(hasOverflow && element.scrollLeft > 8);
+      setCanScrollRight(
+        hasOverflow && element.scrollLeft + element.clientWidth < element.scrollWidth - 8
+      );
+    };
+
+    updateScrollState();
+    element.addEventListener("scroll", updateScrollState);
+    window.addEventListener("resize", updateScrollState);
+
+    return () => {
+      element.removeEventListener("scroll", updateScrollState);
+      window.removeEventListener("resize", updateScrollState);
+    };
+  }, [activeRows.length, activeTab]);
+
+  const exportToPDF = () => {
+    if (!activeRows.length) {
+      toast.info("Tidak ada data laporan untuk diunduh.");
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const generatedAt = format(new Date(), "dd MMM yyyy HH:mm", { locale: id });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text(activeTab === "savings" ? "LAPORAN KOPERASI" : "STATUS ANGGOTA KOPERASI", 40, 42);
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Periode: ${rangeLabel}`, 40, 60);
+    doc.text(`Dicetak: ${generatedAt}`, pageWidth - 40, 60, { align: "right" });
+
+    doc.setDrawColor(203, 213, 225);
+    doc.line(40, 74, pageWidth - 40, 74);
+
+    const summaryRows =
+      activeTab === "savings"
+        ? [
+            ["Total Proyeksi", formatCurrency(reportSummary.totalProjection)],
+            ["Total Realisasi", formatCurrency(reportSummary.totalRealization)],
+            [
+              "Total Selisih",
+              `${reportSummary.totalDifference >= 0 ? "+" : "-"}${formatCurrency(
+                Math.abs(reportSummary.totalDifference)
+              )}`,
+            ],
+            ["Total Data", compactNumberFormatter.format(reportSummary.totalRecords)],
+          ]
+        : [
+            ["Total Anggota", compactNumberFormatter.format(memberStatusRows.length)],
+            ["Lunas (TF)", compactNumberFormatter.format(dashboardStats.completedMembers)],
+            ["Overdue", compactNumberFormatter.format(dashboardStats.membersWithOverdue)],
+            ["Partial", compactNumberFormatter.format(dashboardStats.membersWithPartial)],
+          ];
+
+    doc.autoTable({
+      startY: 92,
+      head: [["Ringkasan", "Nilai"]],
+      body: summaryRows,
+      theme: "grid",
+      headStyles: { fillColor: [15, 23, 42], textColor: [255, 255, 255] },
+      styles: { fontSize: 9, cellPadding: 8 },
+      margin: { left: 40, right: pageWidth - 300 },
+    });
+
+    if (activeTab === "savings") {
+      doc.autoTable({
+        startY: doc.lastAutoTable.finalY + 18,
+        head: [[
+          "Invoice",
+          "Tanggal Aktivitas",
+          "Customer",
+          "Produk",
+          "Periode",
+          "Proyeksi",
+          "Realisasi",
+          "Selisih",
+          "Status",
+        ]],
+        body: transactionRows.map((row) => [
+          row.invoiceNumber,
+          formatShortDate(row.transactionDate),
+          `${row.customerName} (${row.customerCode})`,
+          row.productTitle,
+          String(row.installmentPeriod),
+          formatCurrency(row.projectionAmount),
+          formatCurrency(row.realizedAmount),
+          `${row.differenceAmount >= 0 ? "+" : "-"}${formatCurrency(Math.abs(row.differenceAmount))}`,
+          row.statusLabel,
+        ]),
+        theme: "striped",
+        headStyles: { fillColor: [17, 24, 39], textColor: [255, 255, 255] },
+        styles: { fontSize: 8, cellPadding: 6, valign: "middle" },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { left: 40, right: 40 },
+      });
+    } else {
+      doc.autoTable({
+        startY: doc.lastAutoTable.finalY + 18,
+        head: [[
+          "UUID",
+          "Anggota",
+          "Produk",
+          "Total Bayar",
+          "Total Wajib",
+          "Progress",
+          "Overdue",
+          "Partial",
+          "Status",
+        ]],
+        body: memberStatusRows.map((row) => [
+          row.uuid,
+          row.name,
+          row.productTitle,
+          formatCurrency(row.totalPaid),
+          formatCurrency(row.totalRequired),
+          row.progressText,
+          String(row.overduePeriods),
+          String(row.partialPeriods),
+          row.statusLabel,
+        ]),
+        theme: "striped",
+        headStyles: { fillColor: [17, 24, 39], textColor: [255, 255, 255] },
+        styles: { fontSize: 8, cellPadding: 6, valign: "middle" },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { left: 40, right: 40 },
+      });
+    }
+
     doc.save(`Laporan_Koperasi_${format(new Date(), "yyyyMMdd_HHmm")}.pdf`);
-    toast.success("PDF berhasil diunduh!");
+    toast.success("PDF laporan berhasil diunduh.");
   };
 
-  // Export to CSV
-  const exportToCSV = () => {
-    let csvContent = "";
-    
-    if (activeTab === "savings") {
-      csvContent = "Tanggal,Anggota,UUID,Tipe,Periode,Jumlah,Status,Keterangan\n";
-      filteredSavings.forEach(s => {
-        csvContent += `${format(new Date(s.savingsDate || s.createdAt), "yyyy-MM-dd")},`;
-        csvContent += `"${s.memberId?.name || "-"}",`;
-        csvContent += `${s.memberId?.uuid || "-"},`;
-        csvContent += `${s.type},`;
-        csvContent += `${s.installmentPeriod || "-"},`;
-        csvContent += `${s.amount},`;
-        csvContent += `${s.status},`;
-        csvContent += `"${s.description || "-"}"\n`;
-      });
-    } else {
-      csvContent = "UUID,Nama,Produk,Total Bayar,Total Wajib,Periode Lunas,Periode Overdue,Periode Partial,Status\n";
-      memberReport.forEach(m => {
-        const status = m.isCompleted ? "Lunas" : 
-                       m.paymentStatus.overduePeriods > 0 ? "Overdue" : 
-                       m.paymentStatus.partialPeriods > 0 ? "Partial" : "Aktif";
-        csvContent += `${m.uuid},`;
-        csvContent += `"${m.name}",`;
-        csvContent += `"${m.product?.title || "-"}",`;
-        csvContent += `${m.paymentStatus.totalPaid},`;
-        csvContent += `${m.paymentStatus.totalRequired},`;
-        csvContent += `${m.paymentStatus.paidPeriods},`;
-        csvContent += `${m.paymentStatus.overduePeriods},`;
-        csvContent += `${m.paymentStatus.partialPeriods},`;
-        csvContent += `${status}\n`;
-      });
+  const exportToExcel = () => {
+    if (!activeRows.length) {
+      toast.info("Tidak ada data laporan untuk diunduh.");
+      return;
     }
-    
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `Laporan_Koperasi_${format(new Date(), "yyyyMMdd_HHmm")}.csv`;
-    link.click();
-    toast.success("CSV berhasil diunduh!");
+
+    const documentHtml =
+      activeTab === "savings"
+        ? buildSavingsExcelDocument(transactionRows, reportSummary, rangeLabel)
+        : buildMembersExcelDocument(memberStatusRows, dashboardStats, rangeLabel);
+
+    const blob = new Blob([`\ufeff${documentHtml}`], {
+      type: "application/vnd.ms-excel;charset=utf-8;",
+    });
+
+    downloadBlob(blob, `Laporan_Koperasi_${format(new Date(), "yyyyMMdd_HHmm")}.xls`);
+    toast.success("Excel laporan berhasil diunduh.");
   };
 
   const resetFilters = () => {
@@ -507,272 +1090,612 @@ const Reports = () => {
     setFilterStatus("all");
     setFilterMember("all");
     setFilterProduct("all");
+    setActiveTab("savings");
     setCurrentPage(1);
+  };
+
+  const switchTab = (nextTab, nextStatus = "all") => {
+    setActiveTab(nextTab);
+    setFilterStatus(nextStatus);
+    setCurrentPage(1);
+  };
+
+  const scrollTable = (direction) => {
+    const element = tableContainerRef.current;
+    if (!element) return;
+    element.scrollBy({ left: direction * 320, behavior: "smooth" });
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex min-h-[70vh] items-center justify-center px-6">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-pink-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">🌸 Memuat laporan...</p>
+          <div className="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-sky-100 border-t-sky-600" />
+          <p className="mt-5 text-sm font-medium tracking-[0.18em] text-slate-500">
+            MEMUAT LAPORAN
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="p-4 sm:p-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-6 gap-4">
-        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">📊 Laporan Koperasi</h1>
-        <div className="flex gap-2">
-          <button
-            onClick={exportToPDF}
-            className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors text-sm font-medium"
-          >
-            📄 Export PDF
-          </button>
-          <button
-            onClick={exportToCSV}
-            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-sm font-medium"
-          >
-            📊 Export CSV
-          </button>
-        </div>
-      </div>
-
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
-        <div className="bg-white rounded-lg shadow-sm p-3 border border-pink-100">
-          <p className="text-xs text-gray-500">Total Anggota</p>
-          <p className="text-xl font-bold text-gray-900">{summaryStats.totalMembers}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-3 border border-green-100">
-          <p className="text-xs text-gray-500">Lunas (TF)</p>
-          <p className="text-xl font-bold text-green-600">{summaryStats.completedMembers}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-3 border border-blue-100">
-          <p className="text-xs text-gray-500">Total Simpanan</p>
-          <p className="text-sm font-bold text-blue-600">{formatCurrency(summaryStats.totalSavingsAmount)}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-3 border border-purple-100">
-          <p className="text-xs text-gray-500">Saldo Bersih</p>
-          <p className="text-sm font-bold text-purple-600">{formatCurrency(summaryStats.netSavings)}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-3 border border-yellow-100">
-          <p className="text-xs text-gray-500">Pending</p>
-          <p className="text-xl font-bold text-yellow-600">{summaryStats.pendingCount}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-3 border border-orange-100">
-          <p className="text-xs text-gray-500">Partial (Bulan Ini)</p>
-          <p className="text-xl font-bold text-orange-600">{summaryStats.membersWithPartial}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-3 border border-red-100">
-          <p className="text-xs text-gray-500">Overdue</p>
-          <p className="text-xl font-bold text-red-600">{summaryStats.membersWithOverdue}</p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm p-3 border border-teal-100">
-          <p className="text-xs text-gray-500">All Paid</p>
-          <p className="text-xl font-bold text-teal-600">{summaryStats.membersAllPaid}</p>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="bg-white rounded-lg shadow-sm p-4 mb-6 border border-pink-100">
-        <div className="flex flex-wrap gap-4 items-end">
+    <div className="space-y-6 p-4 sm:p-6">
+      <section className="relative overflow-hidden rounded-[28px] border border-sky-100 bg-sky-50 shadow-[0_24px_55px_-40px_rgba(14,116,144,0.45)]">
+        <div className="absolute inset-y-0 right-0 hidden w-80 bg-[radial-gradient(circle_at_center,_rgba(14,165,233,0.18),_transparent_70%)] lg:block" />
+        <div className="relative grid gap-8 px-6 py-7 lg:grid-cols-[1.25fr_0.75fr] lg:px-8">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Dari Tanggal</label>
+            <div className="mb-4 inline-flex items-center gap-3 rounded-full border border-sky-200 bg-white/80 px-4 py-2 text-sm font-medium text-sky-700 shadow-sm shadow-sky-100/60">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-100 text-sky-700">
+                <HeroIcon />
+              </span>
+              Laporan Bulanan
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-[2rem]">
+              Dashboard laporan koperasi dengan format yang fokus ke realisasi periode.
+            </h1>
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-500">
+              <span>Dashboard</span>
+              <span className="h-1.5 w-1.5 rounded-full bg-sky-300" />
+              <span className="font-semibold text-slate-700">Laporan</span>
+            </div>
+          </div>
+
+          <div className="hidden lg:flex lg:justify-end">
+            <div className="relative w-full max-w-sm rounded-[24px] border border-white/70 bg-white/80 p-5 shadow-[0_30px_65px_-48px_rgba(14,116,144,0.8)] backdrop-blur">
+              <div className="space-y-4">
+                <div className="rounded-2xl bg-slate-900 px-4 py-3 text-white">
+                  <p className="text-xs uppercase tracking-[0.22em] text-slate-300">Periode aktif</p>
+                  <p className="mt-2 text-lg font-semibold">{rangeLabel}</p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">Data tampil</p>
+                    <p className="mt-1 text-xl font-semibold text-slate-900">
+                      {compactNumberFormatter.format(activeRows.length)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                      {activeTab === "savings" ? "Status paid" : "Lunas (TF)"}
+                    </p>
+                    <p className="mt-1 text-xl font-semibold text-emerald-600">
+                      {compactNumberFormatter.format(
+                        activeTab === "savings"
+                          ? reportSummary.paidCount
+                          : dashboardStats.completedMembers
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-sky-50 px-4 py-4">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Ekspor cepat
+                  </p>
+                  <div className="mt-3 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={exportToExcel}
+                      disabled={!activeRows.length}
+                      className="inline-flex flex-1 items-center justify-center rounded-full bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      Export Excel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={exportToPDF}
+                      disabled={!activeRows.length}
+                      className="inline-flex flex-1 items-center justify-center rounded-full bg-rose-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-45"
+                    >
+                      Export PDF
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-[0_24px_60px_-48px_rgba(15,23,42,0.75)] sm:p-6">
+        <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">
+              Filter Laporan
+            </p>
+            <h2 className="mt-1 text-xl font-bold text-slate-900">Atur periode dan scope data</h2>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={exportToExcel}
+              disabled={!activeRows.length}
+              className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              Excel
+            </button>
+            <button
+              type="button"
+              onClick={exportToPDF}
+              disabled={!activeRows.length}
+              className="inline-flex items-center justify-center rounded-full bg-rose-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-45"
+            >
+              PDF
+            </button>
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="inline-flex items-center justify-center rounded-full border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+            >
+              Reset
+            </button>
+          </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-4">
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-600">Tanggal Mulai</span>
             <input
               type="date"
               value={dateFrom}
-              onChange={(e) => { setDateFrom(e.target.value); setCurrentPage(1); }}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-pink-500"
+              onChange={(event) => setDateFrom(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Sampai Tanggal</label>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-600">Tanggal Selesai</span>
             <input
               type="date"
               value={dateTo}
-              onChange={(e) => { setDateTo(e.target.value); setCurrentPage(1); }}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-pink-500"
+              onChange={(event) => setDateTo(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Status</label>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-600">Status</span>
             <select
               value={filterStatus}
-              onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-pink-500"
+              onChange={(event) => setFilterStatus(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             >
               <option value="all">Semua Status</option>
               {activeTab === "savings" ? (
                 <>
-                  <option value="Approved">✅ Approved</option>
-                  <option value="Pending">⏳ Pending</option>
-                  <option value="Partial">🔶 Partial</option>
-                  <option value="Rejected">❌ Rejected</option>
+                  <option value="paid">Paid</option>
+                  <option value="partial">Partial</option>
+                  <option value="pending">Pending</option>
+                  <option value="rejected">Rejected</option>
                 </>
               ) : (
                 <>
-                  <option value="completed">✅ Lunas (TF)</option>
-                  <option value="not_completed">⏳ Belum Lunas</option>
-                  <option value="has_overdue">🔴 Ada Overdue</option>
-                  <option value="has_partial">🟠 Partial (Bulan Ini)</option>
-                  <option value="all_paid">💚 Semua Periode Lunas</option>
+                  <option value="completed">Lunas (TF)</option>
+                  <option value="not_completed">Belum Lunas</option>
+                  <option value="has_overdue">Ada Overdue</option>
+                  <option value="has_partial">Ada Partial</option>
+                  <option value="all_paid">All Paid</option>
                 </>
               )}
             </select>
-          </div>
-          {activeTab === "savings" && (
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Anggota</label>
-              <select
-                value={filterMember}
-                onChange={(e) => { setFilterMember(e.target.value); setCurrentPage(1); }}
-                className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-pink-500 max-w-[200px]"
-              >
-                <option value="all">Semua Anggota</option>
-                {members.map(m => (
-                  <option key={m._id} value={m._id}>{m.name}</option>
-                ))}
-              </select>
-            </div>
-          )}
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">Produk</label>
+          </label>
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-600">Anggota</span>
             <select
-              value={filterProduct}
-              onChange={(e) => { setFilterProduct(e.target.value); setCurrentPage(1); }}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-pink-500"
+              value={filterMember}
+              onChange={(event) => setFilterMember(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
             >
-              <option value="all">Semua Produk</option>
-              {products.map(p => (
-                <option key={p._id} value={p._id}>{p.title}</option>
+              <option value="all">Semua Anggota</option>
+              {members.map((member) => (
+                <option key={member._id} value={member._id}>
+                  {member.name}
+                </option>
               ))}
             </select>
+          </label>
+        </div>
+
+        <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_280px]">
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-600">Produk Simpanan</span>
+            <select
+              value={filterProduct}
+              onChange={(event) => setFilterProduct(event.target.value)}
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+            >
+              <option value="all">Semua Produk</option>
+              {products.map((product) => (
+                <option key={product._id} value={product._id}>
+                  {product.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="rounded-[22px] border border-sky-100 bg-sky-50/80 px-4 py-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
+              Snapshot cepat
+            </p>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              Filter akan langsung memperbarui kartu ringkasan, tab cepat, tabel, dan file export.
+            </p>
           </div>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <MetricPill
+            label="Total anggota"
+            value={compactNumberFormatter.format(memberMetrics.totalMembers)}
+          />
+          <MetricPill
+            label="Overdue anggota"
+            value={compactNumberFormatter.format(memberMetrics.membersWithOverdue)}
+          />
+          <MetricPill
+            label="Partial anggota"
+            value={compactNumberFormatter.format(memberMetrics.membersWithPartial)}
+          />
+          <MetricPill
+            label="Semua lunas"
+            value={compactNumberFormatter.format(memberMetrics.membersAllPaid)}
+          />
+          <MetricPill
+            label="Pending transaksi"
+            value={compactNumberFormatter.format(reportSummary.pendingCount)}
+          />
+          <MetricPill label="Penarikan" value={formatCurrency(withdrawalAmount)} />
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
           <button
-            onClick={resetFilters}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 text-sm"
+            type="button"
+            onClick={() => switchTab("members")}
+            className="rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left transition hover:border-sky-200 hover:bg-sky-50"
           >
-            🔄 Reset
+            <p className="text-xs text-slate-500">Total Anggota</p>
+            <p className="mt-2 text-2xl font-bold text-slate-900">{dashboardStats.totalMembers}</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("members", "completed")}
+            className="rounded-2xl border border-emerald-100 bg-white px-4 py-4 text-left transition hover:border-emerald-200 hover:bg-emerald-50"
+          >
+            <p className="text-xs text-slate-500">Lunas (TF)</p>
+            <p className="mt-2 text-2xl font-bold text-emerald-600">
+              {dashboardStats.completedMembers}
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("savings")}
+            className="rounded-2xl border border-sky-100 bg-white px-4 py-4 text-left transition hover:border-sky-200 hover:bg-sky-50"
+          >
+            <p className="text-xs text-slate-500">Total Simpanan</p>
+            <p className="mt-2 text-base font-bold text-sky-600">
+              {formatCurrency(dashboardStats.totalSavingsAmount)}
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("savings")}
+            className="rounded-2xl border border-violet-100 bg-white px-4 py-4 text-left transition hover:border-violet-200 hover:bg-violet-50"
+          >
+            <p className="text-xs text-slate-500">Saldo Bersih</p>
+            <p className="mt-2 text-base font-bold text-violet-600">
+              {formatCurrency(dashboardStats.netSavings)}
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("savings", "pending")}
+            className="rounded-2xl border border-amber-100 bg-white px-4 py-4 text-left transition hover:border-amber-200 hover:bg-amber-50"
+          >
+            <p className="text-xs text-slate-500">Pending</p>
+            <p className="mt-2 text-2xl font-bold text-amber-600">{dashboardStats.pendingCount}</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("members", "has_partial")}
+            className="rounded-2xl border border-orange-100 bg-white px-4 py-4 text-left transition hover:border-orange-200 hover:bg-orange-50"
+          >
+            <p className="text-xs text-slate-500">Partial (Bulan Ini)</p>
+            <p className="mt-2 text-2xl font-bold text-orange-600">
+              {dashboardStats.membersWithPartial}
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("members", "has_overdue")}
+            className="rounded-2xl border border-rose-100 bg-white px-4 py-4 text-left transition hover:border-rose-200 hover:bg-rose-50"
+          >
+            <p className="text-xs text-slate-500">Overdue</p>
+            <p className="mt-2 text-2xl font-bold text-rose-600">
+              {dashboardStats.membersWithOverdue}
+            </p>
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("members", "all_paid")}
+            className="rounded-2xl border border-teal-100 bg-white px-4 py-4 text-left transition hover:border-teal-200 hover:bg-teal-50"
+          >
+            <p className="text-xs text-slate-500">All Paid</p>
+            <p className="mt-2 text-2xl font-bold text-teal-600">
+              {dashboardStats.membersAllPaid}
+            </p>
           </button>
         </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-2 mb-4">
-        <button
-          onClick={() => { setActiveTab("savings"); setCurrentPage(1); setFilterStatus("all"); }}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            activeTab === "savings" 
-              ? "bg-pink-500 text-white" 
-              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-          }`}
-        >
-          💰 Transaksi Simpanan ({filteredSavings.length})
-        </button>
-        <button
-          onClick={() => { setActiveTab("members"); setCurrentPage(1); setFilterStatus("all"); }}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            activeTab === "members" 
-              ? "bg-pink-500 text-white" 
-              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-          }`}
-        >
-          👥 Status Anggota ({memberReport.length})
-        </button>
-        <button
-          onClick={() => { setActiveTab("members"); setCurrentPage(1); setFilterStatus("has_overdue"); }}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            activeTab === "members" && filterStatus === "has_overdue"
-              ? "bg-red-500 text-white" 
-              : "bg-red-100 text-red-700 hover:bg-red-200"
-          }`}
-        >
-          🔴 Overdue ({summaryStats.membersWithOverdue})
-        </button>
-        <button
-          onClick={() => { setActiveTab("members"); setCurrentPage(1); setFilterStatus("has_partial"); }}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            activeTab === "members" && filterStatus === "has_partial"
-              ? "bg-orange-500 text-white" 
-              : "bg-orange-100 text-orange-700 hover:bg-orange-200"
-          }`}
-        >
-          🟠 Partial ({summaryStats.membersWithPartial})
-        </button>
-        <button
-          onClick={() => { setActiveTab("savings"); setCurrentPage(1); setFilterStatus("Pending"); }}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            activeTab === "savings" && filterStatus === "Pending"
-              ? "bg-yellow-500 text-white" 
-              : "bg-yellow-100 text-yellow-700 hover:bg-yellow-200"
-          }`}
-        >
-          ⏳ Pending ({summaryStats.pendingCount})
-        </button>
-        <button
-          onClick={() => { setActiveTab("members"); setCurrentPage(1); setFilterStatus("has_partial"); }}
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            activeTab === "members" && filterStatus === "has_partial"
-              ? "bg-orange-500 text-white" 
-              : "bg-orange-100 text-orange-700 hover:bg-orange-200"
-          }`}
-        >
-          🟠 Partial ({summaryStats.membersWithPartial})
-        </button>
-      </div>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => switchTab("savings")}
+            className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
+              activeTab === "savings" && filterStatus === "all"
+                ? "bg-slate-900 text-white"
+                : "border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+            }`}
+          >
+            💰 Transaksi Simpanan ({transactionBaseRows.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("members")}
+            className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
+              activeTab === "members" && filterStatus === "all"
+                ? "bg-slate-900 text-white"
+                : "border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
+            }`}
+          >
+            👥 Status Anggota ({memberBaseRows.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("members", "has_overdue")}
+            className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
+              activeTab === "members" && filterStatus === "has_overdue"
+                ? "bg-rose-500 text-white"
+                : "border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
+            }`}
+          >
+            🔴 Overdue ({dashboardStats.membersWithOverdue})
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("savings", "partial")}
+            className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
+              activeTab === "savings" && filterStatus === "partial"
+                ? "bg-amber-500 text-white"
+                : "border border-amber-200 bg-white text-amber-700 hover:bg-amber-50"
+            }`}
+          >
+            🟠 Partial ({dashboardStats.partialSavingsCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("savings", "pending")}
+            className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
+              activeTab === "savings" && filterStatus === "pending"
+                ? "bg-sky-500 text-white"
+                : "border border-sky-200 bg-white text-sky-700 hover:bg-sky-50"
+            }`}
+          >
+            ⏳ Pending ({dashboardStats.pendingCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("members", "has_partial")}
+            className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
+              activeTab === "members" && filterStatus === "has_partial"
+                ? "bg-orange-500 text-white"
+                : "border border-orange-200 bg-white text-orange-700 hover:bg-orange-50"
+            }`}
+          >
+            🟠 Partial ({dashboardStats.membersWithPartial})
+          </button>
+        </div>
+      </section>
 
-      {/* Data Table */}
-      <div className="bg-white rounded-lg shadow-sm overflow-hidden border border-pink-100">
-        <div className="overflow-x-auto">
+      <section className="grid gap-4 xl:grid-cols-3">
+        <SummaryCard
+          label="Total Proyeksi"
+          value={formatCurrency(reportSummary.totalProjection)}
+          helper="Target setoran yang terbaca pada periode terfilter"
+          valueClassName="text-slate-900"
+          accentClassName="bg-gradient-to-br from-indigo-500 via-indigo-600 to-violet-600"
+          icon={<TargetIcon />}
+        />
+        <SummaryCard
+          label="Total Realisasi"
+          value={formatCurrency(reportSummary.totalRealization)}
+          helper="Nominal setoran yang benar-benar tercatat pada tabel"
+          valueClassName="text-slate-900"
+          accentClassName="bg-gradient-to-br from-emerald-500 via-emerald-600 to-teal-500"
+          icon={<CashIcon />}
+        />
+        <SummaryCard
+          label="Total Selisih"
+          value={`${reportSummary.totalDifference >= 0 ? "+" : "-"}${formatCurrency(
+            Math.abs(reportSummary.totalDifference)
+          )}`}
+          helper={
+            reportSummary.totalDifference <= 0
+              ? "Realisasi sudah mencapai atau melampaui target periode ini"
+              : "Masih ada selisih target yang belum terealisasi"
+          }
+          valueClassName={
+            reportSummary.totalDifference <= 0 ? "text-emerald-600" : "text-rose-600"
+          }
+          accentClassName={
+            reportSummary.totalDifference <= 0
+              ? "bg-gradient-to-br from-sky-500 via-sky-600 to-indigo-600"
+              : "bg-gradient-to-br from-rose-500 via-rose-600 to-orange-500"
+          }
+          icon={<BalanceIcon />}
+        />
+      </section>
+
+      <section className="rounded-[28px] border border-sky-200 bg-sky-50/80 p-5 shadow-[0_24px_50px_-42px_rgba(56,189,248,0.45)]">
+        <div className="flex items-start gap-4">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white text-sky-700 shadow-sm shadow-sky-100">
+            <HeroIcon />
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-base font-semibold text-sky-900">Logic Laporan</h3>
+            <p className="text-sm leading-6 text-slate-600">
+              Proyeksi dibaca dari nominal wajib per periode pada transaksi yang tampil. Realisasi
+              mengambil nominal setoran yang benar-benar masuk. Selisih dihitung sebagai proyeksi
+              dikurangi realisasi, sehingga nilai positif berarti target periode itu masih kurang.
+            </p>
+            <p className="text-sm leading-6 text-slate-600">
+              Tabel transaksi tetap dibuat mirip pola `samitbank`, tapi shortcut ikon lama,
+              ringkasan cepat, dan tab `Status Anggota` saya pertahankan supaya flow admin tetap enak.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="overflow-hidden rounded-[30px] border border-slate-200 bg-white shadow-[0_30px_70px_-55px_rgba(15,23,42,0.95)]">
+        <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600">
+              Laporan Periode
+            </p>
+            <h2 className="mt-1 text-xl font-bold text-slate-900">
+              {activeTab === "savings" ? `Laporan ${rangeLabel}` : "Status Anggota Koperasi"}
+              <span className="ml-2 text-sm font-medium text-slate-400">
+                {activeTab === "savings"
+                  ? "(berdasarkan aktivitas transaksi)"
+                  : "(berdasarkan progress tabungan anggota)"}
+              </span>
+            </h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => scrollTable(-1)}
+                disabled={!canScrollLeft}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                title="Scroll kiri"
+              >
+                &#8592;
+              </button>
+              <button
+                type="button"
+                onClick={() => scrollTable(1)}
+                disabled={!canScrollRight}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 text-slate-600 transition hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                title="Scroll kanan"
+              >
+                &#8594;
+              </button>
+            </div>
+            <div className="rounded-full bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700">
+              Total Data: {compactNumberFormatter.format(activeRows.length)}
+            </div>
+          </div>
+        </div>
+
+        <div ref={tableContainerRef} className="overflow-x-auto">
           {activeTab === "savings" ? (
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gradient-to-r from-pink-50 to-rose-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">Tanggal</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">Anggota</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">Tipe</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">Periode</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">Jumlah</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">Status</th>
+            <table className="min-w-[1180px] w-full border-collapse">
+              <thead className="bg-slate-900 text-white">
+                <tr className="text-left text-sm">
+                  <th className="px-5 py-4 font-semibold">Invoice</th>
+                  <th className="px-5 py-4 text-center font-semibold">
+                    Tanggal
+                    <br />
+                    <span className="text-xs font-medium text-slate-300">Aktivitas</span>
+                  </th>
+                  <th className="px-5 py-4 font-semibold">Customer</th>
+                  <th className="px-5 py-4 text-right font-semibold">
+                    Proyeksi
+                    <br />
+                    <span className="text-xs font-medium text-slate-300">(Periode)</span>
+                  </th>
+                  <th className="px-5 py-4 text-right font-semibold">
+                    Realisasi
+                    <br />
+                    <span className="text-xs font-medium text-slate-300">(Periode)</span>
+                  </th>
+                  <th className="px-5 py-4 text-right font-semibold">
+                    Selisih
+                    <br />
+                    <span className="text-xs font-medium text-slate-300">(Periode)</span>
+                  </th>
+                  <th className="px-5 py-4 text-center font-semibold">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
-                {paginatedData.currentData.length === 0 ? (
+              <tbody>
+                {paginatedRows.length === 0 ? (
                   <tr>
-                    <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
-                      Tidak ada data transaksi
+                    <td colSpan={7} className="px-6 py-16 text-center">
+                      <div className="mx-auto max-w-md">
+                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-2xl text-slate-400">
+                          &#128196;
+                        </div>
+                        <h3 className="mt-4 text-lg font-semibold text-slate-900">
+                          Tidak ada data untuk filter ini
+                        </h3>
+                        <p className="mt-2 text-sm leading-6 text-slate-500">
+                          Coba ubah tanggal, status, atau pilihan anggota agar transaksi pada periode
+                          lain ikut tampil.
+                        </p>
+                      </div>
                     </td>
                   </tr>
                 ) : (
-                  paginatedData.currentData.map((s) => (
-                    <tr key={s._id} className="hover:bg-pink-50">
-                      <td className="px-4 py-3 text-sm text-gray-900">
-                        {format(new Date(s.savingsDate || s.createdAt), "dd MMM yyyy", { locale: id })}
+                  paginatedRows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="border-b border-slate-100 text-sm transition hover:bg-slate-50/70"
+                    >
+                      <td className="px-5 py-4 align-top">
+                        <div className="max-w-[190px]">
+                          <p className="truncate font-semibold text-sky-700" title={row.invoiceNumber}>
+                            {row.invoiceNumber}
+                          </p>
+                          <p className="mt-1 text-xs text-slate-400">{row.productTitle}</p>
+                        </div>
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-900">{s.memberId?.name || "-"}</td>
-                      <td className="px-4 py-3 text-sm">
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          s.type === "Setoran" ? "bg-green-100 text-green-800" : "bg-orange-100 text-orange-800"
-                        }`}>
-                          {s.type}
-                        </span>
+                      <td className="px-5 py-4 text-center align-top text-slate-600">
+                        {formatShortDate(row.transactionDate)}
                       </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">Periode {s.installmentPeriod || "-"}</td>
-                      <td className="px-4 py-3 text-sm font-semibold text-gray-900">{formatCurrency(s.amount)}</td>
-                      <td className="px-4 py-3 text-sm">
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          s.status === "Approved" ? "bg-green-100 text-green-800" :
-                          s.status === "Pending" ? "bg-yellow-100 text-yellow-800" :
-                          s.status === "Partial" ? "bg-orange-100 text-orange-800" :
-                          "bg-red-100 text-red-800"
-                        }`}>
-                          {s.status}
-                        </span>
+                      <td className="px-5 py-4 align-top">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-semibold text-sky-700">
+                            {(row.customerName || "?").slice(0, 1).toUpperCase()}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate font-semibold text-slate-900" title={row.customerName}>
+                              {row.customerName}
+                            </p>
+                            <p className="truncate text-xs text-slate-500" title={row.customerCode}>
+                              {row.customerCode} • Periode {row.installmentPeriod}
+                            </p>
+                            {row.description && row.description !== "-" ? (
+                              <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">
+                                {row.description}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-right align-top font-semibold text-slate-800">
+                        {formatCurrency(row.projectionAmount)}
+                      </td>
+                      <td className="px-5 py-4 text-right align-top font-semibold text-slate-800">
+                        {formatCurrency(row.realizedAmount)}
+                      </td>
+                      <td
+                        className={`px-5 py-4 text-right align-top font-bold ${getDifferenceClass(
+                          row.statusKey,
+                          row.differenceAmount
+                        )}`}
+                      >
+                        {row.differenceAmount >= 0 ? "+" : "-"}
+                        {formatCurrency(Math.abs(row.differenceAmount))}
+                      </td>
+                      <td className="px-5 py-4 text-center align-top">
+                        <StatusBadge statusKey={row.statusKey} />
                       </td>
                     </tr>
                   ))
@@ -780,82 +1703,80 @@ const Reports = () => {
               </tbody>
             </table>
           ) : (
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gradient-to-r from-pink-50 to-rose-50">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">UUID</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">Nama</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">Produk</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">Total Bayar</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">Progress</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">Overdue</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">Partial</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-pink-700 uppercase">Status</th>
+            <table className="min-w-[1120px] w-full border-collapse">
+              <thead className="bg-slate-900 text-white">
+                <tr className="text-left text-sm">
+                  <th className="px-5 py-4 font-semibold">UUID</th>
+                  <th className="px-5 py-4 font-semibold">Anggota</th>
+                  <th className="px-5 py-4 font-semibold">Produk</th>
+                  <th className="px-5 py-4 text-right font-semibold">Total Bayar</th>
+                  <th className="px-5 py-4 text-right font-semibold">Total Wajib</th>
+                  <th className="px-5 py-4 text-center font-semibold">Progress</th>
+                  <th className="px-5 py-4 text-center font-semibold">Overdue</th>
+                  <th className="px-5 py-4 text-center font-semibold">Partial</th>
+                  <th className="px-5 py-4 text-center font-semibold">Status</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200">
-                {paginatedData.currentData.length === 0 ? (
+              <tbody>
+                {paginatedRows.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="px-4 py-8 text-center text-gray-500">
-                      Tidak ada data anggota
+                    <td colSpan={9} className="px-6 py-16 text-center">
+                      <div className="mx-auto max-w-md">
+                        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-2xl text-slate-400">
+                          &#128101;
+                        </div>
+                        <h3 className="mt-4 text-lg font-semibold text-slate-900">
+                          Tidak ada status anggota untuk filter ini
+                        </h3>
+                        <p className="mt-2 text-sm leading-6 text-slate-500">
+                          Coba ubah produk, anggota, atau filter status agar data anggota tampil.
+                        </p>
+                      </div>
                     </td>
                   </tr>
                 ) : (
-                  paginatedData.currentData.map((m) => (
-                    <tr key={m._id} className="hover:bg-pink-50">
-                      <td className="px-4 py-3 text-sm font-mono text-gray-900">{m.uuid}</td>
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">{m.name}</td>
-                      <td className="px-4 py-3 text-sm text-gray-600">{m.product?.title || "-"}</td>
-                      <td className="px-4 py-3 text-sm font-semibold text-gray-900">{formatCurrency(m.paymentStatus.totalPaid)}</td>
-                      <td className="px-4 py-3 text-sm">
-                        <div className="flex items-center gap-2">
-                          <div className="w-20 bg-gray-200 rounded-full h-2">
-                            <div 
-                              className="bg-pink-500 h-2 rounded-full" 
-                              style={{ width: `${Math.min(100, m.paymentStatus.progress)}%` }}
-                            ></div>
-                          </div>
-                          <span className="text-xs text-gray-600">
-                            {m.paymentStatus.paidPeriods}/{m.product?.termDuration || 0}
-                          </span>
+                  paginatedRows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="border-b border-slate-100 text-sm transition hover:bg-slate-50/70"
+                    >
+                      <td className="px-5 py-4 font-semibold text-sky-700">{row.uuid}</td>
+                      <td className="px-5 py-4">
+                        <div>
+                          <p className="font-semibold text-slate-900">{row.name}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            Lunas {row.paidPeriods} periode • Belum lunas {row.unpaidPeriods} periode
+                          </p>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-sm">
-                        {m.paymentStatus.overduePeriods > 0 ? (
-                          <span className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold">
-                            🔴 {m.paymentStatus.overduePeriods} periode
-                          </span>
-                        ) : (
-                          <span className="text-green-600 text-xs">✅ Tidak ada</span>
-                        )}
+                      <td className="px-5 py-4 text-slate-600">{row.productTitle}</td>
+                      <td className="px-5 py-4 text-right font-semibold text-slate-800">
+                        {formatCurrency(row.totalPaid)}
                       </td>
-                      <td className="px-4 py-3 text-sm">
-                        {m.paymentStatus.partialPeriods > 0 ? (
-                          <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-semibold">
-                            🟠 {m.paymentStatus.partialPeriods} periode
-                          </span>
-                        ) : (
-                          <span className="text-green-600 text-xs">✅ Tidak ada</span>
-                        )}
+                      <td className="px-5 py-4 text-right font-semibold text-slate-800">
+                        {formatCurrency(row.totalRequired)}
                       </td>
-                      <td className="px-4 py-3 text-sm">
-                        {m.isCompleted ? (
-                          <span className="px-2 py-1 bg-green-100 text-green-800 rounded-full text-xs font-semibold">
-                            ✅ Lunas
-                          </span>
-                        ) : m.paymentStatus.overduePeriods > 0 ? (
-                          <span className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-semibold">
-                            🔴 Overdue
-                          </span>
-                        ) : m.paymentStatus.partialPeriods > 0 ? (
-                          <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-semibold">
-                            🟠 Partial
-                          </span>
-                        ) : (
-                          <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">
-                            💙 Aktif
-                          </span>
-                        )}
+                      <td className="px-5 py-4 text-center">
+                        <div className="mx-auto w-24">
+                          <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className="h-full rounded-full bg-sky-500"
+                              style={{ width: `${Math.min(100, row.progressPercent)}%` }}
+                            />
+                          </div>
+                          <p className="mt-2 text-xs font-semibold text-slate-600">
+                            {row.progressText}
+                          </p>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-center font-semibold text-rose-600">
+                        {row.overduePeriods}
+                      </td>
+                      <td className="px-5 py-4 text-center font-semibold text-amber-600">
+                        {row.partialPeriods}
+                      </td>
+                      <td className="px-5 py-4 text-center">
+                        <MemberStatusBadge statusKey={row.statusKey} />
                       </td>
                     </tr>
                   ))
@@ -864,15 +1785,14 @@ const Reports = () => {
             </table>
           )}
         </div>
-        
-        <Pagination
+
+        <ReportPagination
           currentPage={currentPage}
-          totalPages={paginatedData.totalPages}
+          totalPages={totalPages}
+          totalItems={activeRows.length}
           onPageChange={setCurrentPage}
-          itemsPerPage={itemsPerPage}
-          totalItems={paginatedData.totalItems}
         />
-      </div>
+      </section>
     </div>
   );
 };
