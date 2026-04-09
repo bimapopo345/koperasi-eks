@@ -748,7 +748,7 @@ const Reports = () => {
     );
   }, [savings, dateFrom, dateTo, filterMember, filterProduct]);
 
-  const transactionBaseRows = useMemo(() => {
+  const transactionAttemptRows = useMemo(() => {
     return filteredSavingsBase.map((saving, index) => {
       const memberKey = normalizeId(saving.memberId);
       const member = memberLookup.get(memberKey) || memberLookup.get(saving.memberId?.uuid) || null;
@@ -782,10 +782,84 @@ const Reports = () => {
     });
   }, [filteredSavingsBase, memberLookup]);
 
+  const transactionGroupRows = useMemo(() => {
+    const groups = new Map();
+
+    transactionAttemptRows.forEach((row) => {
+      const key = `${row.customerCode}|${row.productTitle}|${row.installmentPeriod}`;
+      const existing = groups.get(key) || [];
+      existing.push(row);
+      groups.set(key, existing);
+    });
+
+    return Array.from(groups.values())
+      .map((attempts) => {
+        const sortedAttempts = [...attempts].sort(
+          (first, second) => new Date(second.transactionDate) - new Date(first.transactionDate)
+        );
+        const paidAttempts = sortedAttempts.filter(
+          (attempt) => attempt.statusKey === "paid" || attempt.statusKey === "partial"
+        );
+        const pendingAttempts = sortedAttempts.filter((attempt) => attempt.statusKey === "pending");
+        const rejectedAttempts = sortedAttempts.filter(
+          (attempt) => attempt.statusKey === "rejected"
+        );
+
+        const referenceAttempt =
+          paidAttempts[0] || pendingAttempts[0] || rejectedAttempts[0] || sortedAttempts[0];
+        const projectionAmount = referenceAttempt?.projectionAmount || 0;
+        const realizedAmount = paidAttempts.reduce(
+          (sum, attempt) => sum + (Number(attempt.realizedAmount) || 0),
+          0
+        );
+        const differenceAmount = projectionAmount - realizedAmount;
+
+        let statusKey = "unknown";
+        if (realizedAmount >= projectionAmount && realizedAmount > 0) {
+          statusKey = "paid";
+        } else if (realizedAmount > 0) {
+          statusKey = "partial";
+        } else if (pendingAttempts.length > 0) {
+          statusKey = "pending";
+        } else if (rejectedAttempts.length > 0) {
+          statusKey = "rejected";
+        }
+
+        const noteParts = [];
+        if (rejectedAttempts.length > 0 && paidAttempts.length > 0) {
+          noteParts.push(`${rejectedAttempts.length} rejected`);
+        }
+        if (pendingAttempts.length > 0 && paidAttempts.length > 0) {
+          noteParts.push(`${pendingAttempts.length} pending`);
+        }
+
+        return {
+          ...referenceAttempt,
+          id: `${referenceAttempt.id}-group`,
+          invoiceNumber: referenceAttempt.invoiceNumber,
+          transactionDate: referenceAttempt.transactionDate,
+          statusKey,
+          statusLabel: STATUS_META[statusKey]?.label || STATUS_META.unknown.label,
+          projectionAmount,
+          realizedAmount,
+          differenceAmount,
+          attemptCount: sortedAttempts.length,
+          description:
+            noteParts.length > 0
+              ? `${referenceAttempt.description} • ${noteParts.join(" · ")}`
+              : referenceAttempt.description,
+        };
+      })
+      .sort(
+        (first, second) =>
+          new Date(second.transactionDate) - new Date(first.transactionDate)
+      );
+  }, [transactionAttemptRows]);
+
   const transactionRows = useMemo(() => {
-    if (!SAVINGS_FILTERS.includes(filterStatus)) return transactionBaseRows;
-    return transactionBaseRows.filter((row) => row.statusKey === filterStatus);
-  }, [transactionBaseRows, filterStatus]);
+    if (!SAVINGS_FILTERS.includes(filterStatus)) return transactionGroupRows;
+    return transactionGroupRows.filter((row) => row.statusKey === filterStatus);
+  }, [transactionGroupRows, filterStatus]);
 
   const reportSummary = useMemo(() => {
     const totalProjection = transactionRows.reduce((sum, row) => sum + row.projectionAmount, 0);
@@ -803,6 +877,16 @@ const Reports = () => {
       rejectedCount: transactionRows.filter((row) => row.statusKey === "rejected").length,
     };
   }, [transactionRows]);
+
+  const transactionOverview = useMemo(() => {
+    return {
+      totalRecords: transactionGroupRows.length,
+      paidCount: transactionGroupRows.filter((row) => row.statusKey === "paid").length,
+      partialCount: transactionGroupRows.filter((row) => row.statusKey === "partial").length,
+      pendingCount: transactionGroupRows.filter((row) => row.statusKey === "pending").length,
+      rejectedCount: transactionGroupRows.filter((row) => row.statusKey === "rejected").length,
+    };
+  }, [transactionGroupRows]);
 
   const memberBaseRows = useMemo(() => {
     let rows = members.map((member) => {
@@ -1339,7 +1423,7 @@ const Reports = () => {
           />
           <MetricPill
             label="Pending transaksi"
-            value={compactNumberFormatter.format(reportSummary.pendingCount)}
+            value={compactNumberFormatter.format(transactionOverview.pendingCount)}
           />
           <MetricPill label="Penarikan" value={formatCurrency(withdrawalAmount)} />
         </div>
@@ -1433,7 +1517,7 @@ const Reports = () => {
                 : "border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
             }`}
           >
-            💰 Transaksi Simpanan ({transactionBaseRows.length})
+            💰 Transaksi Simpanan ({transactionGroupRows.length})
           </button>
           <button
             type="button"
@@ -1466,7 +1550,7 @@ const Reports = () => {
                 : "border border-amber-200 bg-white text-amber-700 hover:bg-amber-50"
             }`}
           >
-            🟠 Partial ({dashboardStats.partialSavingsCount})
+            🟠 Partial ({transactionOverview.partialCount})
           </button>
           <button
             type="button"
@@ -1477,7 +1561,7 @@ const Reports = () => {
                 : "border border-sky-200 bg-white text-sky-700 hover:bg-sky-50"
             }`}
           >
-            ⏳ Pending ({dashboardStats.pendingCount})
+            ⏳ Pending ({transactionOverview.pendingCount})
           </button>
           <button
             type="button"
