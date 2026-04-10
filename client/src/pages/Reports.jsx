@@ -7,7 +7,7 @@ import jsPDF from "jspdf";
 import "jspdf-autotable";
 
 const ITEMS_PER_PAGE = 15;
-const SAVINGS_FILTERS = ["paid", "partial", "pending", "rejected"];
+const SAVINGS_FILTERS = ["paid", "partial", "pending", "rejected", "unpaid"];
 const MEMBER_FILTERS = ["completed", "not_completed", "has_overdue", "has_partial", "all_paid"];
 
 const STATUS_META = {
@@ -31,8 +31,13 @@ const STATUS_META = {
     badgeClass: "border border-rose-200 bg-rose-50 text-rose-700",
     dotClass: "bg-rose-500",
   },
+  unpaid: {
+    label: "Belum Bayar",
+    badgeClass: "border border-slate-200 bg-slate-50 text-slate-700",
+    dotClass: "bg-slate-500",
+  },
   unknown: {
-    label: "Draft",
+    label: "Belum Ambil Produk",
     badgeClass: "border border-slate-200 bg-slate-50 text-slate-600",
     dotClass: "bg-slate-400",
   },
@@ -98,6 +103,11 @@ const formatShortDate = (value) => {
   return format(new Date(value), "dd/MM/yyyy", { locale: id });
 };
 
+const formatMonthYear = (value) => {
+  if (!value) return "-";
+  return format(new Date(value), "MMM yyyy", { locale: id });
+};
+
 const escapeHtml = (value) =>
   String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -105,6 +115,28 @@ const escapeHtml = (value) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+
+const matchesSearchKeyword = (keyword, ...values) => {
+  const normalizedKeyword = String(keyword || "").trim().toLowerCase();
+  if (!normalizedKeyword) return true;
+
+  return values.some((value) =>
+    String(value ?? "")
+      .toLowerCase()
+      .includes(normalizedKeyword)
+  );
+};
+
+const getResolvedProduct = (member, productLookup) => {
+  if (member?.product && typeof member.product === "object" && member.product._id) {
+    return member.product;
+  }
+
+  const productId = normalizeId(member?.productId);
+  if (!productId) return null;
+
+  return productLookup.get(productId) || null;
+};
 
 const getRequiredAmountForPeriod = (member, fallbackProduct, installmentPeriod) => {
   const baseProduct = member?.product || fallbackProduct || {};
@@ -128,8 +160,19 @@ const getRequiredAmountForPeriod = (member, fallbackProduct, installmentPeriod) 
   return requiredAmount;
 };
 
-const getMemberPaymentStatus = (member, memberSavings) => {
-  const product = member?.product;
+const getMemberPeriodDate = (member, installmentPeriod) => {
+  const baseDate = member?.savingsStartDate
+    ? new Date(member.savingsStartDate)
+    : new Date(member?.createdAt || Date.now());
+
+  const dueDate = new Date(baseDate);
+  dueDate.setHours(0, 0, 0, 0);
+  dueDate.setMonth(dueDate.getMonth() + (Number(installmentPeriod) || 1) - 1);
+  return dueDate;
+};
+
+const getMemberPaymentStatus = (member, memberSavings, fallbackProduct = null) => {
+  const product = member?.product || fallbackProduct;
   if (!product) {
     return {
       totalPaid: 0,
@@ -200,26 +243,12 @@ const getMemberPaymentStatus = (member, memberSavings) => {
   };
 };
 
-const getTransactionStatusKey = (saving, projectionAmount) => {
-  if (saving.status === "Rejected") return "rejected";
-  if (saving.status === "Pending") return "pending";
-
-  const amount = Number(saving.amount) || 0;
-  const isPartial =
-    saving.status === "Partial" ||
-    saving.paymentType === "Partial" ||
-    (projectionAmount > 0 && amount < projectionAmount);
-
-  if (isPartial) return "partial";
-  if (saving.status === "Approved") return "paid";
-  return "unknown";
-};
-
 const getDifferenceClass = (statusKey, differenceAmount) => {
   if (differenceAmount === 0) return "text-emerald-600";
   if (statusKey === "partial") return "text-amber-600";
   if (statusKey === "pending") return "text-sky-600";
   if (statusKey === "rejected") return "text-rose-600";
+  if (statusKey === "unpaid") return "text-slate-600";
   return differenceAmount > 0 ? "text-rose-600" : "text-emerald-600";
 };
 
@@ -244,7 +273,7 @@ const buildSavingsExcelDocument = (rows, summary, rangeLabel) => {
       (row) => `
         <tr>
           <td>${escapeHtml(row.invoiceNumber)}</td>
-          <td>${escapeHtml(formatLongDate(row.transactionDate))}</td>
+          <td>${escapeHtml(row.activityDateLabelLong)}</td>
           <td>${escapeHtml(row.customerName)}</td>
           <td>${escapeHtml(row.customerCode)}</td>
           <td>${escapeHtml(row.productTitle)}</td>
@@ -496,7 +525,11 @@ const ReportPagination = ({ currentPage, totalPages, totalItems, onPageChange })
   const end = Math.min(currentPage * ITEMS_PER_PAGE, totalItems);
   const pages = [];
 
-  for (let page = Math.max(1, currentPage - 2); page <= Math.min(totalPages, currentPage + 2); page += 1) {
+  for (
+    let page = Math.max(1, currentPage - 2);
+    page <= Math.min(totalPages, currentPage + 2);
+    page += 1
+  ) {
     pages.push(page);
   }
 
@@ -562,6 +595,7 @@ const Reports = () => {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterMember, setFilterMember] = useState("all");
   const [filterProduct, setFilterProduct] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("savings");
   const [currentPage, setCurrentPage] = useState(1);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -628,18 +662,36 @@ const Reports = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [dateFrom, dateTo, filterStatus, filterMember, filterProduct, activeTab]);
+  }, [dateFrom, dateTo, filterStatus, filterMember, filterProduct, searchTerm, activeTab]);
+
+  const normalizedSearchTerm = useMemo(() => searchTerm.trim().toLowerCase(), [searchTerm]);
+
+  const productLookup = useMemo(() => {
+    const lookup = new Map();
+
+    products.forEach((product) => {
+      if (product?._id) lookup.set(String(product._id), product);
+    });
+
+    return lookup;
+  }, [products]);
 
   const memberLookup = useMemo(() => {
     const lookup = new Map();
 
     members.forEach((member) => {
-      if (member?._id) lookup.set(String(member._id), member);
-      if (member?.uuid) lookup.set(member.uuid, member);
+      const resolvedProduct = getResolvedProduct(member, productLookup);
+      const normalizedMember = {
+        ...member,
+        product: resolvedProduct,
+      };
+
+      if (member?._id) lookup.set(String(member._id), normalizedMember);
+      if (member?.uuid) lookup.set(member.uuid, normalizedMember);
     });
 
     return lookup;
-  }, [members]);
+  }, [members, productLookup]);
 
   const savingsByMember = useMemo(() => {
     const grouped = new Map();
@@ -662,10 +714,14 @@ const Reports = () => {
     let membersWithPartial = 0;
     let membersAllPaid = 0;
 
-    members.forEach((member) => {
+    members.forEach((rawMember) => {
+      const member = {
+        ...rawMember,
+        product: getResolvedProduct(rawMember, productLookup),
+      };
       const memberSavings =
         savingsByMember.get(String(member._id)) || savingsByMember.get(member.uuid) || [];
-      const paymentStatus = getMemberPaymentStatus(member, memberSavings);
+      const paymentStatus = getMemberPaymentStatus(member, memberSavings, member.product);
 
       if (paymentStatus.overduePeriods > 0) membersWithOverdue += 1;
       if (paymentStatus.partialPeriods > 0) membersWithPartial += 1;
@@ -685,7 +741,7 @@ const Reports = () => {
       membersWithPartial,
       membersAllPaid,
     };
-  }, [members, savingsByMember]);
+  }, [members, savingsByMember, productLookup]);
 
   const dashboardStats = useMemo(() => {
     const totalSavingsAmount = savings
@@ -718,104 +774,96 @@ const Reports = () => {
     };
   }, [members, savings, memberMetrics]);
 
-  const filteredSavingsBase = useMemo(() => {
-    let result = savings.filter((saving) => saving.type === "Setoran");
+  const transactionRowsBase = useMemo(() => {
+    const rows = [];
+    const start = new Date(dateFrom);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(dateTo);
+    end.setHours(23, 59, 59, 999);
 
-    if (dateFrom && dateTo) {
-      const start = new Date(dateFrom);
-      start.setHours(0, 0, 0, 0);
-      const end = new Date(dateTo);
-      end.setHours(23, 59, 59, 999);
-
-      result = result.filter((saving) => {
-        const activityDate = new Date(saving.savingsDate || saving.createdAt);
-        return activityDate >= start && activityDate <= end;
-      });
-    }
-
-    if (filterMember !== "all") {
-      result = result.filter((saving) => normalizeId(saving.memberId) === filterMember);
-    }
-
-    if (filterProduct !== "all") {
-      result = result.filter((saving) => normalizeId(saving.productId) === filterProduct);
-    }
-
-    return result.sort(
-      (first, second) =>
-        new Date(second.savingsDate || second.createdAt) -
-        new Date(first.savingsDate || first.createdAt)
-    );
-  }, [savings, dateFrom, dateTo, filterMember, filterProduct]);
-
-  const transactionAttemptRows = useMemo(() => {
-    return filteredSavingsBase.map((saving, index) => {
-      const memberKey = normalizeId(saving.memberId);
-      const member = memberLookup.get(memberKey) || memberLookup.get(saving.memberId?.uuid) || null;
-      const product = saving.productId || member?.product || null;
-      const projectionAmount = getRequiredAmountForPeriod(member, product, saving.installmentPeriod);
-      const realizedAmount = Number(saving.amount) || 0;
-      const differenceAmount = projectionAmount - realizedAmount;
-      const statusKey = getTransactionStatusKey(saving, projectionAmount);
-      const invoiceNumber =
-        saving.invoiceNumber ||
-        saving.uuid ||
-        `SAV-${saving.memberId?.uuid || member?.uuid || "NA"}-P${
-          saving.installmentPeriod || "-"
-        }-${index + 1}`;
-
-      return {
-        id: saving._id || `${invoiceNumber}-${index}`,
-        invoiceNumber,
-        transactionDate: saving.savingsDate || saving.createdAt,
-        customerName: saving.memberId?.name || member?.name || "-",
-        customerCode: saving.memberId?.uuid || member?.uuid || "-",
-        productTitle: product?.title || member?.product?.title || "-",
-        installmentPeriod: saving.installmentPeriod || "-",
-        projectionAmount,
-        realizedAmount,
-        differenceAmount,
-        statusKey,
-        statusLabel: STATUS_META[statusKey]?.label || STATUS_META.unknown.label,
-        description: saving.description || "-",
+    members.forEach((rawMember) => {
+      const member = {
+        ...rawMember,
+        product: getResolvedProduct(rawMember, productLookup),
       };
-    });
-  }, [filteredSavingsBase, memberLookup]);
 
-  const transactionGroupRows = useMemo(() => {
-    const groups = new Map();
+      if (!matchesSearchKeyword(normalizedSearchTerm, member.name, member.uuid)) return;
+      if (filterMember !== "all" && String(member._id) !== filterMember) return;
+      if (
+        filterProduct !== "all" &&
+        normalizeId(member.product?._id || member.productId) !== filterProduct
+      ) {
+        return;
+      }
 
-    transactionAttemptRows.forEach((row) => {
-      const key = `${row.customerCode}|${row.productTitle}|${row.installmentPeriod}`;
-      const existing = groups.get(key) || [];
-      existing.push(row);
-      groups.set(key, existing);
-    });
-
-    return Array.from(groups.values())
-      .map((attempts) => {
-        const sortedAttempts = [...attempts].sort(
-          (first, second) => new Date(second.transactionDate) - new Date(first.transactionDate)
-        );
-        const paidAttempts = sortedAttempts.filter(
-          (attempt) => attempt.statusKey === "paid" || attempt.statusKey === "partial"
-        );
-        const pendingAttempts = sortedAttempts.filter((attempt) => attempt.statusKey === "pending");
-        const rejectedAttempts = sortedAttempts.filter(
-          (attempt) => attempt.statusKey === "rejected"
+      const memberSavings =
+        (savingsByMember.get(String(member._id)) || savingsByMember.get(member.uuid) || []).filter(
+          (saving) => saving.type === "Setoran"
         );
 
-        const referenceAttempt =
-          paidAttempts[0] || pendingAttempts[0] || rejectedAttempts[0] || sortedAttempts[0];
-        const projectionAmount = referenceAttempt?.projectionAmount || 0;
-        const realizedAmount = paidAttempts.reduce(
-          (sum, attempt) => sum + (Number(attempt.realizedAmount) || 0),
+      if (!member.product) {
+        rows.push({
+          id: `NO_PRODUCT_${member._id}`,
+          memberId: String(member._id),
+          invoiceNumber: `SAV-${member.uuid || "NA"}-NO-PRODUCT`,
+          transactionDate: null,
+          sortDate: new Date(start),
+          activityDateLabel: "-",
+          activityDateLabelLong: "-",
+          customerName: member.name || "-",
+          customerCode: member.uuid || "-",
+          productTitle: "Belum Ambil Produk",
+          installmentPeriod: "-",
+          projectionAmount: 0,
+          realizedAmount: 0,
+          differenceAmount: 0,
+          statusKey: "unknown",
+          statusLabel: STATUS_META.unknown.label,
+          description: "Member belum mengambil produk simpanan.",
+        });
+        return;
+      }
+
+      const totalPeriods = Number(member.product.termDuration) || 0;
+      let memberHasRowInRange = false;
+
+      for (let period = 1; period <= totalPeriods; period += 1) {
+        const periodDate = getMemberPeriodDate(member, period);
+
+        if (periodDate < start || periodDate > end) continue;
+
+        memberHasRowInRange = true;
+
+        const attempts = memberSavings
+          .filter((saving) => Number(saving.installmentPeriod) === period)
+          .sort(
+            (first, second) =>
+              new Date(second.savingsDate || second.createdAt) -
+              new Date(first.savingsDate || first.createdAt)
+          );
+
+        const approvedAttempts = attempts.filter((attempt) => attempt.status === "Approved");
+        const partialAttempts = attempts.filter((attempt) => attempt.status === "Partial");
+        const pendingAttempts = attempts.filter((attempt) => attempt.status === "Pending");
+        const rejectedAttempts = attempts.filter((attempt) => attempt.status === "Rejected");
+
+        const latestAttempt =
+          approvedAttempts[0] ||
+          partialAttempts[0] ||
+          pendingAttempts[0] ||
+          rejectedAttempts[0] ||
+          attempts[0] ||
+          null;
+
+        const projectionAmount = getRequiredAmountForPeriod(member, member.product, period);
+        const realizedAmount = [...approvedAttempts, ...partialAttempts].reduce(
+          (sum, attempt) => sum + (Number(attempt.amount) || 0),
           0
         );
         const differenceAmount = projectionAmount - realizedAmount;
 
-        let statusKey = "unknown";
-        if (realizedAmount >= projectionAmount && realizedAmount > 0) {
+        let statusKey = "unpaid";
+        if (realizedAmount >= projectionAmount && projectionAmount > 0) {
           statusKey = "paid";
         } else if (realizedAmount > 0) {
           statusKey = "partial";
@@ -825,41 +873,90 @@ const Reports = () => {
           statusKey = "rejected";
         }
 
-        const noteParts = [];
-        if (rejectedAttempts.length > 0 && paidAttempts.length > 0) {
-          noteParts.push(`${rejectedAttempts.length} rejected`);
-        }
-        if (pendingAttempts.length > 0 && paidAttempts.length > 0) {
-          noteParts.push(`${pendingAttempts.length} pending`);
+        const invoiceNumber =
+          latestAttempt?.invoiceNumber ||
+          latestAttempt?.uuid ||
+          `SAV-${member.uuid || "NA"}-P${period}`;
+
+        const transactionDate = latestAttempt?.savingsDate || latestAttempt?.createdAt || null;
+
+        let description = latestAttempt?.description || "-";
+        if (!latestAttempt && statusKey === "unpaid") {
+          description = "Belum ada transaksi pada periode ini";
+        } else if (!latestAttempt && statusKey === "pending") {
+          description = "Belum ada approval";
+        } else if (statusKey === "rejected" && (!description || description === "-")) {
+          description = "Transaksi ditolak";
         }
 
-        return {
-          ...referenceAttempt,
-          id: `${referenceAttempt.id}-group`,
-          invoiceNumber: referenceAttempt.invoiceNumber,
-          transactionDate: referenceAttempt.transactionDate,
-          statusKey,
-          statusLabel: STATUS_META[statusKey]?.label || STATUS_META.unknown.label,
+        rows.push({
+          id: latestAttempt?._id ? `${latestAttempt._id}-period` : `${member._id}-P${period}`,
+          memberId: String(member._id),
+          invoiceNumber,
+          transactionDate,
+          sortDate: transactionDate ? new Date(transactionDate) : new Date(periodDate),
+          activityDateLabel: transactionDate
+            ? formatShortDate(transactionDate)
+            : formatMonthYear(periodDate),
+          activityDateLabelLong: transactionDate
+            ? formatLongDate(transactionDate)
+            : formatMonthYear(periodDate),
+          customerName: member.name || "-",
+          customerCode: member.uuid || "-",
+          productTitle: member.product?.title || "-",
+          installmentPeriod: period,
           projectionAmount,
           realizedAmount,
           differenceAmount,
-          attemptCount: sortedAttempts.length,
-          description:
-            noteParts.length > 0
-              ? `${referenceAttempt.description} • ${noteParts.join(" · ")}`
-              : referenceAttempt.description,
-        };
-      })
-      .sort(
-        (first, second) =>
-          new Date(second.transactionDate) - new Date(first.transactionDate)
-      );
-  }, [transactionAttemptRows]);
+          statusKey,
+          statusLabel: STATUS_META[statusKey]?.label || STATUS_META.unknown.label,
+          description,
+        });
+      }
+
+      // penting: kalau member lolos filter tapi tidak punya row pada range ini,
+      // tetap paksa tampil 1 row supaya jumlah transaksi simpanan = status anggota
+      if (!memberHasRowInRange) {
+        const fallbackProjection = Number(member.product?.depositAmount) || 0;
+
+        rows.push({
+          id: `${member._id}-fallback-${dateFrom}-${dateTo}`,
+          memberId: String(member._id),
+          invoiceNumber: `SAV-${member.uuid || "NA"}-NO-ACTIVITY`,
+          transactionDate: null,
+          sortDate: new Date(start),
+          activityDateLabel: formatMonthYear(start),
+          activityDateLabelLong: formatMonthYear(start),
+          customerName: member.name || "-",
+          customerCode: member.uuid || "-",
+          productTitle: member.product?.title || "-",
+          installmentPeriod: "-",
+          projectionAmount: fallbackProjection,
+          realizedAmount: 0,
+          differenceAmount: fallbackProjection,
+          statusKey: "unpaid",
+          statusLabel: STATUS_META.unpaid.label,
+          description: "Belum ada periode/transaksi yang cocok pada rentang tanggal ini",
+        });
+      }
+    });
+
+    return rows.sort((first, second) => second.sortDate - first.sortDate);
+  }, [
+    members,
+    productLookup,
+    savingsByMember,
+    dateFrom,
+    dateTo,
+    filterMember,
+    filterProduct,
+    normalizedSearchTerm,
+  ]);
 
   const transactionRows = useMemo(() => {
-    if (!SAVINGS_FILTERS.includes(filterStatus)) return transactionGroupRows;
-    return transactionGroupRows.filter((row) => row.statusKey === filterStatus);
-  }, [transactionGroupRows, filterStatus]);
+    if (!SAVINGS_FILTERS.includes(filterStatus)) return transactionRowsBase;
+    return transactionRowsBase.filter((row) => row.statusKey === filterStatus);
+  }, [transactionRowsBase, filterStatus]);
 
   const reportSummary = useMemo(() => {
     const totalProjection = transactionRows.reduce((sum, row) => sum + row.projectionAmount, 0);
@@ -875,24 +972,31 @@ const Reports = () => {
       partialCount: transactionRows.filter((row) => row.statusKey === "partial").length,
       pendingCount: transactionRows.filter((row) => row.statusKey === "pending").length,
       rejectedCount: transactionRows.filter((row) => row.statusKey === "rejected").length,
+      unpaidCount: transactionRows.filter((row) => row.statusKey === "unpaid").length,
     };
   }, [transactionRows]);
 
   const transactionOverview = useMemo(() => {
     return {
-      totalRecords: transactionGroupRows.length,
-      paidCount: transactionGroupRows.filter((row) => row.statusKey === "paid").length,
-      partialCount: transactionGroupRows.filter((row) => row.statusKey === "partial").length,
-      pendingCount: transactionGroupRows.filter((row) => row.statusKey === "pending").length,
-      rejectedCount: transactionGroupRows.filter((row) => row.statusKey === "rejected").length,
+      totalRecords: transactionRowsBase.length,
+      paidCount: transactionRowsBase.filter((row) => row.statusKey === "paid").length,
+      partialCount: transactionRowsBase.filter((row) => row.statusKey === "partial").length,
+      pendingCount: transactionRowsBase.filter((row) => row.statusKey === "pending").length,
+      rejectedCount: transactionRowsBase.filter((row) => row.statusKey === "rejected").length,
+      unpaidCount: transactionRowsBase.filter((row) => row.statusKey === "unpaid").length,
     };
-  }, [transactionGroupRows]);
+  }, [transactionRowsBase]);
 
   const memberBaseRows = useMemo(() => {
-    let rows = members.map((member) => {
+    let rows = members.map((rawMember) => {
+      const member = {
+        ...rawMember,
+        product: getResolvedProduct(rawMember, productLookup),
+      };
+
       const memberSavings =
         savingsByMember.get(String(member._id)) || savingsByMember.get(member.uuid) || [];
-      const paymentStatus = getMemberPaymentStatus(member, memberSavings);
+      const paymentStatus = getMemberPaymentStatus(member, memberSavings, member.product);
       const product = member.product || {};
       const progressPercent = Number(paymentStatus.progress || 0);
 
@@ -918,7 +1022,7 @@ const Reports = () => {
         uuid: member.uuid || "-",
         name: member.name || "-",
         productId: normalizeId(member.product?._id || member.productId),
-        productTitle: product.title || "-",
+        productTitle: product.title || "Belum Ambil Produk",
         totalPaid: paymentStatus.totalPaid,
         totalRequired: paymentStatus.totalRequired,
         paidPeriods: paymentStatus.paidPeriods,
@@ -932,6 +1036,10 @@ const Reports = () => {
       };
     });
 
+    if (normalizedSearchTerm) {
+      rows = rows.filter((row) => matchesSearchKeyword(normalizedSearchTerm, row.name, row.uuid));
+    }
+
     if (filterMember !== "all") {
       rows = rows.filter((row) => row.memberId === filterMember);
     }
@@ -941,7 +1049,7 @@ const Reports = () => {
     }
 
     return rows.sort((first, second) => first.name.localeCompare(second.name, "id-ID"));
-  }, [members, savingsByMember, filterMember, filterProduct]);
+  }, [members, savingsByMember, productLookup, filterMember, filterProduct, normalizedSearchTerm]);
 
   const memberStatusRows = useMemo(() => {
     if (filterStatus === "completed") {
@@ -961,6 +1069,10 @@ const Reports = () => {
     }
     return memberBaseRows;
   }, [memberBaseRows, filterStatus]);
+
+  const savingsTabMemberCount = useMemo(() => {
+    return transactionRowsBase.length;
+  }, [transactionRowsBase]);
 
   const withdrawalAmount = useMemo(() => {
     let result = savings.filter(
@@ -987,8 +1099,24 @@ const Reports = () => {
       result = result.filter((saving) => normalizeId(saving.productId) === filterProduct);
     }
 
+    if (normalizedSearchTerm) {
+      result = result.filter((saving) => {
+        const member =
+          memberLookup.get(normalizeId(saving.memberId)) || memberLookup.get(saving.memberId?.uuid);
+        return matchesSearchKeyword(normalizedSearchTerm, member?.name, member?.uuid);
+      });
+    }
+
     return result.reduce((sum, saving) => sum + (Number(saving.amount) || 0), 0);
-  }, [savings, dateFrom, dateTo, filterMember, filterProduct]);
+  }, [
+    savings,
+    dateFrom,
+    dateTo,
+    filterMember,
+    filterProduct,
+    normalizedSearchTerm,
+    memberLookup,
+  ]);
 
   const activeRows = activeTab === "savings" ? transactionRows : memberStatusRows;
   const totalPages = Math.max(1, Math.ceil(activeRows.length / ITEMS_PER_PAGE));
@@ -1097,7 +1225,7 @@ const Reports = () => {
         ]],
         body: transactionRows.map((row) => [
           row.invoiceNumber,
-          formatShortDate(row.transactionDate),
+          row.activityDateLabel,
           `${row.customerName} (${row.customerCode})`,
           row.productTitle,
           String(row.installmentPeriod),
@@ -1174,6 +1302,7 @@ const Reports = () => {
     setFilterStatus("all");
     setFilterMember("all");
     setFilterProduct("all");
+    setSearchTerm("");
     setActiveTab("savings");
     setCurrentPage(1);
   };
@@ -1349,6 +1478,7 @@ const Reports = () => {
                   <option value="partial">Partial</option>
                   <option value="pending">Pending</option>
                   <option value="rejected">Rejected</option>
+                  <option value="unpaid">Belum Bayar</option>
                 </>
               ) : (
                 <>
@@ -1378,7 +1508,7 @@ const Reports = () => {
           </label>
         </div>
 
-        <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_280px]">
+        <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1fr_280px]">
           <label className="block">
             <span className="mb-2 block text-sm font-medium text-slate-600">Produk Simpanan</span>
             <select
@@ -1394,6 +1524,18 @@ const Reports = () => {
               ))}
             </select>
           </label>
+
+          <label className="block">
+            <span className="mb-2 block text-sm font-medium text-slate-600">Cari Nama / UUID</span>
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Cari nama anggota atau UUID..."
+              className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-sky-400 focus:ring-4 focus:ring-sky-100"
+            />
+          </label>
+
           <div className="rounded-[22px] border border-sky-100 bg-sky-50/80 px-4 py-4">
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-sky-700">
               Snapshot cepat
@@ -1473,7 +1615,9 @@ const Reports = () => {
             className="rounded-2xl border border-amber-100 bg-white px-4 py-4 text-left transition hover:border-amber-200 hover:bg-amber-50"
           >
             <p className="text-xs text-slate-500">Pending</p>
-            <p className="mt-2 text-2xl font-bold text-amber-600">{dashboardStats.pendingCount}</p>
+            <p className="mt-2 text-2xl font-bold text-amber-600">
+              {transactionOverview.pendingCount}
+            </p>
           </button>
           <button
             type="button"
@@ -1517,7 +1661,7 @@ const Reports = () => {
                 : "border border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50"
             }`}
           >
-            💰 Transaksi Simpanan ({transactionGroupRows.length})
+            💰 Transaksi Simpanan ({savingsTabMemberCount})
           </button>
           <button
             type="button"
@@ -1529,17 +1673,6 @@ const Reports = () => {
             }`}
           >
             👥 Status Anggota ({memberBaseRows.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => switchTab("members", "has_overdue")}
-            className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
-              activeTab === "members" && filterStatus === "has_overdue"
-                ? "bg-rose-500 text-white"
-                : "border border-rose-200 bg-white text-rose-600 hover:bg-rose-50"
-            }`}
-          >
-            🔴 Overdue ({dashboardStats.membersWithOverdue})
           </button>
           <button
             type="button"
@@ -1565,14 +1698,25 @@ const Reports = () => {
           </button>
           <button
             type="button"
-            onClick={() => switchTab("members", "has_partial")}
+            onClick={() => switchTab("savings", "rejected")}
             className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
-              activeTab === "members" && filterStatus === "has_partial"
-                ? "bg-orange-500 text-white"
-                : "border border-orange-200 bg-white text-orange-700 hover:bg-orange-50"
+              activeTab === "savings" && filterStatus === "rejected"
+                ? "bg-rose-500 text-white"
+                : "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50"
             }`}
           >
-            🟠 Partial ({dashboardStats.membersWithPartial})
+            ❌ Rejected ({transactionOverview.rejectedCount})
+          </button>
+          <button
+            type="button"
+            onClick={() => switchTab("savings", "unpaid")}
+            className={`rounded-full px-4 py-2.5 text-sm font-semibold transition ${
+              activeTab === "savings" && filterStatus === "unpaid"
+                ? "bg-slate-700 text-white"
+                : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+          >
+            📌 Belum Bayar ({transactionOverview.unpaidCount})
           </button>
         </div>
       </section>
@@ -1624,13 +1768,13 @@ const Reports = () => {
           <div className="space-y-2">
             <h3 className="text-base font-semibold text-sky-900">Logic Laporan</h3>
             <p className="text-sm leading-6 text-slate-600">
-              Proyeksi dibaca dari nominal wajib per periode pada transaksi yang tampil. Realisasi
-              mengambil nominal setoran yang benar-benar masuk. Selisih dihitung sebagai proyeksi
-              dikurangi realisasi, sehingga nilai positif berarti target periode itu masih kurang.
+              Laporan tetap <strong>per periode / per bulan</strong>. Jadi sekarang yang tampil bukan
+              cuma transaksi yang sudah ada, tapi juga <strong>periode yang belum ada pembayaran</strong>.
             </p>
             <p className="text-sm leading-6 text-slate-600">
-              Tabel transaksi tetap dibuat mirip pola `samitbank`, tapi shortcut ikon lama,
-              ringkasan cepat, dan tab `Status Anggota` saya pertahankan supaya flow admin tetap enak.
+              Untuk status <strong>Belum Bayar</strong>, tanggal aktivitas ditampilkan sebagai
+              <strong> bulan dan tahun periode</strong>. Sedangkan kalau ada transaksi, tetap pakai
+              tanggal aktivitas transaksi seperti biasa.
             </p>
           </div>
         </div>
@@ -1720,8 +1864,8 @@ const Reports = () => {
                           Tidak ada data untuk filter ini
                         </h3>
                         <p className="mt-2 text-sm leading-6 text-slate-500">
-                          Coba ubah tanggal, status, atau pilihan anggota agar transaksi pada periode
-                          lain ikut tampil.
+                          Coba ubah tanggal, status, pilihan anggota, atau search supaya data lain ikut
+                          tampil.
                         </p>
                       </div>
                     </td>
@@ -1741,7 +1885,7 @@ const Reports = () => {
                         </div>
                       </td>
                       <td className="px-5 py-4 text-center align-top text-slate-600">
-                        {formatShortDate(row.transactionDate)}
+                        {row.activityDateLabel}
                       </td>
                       <td className="px-5 py-4 align-top">
                         <div className="flex items-start gap-3">
@@ -1813,7 +1957,7 @@ const Reports = () => {
                           Tidak ada status anggota untuk filter ini
                         </h3>
                         <p className="mt-2 text-sm leading-6 text-slate-500">
-                          Coba ubah produk, anggota, atau filter status agar data anggota tampil.
+                          Coba ubah produk, anggota, status, atau search agar data anggota tampil.
                         </p>
                       </div>
                     </td>
