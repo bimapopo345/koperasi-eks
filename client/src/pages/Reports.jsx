@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { endOfMonth, format, startOfMonth } from "date-fns";
 import { id } from "date-fns/locale";
+import { Link } from "react-router-dom";
 import api from "../api/index.jsx";
 import { toast } from "react-toastify";
 import jsPDF from "jspdf";
@@ -92,6 +93,10 @@ const normalizeId = (value) => {
 };
 
 const formatCurrency = (amount) => currencyFormatter.format(Number(amount) || 0);
+const formatExcelNumber = (amount) => {
+  const numericAmount = Number(amount);
+  return Number.isFinite(numericAmount) ? String(numericAmount) : "0";
+};
 
 const formatLongDate = (value) => {
   if (!value) return "-";
@@ -278,11 +283,9 @@ const buildSavingsExcelDocument = (rows, summary, rangeLabel) => {
           <td>${escapeHtml(row.customerCode)}</td>
           <td>${escapeHtml(row.productTitle)}</td>
           <td>${escapeHtml(row.installmentPeriod)}</td>
-          <td>${escapeHtml(formatCurrency(row.projectionAmount))}</td>
-          <td>${escapeHtml(formatCurrency(row.realizedAmount))}</td>
-          <td>${escapeHtml(
-            `${row.differenceAmount >= 0 ? "+" : "-"}${formatCurrency(Math.abs(row.differenceAmount))}`
-          )}</td>
+          <td style="mso-number-format:'0';">${formatExcelNumber(row.projectionAmount)}</td>
+          <td style="mso-number-format:'0';">${formatExcelNumber(row.realizedAmount)}</td>
+          <td style="mso-number-format:'0';">${formatExcelNumber(row.differenceAmount)}</td>
           <td>${escapeHtml(row.statusLabel)}</td>
           <td>${escapeHtml(row.description)}</td>
         </tr>
@@ -310,11 +313,9 @@ const buildSavingsExcelDocument = (rows, summary, rangeLabel) => {
         <h1>Laporan Koperasi</h1>
         <p>Periode ${escapeHtml(rangeLabel)}</p>
         <table class="summary">
-          <tr><td>Total Proyeksi</td><td>${escapeHtml(formatCurrency(summary.totalProjection))}</td></tr>
-          <tr><td>Total Realisasi</td><td>${escapeHtml(formatCurrency(summary.totalRealization))}</td></tr>
-          <tr><td>Total Selisih</td><td>${escapeHtml(
-            `${summary.totalDifference >= 0 ? "+" : "-"}${formatCurrency(Math.abs(summary.totalDifference))}`
-          )}</td></tr>
+          <tr><td>Total Proyeksi</td><td style="mso-number-format:'0';">${formatExcelNumber(summary.totalProjection)}</td></tr>
+          <tr><td>Total Realisasi</td><td style="mso-number-format:'0';">${formatExcelNumber(summary.totalRealization)}</td></tr>
+          <tr><td>Total Selisih</td><td style="mso-number-format:'0';">${formatExcelNumber(summary.totalDifference)}</td></tr>
           <tr><td>Total Data</td><td>${escapeHtml(summary.totalRecords)}</td></tr>
         </table>
         <table class="report">
@@ -350,8 +351,8 @@ const buildMembersExcelDocument = (rows, summary, rangeLabel) => {
           <td>${escapeHtml(row.uuid)}</td>
           <td>${escapeHtml(row.name)}</td>
           <td>${escapeHtml(row.productTitle)}</td>
-          <td>${escapeHtml(formatCurrency(row.totalPaid))}</td>
-          <td>${escapeHtml(formatCurrency(row.totalRequired))}</td>
+          <td style="mso-number-format:'0';">${formatExcelNumber(row.totalPaid)}</td>
+          <td style="mso-number-format:'0';">${formatExcelNumber(row.totalRequired)}</td>
           <td>${escapeHtml(row.progressText)}</td>
           <td>${escapeHtml(row.overduePeriods)}</td>
           <td>${escapeHtml(row.partialPeriods)}</td>
@@ -1827,7 +1828,6 @@ const Reports = () => {
             <table className="min-w-[1180px] w-full border-collapse">
               <thead className="bg-slate-900 text-white">
                 <tr className="text-left text-sm">
-                  <th className="px-5 py-4 font-semibold">Invoice</th>
                   <th className="px-5 py-4 text-center font-semibold">
                     Tanggal
                     <br />
@@ -1855,7 +1855,7 @@ const Reports = () => {
               <tbody>
                 {paginatedRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-16 text-center">
+                    <td colSpan={6} className="px-6 py-16 text-center">
                       <div className="mx-auto max-w-md">
                         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-slate-100 text-2xl text-slate-400">
                           &#128196;
@@ -1876,14 +1876,6 @@ const Reports = () => {
                       key={row.id}
                       className="border-b border-slate-100 text-sm transition hover:bg-slate-50/70"
                     >
-                      <td className="px-5 py-4 align-top">
-                        <div className="max-w-[190px]">
-                          <p className="truncate font-semibold text-sky-700" title={row.invoiceNumber}>
-                            {row.invoiceNumber}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-400">{row.productTitle}</p>
-                        </div>
-                      </td>
                       <td className="px-5 py-4 text-center align-top text-slate-600">
                         {row.activityDateLabel}
                       </td>
@@ -1893,11 +1885,15 @@ const Reports = () => {
                             {(row.customerName || "?").slice(0, 1).toUpperCase()}
                           </div>
                           <div className="min-w-0">
-                            <p className="truncate font-semibold text-slate-900" title={row.customerName}>
+                            <Link
+                              to={`/master/anggota/${row.customerCode}`}
+                              className="block truncate font-semibold text-sky-700 hover:text-sky-800 hover:underline"
+                              title={row.customerName}
+                            >
                               {row.customerName}
-                            </p>
+                            </Link>
                             <p className="truncate text-xs text-slate-500" title={row.customerCode}>
-                              {row.customerCode} • Periode {row.installmentPeriod}
+                              {row.customerCode} • {row.productTitle} • Periode {row.installmentPeriod}
                             </p>
                             {row.description && row.description !== "-" ? (
                               <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-400">
