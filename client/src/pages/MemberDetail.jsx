@@ -734,13 +734,15 @@ const MemberDetail = () => {
 
   const registrationAttachments = member
     ? [
-        { key: "ktp", label: "Foto KTP", value: member.ktpImage },
-        { key: "selfie", label: "Selfie Dengan KTP", value: member.selfieImage },
-        { key: "livenessLeft", label: "Verifikasi Wajah Kiri", value: member.livenessLeftImage },
-        { key: "livenessRight", label: "Verifikasi Wajah Kanan", value: member.livenessRightImage },
-        { key: "signature", label: "Tanda Tangan Digital", value: member.signatureImage },
+        { key: "ktp", label: "Foto KTP", hint: "Dokumen identitas utama", value: member.ktpImage, fit: "cover" },
+        { key: "selfie", label: "Selfie Dengan KTP", hint: "Foto wajah sambil memegang KTP", value: member.selfieImage, fit: "cover" },
+        { key: "livenessLeft", label: "Verifikasi Wajah Kiri", hint: "Frame saat student menoleh ke kiri", value: member.livenessLeftImage, fit: "cover" },
+        { key: "livenessRight", label: "Verifikasi Wajah Kanan", hint: "Frame saat student menoleh ke kanan", value: member.livenessRightImage, fit: "cover" },
+        { key: "signature", label: "Tanda Tangan Digital", hint: "Tanda tangan yang dipakai saat submit", value: member.signatureImage, fit: "contain" },
       ]
     : [];
+  const availableRegistrationAttachments = registrationAttachments.filter((item) => Boolean(item.value)).length;
+  const hasFaceMatchScore = member?.faceMatchScore !== null && member?.faceMatchScore !== undefined;
 
   // Calculate totals
   const totalSetoran = savings
@@ -918,6 +920,17 @@ const MemberDetail = () => {
     setShowProofModal(false);
     setCurrentProofImage(null);
     setCurrentTransactionInfo(null);
+  };
+
+  const openRegistrationAttachmentPreview = (item) => {
+    if (!item?.value) return;
+    setCurrentProofImage(item.value);
+    setCurrentTransactionInfo({
+      isAttachmentPreview: true,
+      label: item.label,
+      hint: item.hint,
+    });
+    setShowProofModal(true);
   };
 
   const getPaidDateRaw = (tx) => {
@@ -1301,46 +1314,83 @@ const MemberDetail = () => {
       </div>
 
       <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border border-pink-100">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">Lampiran Registrasi</h3>
-            <p className="text-sm text-gray-500">
-              Bukti dari student dashboard untuk verifikasi admin.
-            </p>
-          </div>
-          <div className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-            member.faceMatchScore !== null && member.faceMatchScore !== undefined
-              ? "bg-emerald-100 text-emerald-700"
-              : "bg-gray-100 text-gray-600"
-          }`}>
-            Face Match: {member.faceMatchScore !== null && member.faceMatchScore !== undefined ? `${member.faceMatchScore}%` : "Belum ada"}
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/90 p-4">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div className="max-w-2xl">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                Lampiran Registrasi
+              </p>
+              <h3 className="mt-2 text-lg font-semibold text-gray-900">
+                Bukti verifikasi dari student dashboard
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-gray-500">
+                Admin bisa cek KTP, selfie, liveness kiri/kanan, dan tanda tangan digital tanpa masuk ke layar lain.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2 xl:min-w-[270px]">
+              <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2">
+                <p className="text-[11px] font-medium text-slate-500">Lampiran siap</p>
+                <p className="mt-1 text-sm font-semibold text-slate-800">
+                  {availableRegistrationAttachments}/{registrationAttachments.length}
+                </p>
+              </div>
+              <div className={`rounded-2xl border px-3 py-2 ${
+                hasFaceMatchScore
+                  ? "border-emerald-200 bg-emerald-50"
+                  : "border-slate-200 bg-white"
+              }`}>
+                <p className="text-[11px] font-medium text-slate-500">Face Match</p>
+                <p className={`mt-1 text-sm font-semibold ${
+                  hasFaceMatchScore ? "text-emerald-700" : "text-slate-700"
+                }`}>
+                  {hasFaceMatchScore ? `${member.faceMatchScore}%` : "Belum ada"}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {registrationAttachments.map((item) => (
-            <div key={item.key} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <p className="text-sm font-medium text-gray-700">{item.label}</p>
-                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                  item.value ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
-                }`}>
+            <div
+              key={item.key}
+              className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <div className="mb-3 border-b border-slate-100 pb-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold leading-5 text-slate-800">{item.label}</p>
+                    <p className="mt-1 text-[11px] leading-5 text-slate-500">{item.hint}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                    item.value ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-600"
+                  }`}>
                   {item.value ? "Tersimpan" : "Kosong"}
-                </span>
+                  </span>
+                </div>
               </div>
 
               {item.value ? (
-                <a href={item.value} target="_blank" rel="noreferrer" className="block">
+                <button
+                  type="button"
+                  onClick={() => openRegistrationAttachmentPreview(item)}
+                  className="group block w-full text-left"
+                >
                   <img
                     src={item.value}
                     alt={item.label}
-                    className="h-40 w-full rounded-md border border-gray-200 object-cover bg-white"
+                    className={`h-48 w-full rounded-xl border border-slate-200 bg-slate-50 transition-transform duration-300 group-hover:scale-[1.01] ${
+                      item.fit === "contain" ? "object-contain p-3" : "object-cover"
+                    }`}
                     loading="lazy"
                   />
-                </a>
+                </button>
               ) : (
-                <div className="flex h-40 items-center justify-center rounded-md border border-dashed border-gray-300 bg-white text-xs text-gray-400">
-                  Belum ada file
+                <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 text-center">
+                  <span className="text-xs font-semibold text-slate-500">Belum ada file</span>
+                  <span className="mt-1 text-[11px] leading-5 text-slate-400">
+                    Attachment ini belum tersimpan pada data anggota.
+                  </span>
                 </div>
               )}
             </div>
@@ -2104,8 +2154,20 @@ const MemberDetail = () => {
             {/* Modal Header */}
             <div className="flex items-center justify-between p-4 border-b border-gray-200">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">Bukti Pembayaran</h3>
-                {currentTransactionInfo && (
+                <h3 className="text-lg font-semibold text-gray-900">
+                  {currentTransactionInfo?.isAttachmentPreview ? "Lampiran Registrasi" : "Bukti Pembayaran"}
+                </h3>
+                {currentTransactionInfo?.isAttachmentPreview ? (
+                  <div className="text-sm text-gray-600 mt-1">
+                    <span className="font-semibold">{currentTransactionInfo.label}</span>
+                    {currentTransactionInfo.hint ? (
+                      <>
+                        <span className="mx-2">•</span>
+                        <span>{currentTransactionInfo.hint}</span>
+                      </>
+                    ) : null}
+                  </div>
+                ) : currentTransactionInfo && (
                   <div className="text-sm text-gray-600 mt-1">
                     <span className="font-semibold">{formatCurrency(currentTransactionInfo.amount)}</span>
                     <span className="mx-2">•</span>
@@ -2169,7 +2231,7 @@ const MemberDetail = () => {
                   ) : (
                     <img
                       src={currentProofImage}
-                      alt="Bukti Pembayaran"
+                      alt={currentTransactionInfo?.isAttachmentPreview ? currentTransactionInfo.label : "Bukti Pembayaran"}
                       className="max-w-full max-h-[60vh] object-contain mx-auto rounded-lg shadow-lg"
                       onError={(e) => {
                         e.target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='1' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2' ry='2'/%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'/%3E%3Cpolyline points='21,15 16,10 5,21'/%3E%3C/svg%3E";
