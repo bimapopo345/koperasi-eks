@@ -5,6 +5,16 @@ import Pagination from "../components/Pagination.jsx";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
 import { toast } from "react-toastify";
 
+const normalizeDateInputValue = (value) => {
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+
+  const parsedDate = new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) return "";
+
+  return parsedDate.toISOString().slice(0, 10);
+};
+
 const Members = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -57,6 +67,8 @@ const Members = () => {
     signatureImage: "",
     ktpImage: "",
     selfieImage: "",
+    livenessLeftImage: "",
+    livenessRightImage: "",
     faceMatchScore: null,
     username: "",
     password: "",
@@ -128,12 +140,15 @@ const Members = () => {
         setFormData((prev) => ({
           ...prev,
           uuid: uuid,
-          name: studentData.name,
-          phone: studentData.phone,
-          city: studentData.birth_place, // birth_place -> city
-          gender: studentData.gender === "l" ? "L" : "P", // convert format
+          name: studentData.name || prev.name,
+          phone: studentData.phone || "",
+          city: prev.city || studentData.birth_place || "",
+          gender: String(studentData.gender || prev.gender || "L").toUpperCase() === "L" ? "L" : "P",
+          email: studentData.email || prev.email,
+          birthPlace: studentData.birth_place || prev.birthPlace,
+          birthDate: normalizeDateInputValue(studentData.birth_date),
           completeAddress: prev.completeAddress || "-", // default alamat
-          username: generateUsername(studentData.name), // username dari nama
+          username: generateUsername(studentData.name || prev.name || ""), // username dari nama
         }));
       }
     } catch (error) {
@@ -221,6 +236,8 @@ const Members = () => {
             signatureImage: "",
             ktpImage: "",
             selfieImage: "",
+            livenessLeftImage: "",
+            livenessRightImage: "",
             faceMatchScore: null,
             username: "",
             password: "",
@@ -250,14 +267,16 @@ const Members = () => {
       accountHolderName: member.accountHolderName || "",
       nik: member.nik || "",
       birthPlace: member.birthPlace || "",
-      birthDate: member.birthDate || "",
+      birthDate: normalizeDateInputValue(member.birthDate),
       email: member.email || "",
       riplText: member.riplText || "",
       signatureImage: member.signatureImage || "",
       ktpImage: member.ktpImage || "",
       selfieImage: member.selfieImage || "",
+      livenessLeftImage: member.livenessLeftImage || "",
+      livenessRightImage: member.livenessRightImage || "",
       faceMatchScore: member.faceMatchScore ?? null,
-      username: member.user.username,
+      username: member.user?.username || "",
       password: "",
       productId: member.productId || "",
       savingsStartDate: member.savingsStartDate ? member.savingsStartDate.split('T')[0] : "",
@@ -360,6 +379,8 @@ const Members = () => {
       signatureImage: "",
       ktpImage: "",
       selfieImage: "",
+      livenessLeftImage: "",
+      livenessRightImage: "",
       faceMatchScore: null,
       username: "",
       password: "",
@@ -464,6 +485,14 @@ const Members = () => {
       </div>
     );
   }
+
+  const attachmentItems = [
+    { key: "ktp", label: "Foto KTP", value: formData.ktpImage },
+    { key: "selfie", label: "Selfie Dengan KTP", value: formData.selfieImage },
+    { key: "livenessLeft", label: "Verifikasi Wajah Kiri", value: formData.livenessLeftImage },
+    { key: "livenessRight", label: "Verifikasi Wajah Kanan", value: formData.livenessRightImage },
+    { key: "signature", label: "Tanda Tangan Digital", value: formData.signatureImage },
+  ];
 
   return (
     <div className="p-4 sm:p-6">
@@ -1042,6 +1071,51 @@ const Members = () => {
                   <small className="text-gray-500 mt-1 block">
                     💡 Otomatis terisi dari teks RIPL saat student mendaftar via dashboard.
                   </small>
+                </div>
+                <div className="mb-4 border-t pt-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mb-3">
+                    <div>
+                      <p className="text-xs font-semibold text-gray-500 uppercase">Lampiran Registrasi</p>
+                      <p className="text-xs text-gray-500">
+                        KTP, selfie, verifikasi wajah kiri/kanan, dan tanda tangan digital dari student dashboard.
+                      </p>
+                    </div>
+                    <div className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                      formData.faceMatchScore !== null && formData.faceMatchScore !== ""
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-gray-100 text-gray-600"
+                    }`}>
+                      Face Match: {formData.faceMatchScore !== null && formData.faceMatchScore !== "" ? `${formData.faceMatchScore}%` : "Belum ada"}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {attachmentItems.map((item) => (
+                      <div key={item.key} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <p className="text-sm font-medium text-gray-700">{item.label}</p>
+                          <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                            item.value ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+                          }`}>
+                            {item.value ? "Tersimpan" : "Kosong"}
+                          </span>
+                        </div>
+                        {item.value ? (
+                          <a href={item.value} target="_blank" rel="noreferrer" className="block">
+                            <img
+                              src={item.value}
+                              alt={item.label}
+                              className="h-32 w-full rounded-md border border-gray-200 object-cover bg-white"
+                              loading="lazy"
+                            />
+                          </a>
+                        ) : (
+                          <div className="flex h-32 items-center justify-center rounded-md border border-dashed border-gray-300 bg-white text-xs text-gray-400">
+                            Belum ada file
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 <div className="mb-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">

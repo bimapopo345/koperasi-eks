@@ -78,6 +78,14 @@ const memberSchema = new Schema(
       type: String,
       default: "",
     },
+    livenessLeftImage: {
+      type: String,
+      default: "",
+    },
+    livenessRightImage: {
+      type: String,
+      default: "",
+    },
     faceMatchScore: {
       type: Number,
       default: null,

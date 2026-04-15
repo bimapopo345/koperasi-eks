@@ -122,6 +122,13 @@ const createMember = asyncHandler(async (req, res) => {
     nik,
     bankName,
     accountHolderName,
+    signatureImage,
+    ktpImage,
+    selfieImage,
+    livenessLeftImage,
+    livenessRightImage,
+    faceMatchScore,
+    riplText,
   } = req.body;
 
   // Validate required fields
@@ -196,6 +203,13 @@ const createMember = asyncHandler(async (req, res) => {
     nik: nik || "",
     bankName: bankName || "",
     accountHolderName: accountHolderName || "",
+    signatureImage: signatureImage || "",
+    ktpImage: ktpImage || "",
+    selfieImage: selfieImage || "",
+    livenessLeftImage: livenessLeftImage || "",
+    livenessRightImage: livenessRightImage || "",
+    faceMatchScore: faceMatchScore ?? null,
+    riplText: riplText || "",
     isVerified: true,
     registrationSource: "admin",
   });
@@ -233,6 +247,13 @@ const updateMember = asyncHandler(async (req, res) => {
     nik,
     bankName,
     accountHolderName,
+    signatureImage,
+    ktpImage,
+    selfieImage,
+    livenessLeftImage,
+    livenessRightImage,
+    faceMatchScore,
+    riplText,
   } = req.body;
 
   const member = await Member.findOne({ uuid });
@@ -275,6 +296,13 @@ const updateMember = asyncHandler(async (req, res) => {
   if (nik !== undefined) member.nik = nik;
   if (bankName !== undefined) member.bankName = bankName;
   if (accountHolderName !== undefined) member.accountHolderName = accountHolderName;
+  if (signatureImage !== undefined) member.signatureImage = signatureImage || "";
+  if (ktpImage !== undefined) member.ktpImage = ktpImage || "";
+  if (selfieImage !== undefined) member.selfieImage = selfieImage || "";
+  if (livenessLeftImage !== undefined) member.livenessLeftImage = livenessLeftImage || "";
+  if (livenessRightImage !== undefined) member.livenessRightImage = livenessRightImage || "";
+  if (faceMatchScore !== undefined) member.faceMatchScore = faceMatchScore ?? null;
+  if (riplText !== undefined) member.riplText = riplText || "";
 
   await member.save();
 

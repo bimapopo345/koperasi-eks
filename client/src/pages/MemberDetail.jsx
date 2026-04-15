@@ -10,6 +10,17 @@ import { toast } from "react-toastify";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
 
+const formatMemberDate = (value) => {
+  if (!value) return "-";
+
+  const parsedDate = new Date(value);
+  if (Number.isNaN(parsedDate.getTime())) {
+    return String(value);
+  }
+
+  return format(parsedDate, "dd MMMM yyyy", { locale: id });
+};
+
 const MemberDetail = () => {
   const { uuid } = useParams();
   const navigate = useNavigate();
@@ -721,6 +732,16 @@ const MemberDetail = () => {
     setCurrentPeriodPage(page);
   };
 
+  const registrationAttachments = member
+    ? [
+        { key: "ktp", label: "Foto KTP", value: member.ktpImage },
+        { key: "selfie", label: "Selfie Dengan KTP", value: member.selfieImage },
+        { key: "livenessLeft", label: "Verifikasi Wajah Kiri", value: member.livenessLeftImage },
+        { key: "livenessRight", label: "Verifikasi Wajah Kanan", value: member.livenessRightImage },
+        { key: "signature", label: "Tanda Tangan Digital", value: member.signatureImage },
+      ]
+    : [];
+
   // Calculate totals
   const totalSetoran = savings
     .filter(s => s.type === "Setoran" && s.status === "Approved")
@@ -1078,6 +1099,22 @@ const MemberDetail = () => {
                   </span>
                 </p>
               </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">Tempat Lahir</label>
+                <p className="text-sm text-gray-900">{member.birthPlace || "-"}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">Tanggal Lahir</label>
+                <p className="text-sm text-gray-900">{formatMemberDate(member.birthDate)}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">NIK</label>
+                <p className="text-sm text-gray-900 font-mono">{member.nik || "-"}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">Email</label>
+                <p className="text-sm text-gray-900 break-all">{member.email || "-"}</p>
+              </div>
             </div>
           </div>
 
@@ -1099,6 +1136,14 @@ const MemberDetail = () => {
               <div>
                 <label className="text-sm font-medium text-gray-500">No Rekening</label>
                 <p className="text-sm text-gray-900 font-mono">{member.accountNumber || "-"}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">Nama Bank</label>
+                <p className="text-sm text-gray-900">{member.bankName || "-"}</p>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-500">Atas Nama Rekening</label>
+                <p className="text-sm text-gray-900">{member.accountHolderName || "-"}</p>
               </div>
             </div>
           </div>
@@ -1251,6 +1296,61 @@ const MemberDetail = () => {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border border-pink-100">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4">
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">Lampiran Registrasi</h3>
+            <p className="text-sm text-gray-500">
+              Bukti dari student dashboard untuk verifikasi admin.
+            </p>
+          </div>
+          <div className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+            member.faceMatchScore !== null && member.faceMatchScore !== undefined
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-gray-100 text-gray-600"
+          }`}>
+            Face Match: {member.faceMatchScore !== null && member.faceMatchScore !== undefined ? `${member.faceMatchScore}%` : "Belum ada"}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {registrationAttachments.map((item) => (
+            <div key={item.key} className="rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-sm font-medium text-gray-700">{item.label}</p>
+                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                  item.value ? "bg-emerald-100 text-emerald-700" : "bg-gray-200 text-gray-600"
+                }`}>
+                  {item.value ? "Tersimpan" : "Kosong"}
+                </span>
+              </div>
+
+              {item.value ? (
+                <a href={item.value} target="_blank" rel="noreferrer" className="block">
+                  <img
+                    src={item.value}
+                    alt={item.label}
+                    className="h-40 w-full rounded-md border border-gray-200 object-cover bg-white"
+                    loading="lazy"
+                  />
+                </a>
+              ) : (
+                <div className="flex h-40 items-center justify-center rounded-md border border-dashed border-gray-300 bg-white text-xs text-gray-400">
+                  Belum ada file
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-4 rounded-lg border border-pink-100 bg-pink-50 p-3 text-sm text-gray-700">
+          <div className="font-semibold text-pink-700 mb-1">Snapshot RIPL</div>
+          <div className="whitespace-pre-wrap break-words text-xs sm:text-sm">
+            {member.riplText || "Belum ada snapshot RIPL."}
           </div>
         </div>
       </div>

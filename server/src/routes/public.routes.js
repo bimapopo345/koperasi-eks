@@ -420,6 +420,8 @@ const registerKoperasi = asyncHandler(async (req, res) => {
       signatureImage,
       ktpImage,
       selfieImage,
+      livenessLeftImage,
+      livenessRightImage,
       faceMatchScore,
       riplText,
     } = req.body;
@@ -496,6 +498,8 @@ const registerKoperasi = asyncHandler(async (req, res) => {
       signatureImage: signatureImage || "",
       ktpImage: ktpImage || "",
       selfieImage: selfieImage || "",
+      livenessLeftImage: livenessLeftImage || "",
+      livenessRightImage: livenessRightImage || "",
       faceMatchScore: faceMatchScore || null,
       riplText: riplText || "",
       productId: productId || null,
