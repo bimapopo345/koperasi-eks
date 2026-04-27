@@ -78,10 +78,11 @@ jobs:
 
             podman_build_cached() {
               IMAGE_TAG="$1"
+              shift
               if podman build --help 2>/dev/null | grep -q -- '--layers'; then
-                podman build --layers -t "$IMAGE_TAG" .
+                podman build --layers -t "$IMAGE_TAG" "$@" .
               else
-                podman build -t "$IMAGE_TAG" .
+                podman build -t "$IMAGE_TAG" "$@" .
               fi
             }
 
@@ -137,7 +138,10 @@ jobs:
             fi
 
             if [ "$BUILD_WEB" = "1" ]; then
-              podman_build_cached koperasi-web:latest
+              FRONTEND_API_URL="https://api.samitcoop.com"
+              podman_build_cached koperasi-web:latest \
+                --build-arg VITE_API_URL="$FRONTEND_API_URL" \
+                --build-arg VITE_SERVER_URL="$FRONTEND_API_URL"
               podman stop web || true
               podman rm web || true
               podman run -d \
