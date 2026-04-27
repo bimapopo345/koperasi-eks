@@ -73,9 +73,15 @@ function normalizeItems(rawItems) {
       const quantity = clampMoney(item?.quantity);
       const price = clampMoney(item?.price);
       const title = normalizeString(item?.title);
+      const productId =
+        item?.productId &&
+        mongoose.Types.ObjectId.isValid(String(item.productId))
+          ? item.productId
+          : null;
       if (!title || quantity <= 0 || price < 0) return null;
 
       return {
+        productId,
         title,
         description: normalizeString(item?.description),
         quantity,

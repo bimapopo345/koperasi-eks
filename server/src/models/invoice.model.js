@@ -2,6 +2,11 @@ import mongoose from "mongoose";
 
 const invoiceItemSchema = new mongoose.Schema(
   {
+    productId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Product",
+      default: null,
+    },
     title: {
       type: String,
       required: true,
@@ -28,7 +33,7 @@ const invoiceItemSchema = new mongoose.Schema(
       min: 0,
     },
   },
-  { _id: true }
+  { _id: true },
 );
 
 const invoiceDiscountSchema = new mongoose.Schema(
@@ -54,7 +59,7 @@ const invoiceDiscountSchema = new mongoose.Schema(
       min: 0,
     },
   },
-  { _id: true }
+  { _id: true },
 );
 
 const invoiceProjectionSchema = new mongoose.Schema(
@@ -74,7 +79,7 @@ const invoiceProjectionSchema = new mongoose.Schema(
       min: 0,
     },
   },
-  { _id: true }
+  { _id: true },
 );
 
 const invoicePaymentSchema = new mongoose.Schema(
@@ -99,7 +104,7 @@ const invoicePaymentSchema = new mongoose.Schema(
       trim: true,
     },
   },
-  { _id: true }
+  { _id: true },
 );
 
 const customerSnapshotSchema = new mongoose.Schema(
@@ -135,7 +140,7 @@ const customerSnapshotSchema = new mongoose.Schema(
       trim: true,
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const invoiceSchema = new mongoose.Schema(
@@ -266,7 +271,7 @@ const invoiceSchema = new mongoose.Schema(
     timestamps: true,
     toJSON: { virtuals: true },
     toObject: { virtuals: true },
-  }
+  },
 );
 
 invoiceSchema.index({ memberId: 1, issuedDate: -1 });

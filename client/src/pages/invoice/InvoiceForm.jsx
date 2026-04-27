@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
+import api from "../../api/index.jsx";
 import { getMembers } from "../../api/accountingApi.jsx";
 import {
   createInvoice,
@@ -59,7 +60,13 @@ const toDateInput = (value) => {
   return new Date(value).toISOString().slice(0, 10);
 };
 
-const emptyItem = () => ({ title: "", description: "", quantity: 1, price: 0 });
+const emptyItem = () => ({
+  productId: "",
+  title: "",
+  description: "",
+  quantity: 1,
+  price: 0,
+});
 const emptyDiscount = () => ({ label: "", type: "fixed", value: 0 });
 const emptyProjection = (date = "") => ({
   description: "",
@@ -97,6 +104,23 @@ const getMemberSearchValue = (member) =>
     member?.product?.title,
   ]
     .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+const getProductLabel = (product) => {
+  if (!product) return "";
+  return product.title || "Untitled product";
+};
+
+const getProductSearchValue = (product) =>
+  [
+    product?.title,
+    product?.description,
+    product?.depositAmount,
+    product?.returnProfit,
+    product?.termDuration,
+  ]
+    .filter((value) => value !== null && value !== undefined && value !== "")
     .join(" ")
     .toLowerCase();
 
@@ -211,6 +235,131 @@ function CustomerCombobox({ members, value, onChange }) {
   );
 }
 
+function ProductCombobox({ products, value, onSelect, onClear }) {
+  const [search, setSearch] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+
+  const selectedProduct = useMemo(
+    () =>
+      products.find((product) => String(product._id) === String(value)) || null,
+    [products, value],
+  );
+
+  useEffect(() => {
+    if (isOpen) return;
+    setSearch(selectedProduct ? getProductLabel(selectedProduct) : "");
+  }, [isOpen, selectedProduct]);
+
+  const filteredProducts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const selectedLabel = selectedProduct
+      ? getProductLabel(selectedProduct).toLowerCase()
+      : "";
+    const visibleProducts = products.filter(
+      (product) =>
+        product.isActive !== false || String(product._id) === String(value),
+    );
+
+    if (!query || query === selectedLabel) return visibleProducts.slice(0, 30);
+
+    return visibleProducts
+      .filter((product) => getProductSearchValue(product).includes(query))
+      .slice(0, 30);
+  }, [products, search, selectedProduct, value]);
+
+  const selectProduct = (product) => {
+    onSelect(product);
+    setSearch(getProductLabel(product));
+    setIsOpen(false);
+  };
+
+  return (
+    <div
+      className="inv-combobox"
+      onBlur={() => {
+        window.setTimeout(() => setIsOpen(false), 120);
+      }}
+    >
+      <input
+        className="inv-input inv-combobox-input"
+        value={search}
+        placeholder="Search product dari master Product..."
+        onFocus={() => setIsOpen(true)}
+        onChange={(event) => {
+          setSearch(event.target.value);
+          setIsOpen(true);
+          if (value) onClear();
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            if (filteredProducts[0]) selectProduct(filteredProducts[0]);
+          }
+          if (event.key === "Escape") setIsOpen(false);
+        }}
+      />
+      {value ? (
+        <button
+          type="button"
+          className="inv-combobox-clear"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            onClear();
+            setSearch("");
+            setIsOpen(true);
+          }}
+          aria-label="Clear product"
+        >
+          ×
+        </button>
+      ) : null}
+
+      {isOpen ? (
+        <div className="inv-combobox-menu">
+          {filteredProducts.length ? (
+            filteredProducts.map((product) => (
+              <button
+                type="button"
+                key={product._id}
+                className={`inv-combobox-option ${
+                  String(product._id) === String(value) ? "active" : ""
+                }`}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  selectProduct(product);
+                }}
+              >
+                <span className="inv-combobox-name">
+                  {getProductLabel(product)}
+                </span>
+                <span className="inv-combobox-meta">
+                  Setoran {formatMoney(product.depositAmount || 0)}{" "}
+                  {product.returnProfit
+                    ? `• Profit ${product.returnProfit}%`
+                    : ""}
+                  {product.termDuration
+                    ? `• ${product.termDuration} bulan`
+                    : ""}
+                  {product.isActive === false ? " • Nonaktif" : ""}
+                </span>
+                {product.description ? (
+                  <span className="inv-combobox-meta">
+                    {product.description}
+                  </span>
+                ) : null}
+              </button>
+            ))
+          ) : (
+            <div className="inv-combobox-empty">
+              Tidak ada product yang cocok.
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function InvoiceForm() {
   const navigate = useNavigate();
   const { invoiceNumber } = useParams();
@@ -221,6 +370,7 @@ export default function InvoiceForm() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [members, setMembers] = useState([]);
+  const [products, setProducts] = useState([]);
   const [tosTemplates, setTosTemplates] = useState([]);
   const [currencies, setCurrencies] = useState([
     "IDR",
@@ -260,12 +410,14 @@ export default function InvoiceForm() {
       setLoading(true);
       setError("");
       try {
-        const [membersRes, metaRes, invoiceRes, tosRes] = await Promise.all([
-          getMembers(),
-          getInvoiceMeta({ issuedDate: today }),
-          isEdit ? getInvoice(invoiceNumber) : Promise.resolve(null),
-          getTosList({ filter: "active" }),
-        ]);
+        const [membersRes, productsRes, metaRes, invoiceRes, tosRes] =
+          await Promise.all([
+            getMembers(),
+            api.get("/api/products").then((response) => response.data),
+            getInvoiceMeta({ issuedDate: today }),
+            isEdit ? getInvoice(invoiceNumber) : Promise.resolve(null),
+            getTosList({ filter: "active" }),
+          ]);
 
         if (membersRes?.success) {
           setMembers(
@@ -276,6 +428,16 @@ export default function InvoiceForm() {
         }
         if (metaRes?.success) {
           setCurrencies(metaRes.data?.currencies || currencies);
+        }
+        if (productsRes?.success) {
+          setProducts(
+            [...(productsRes.data || [])].sort((a, b) => {
+              const activeSort =
+                Number(b.isActive !== false) - Number(a.isActive !== false);
+              if (activeSort) return activeSort;
+              return String(a.title || "").localeCompare(String(b.title || ""));
+            }),
+          );
         }
         if (tosRes?.success) {
           setTosTemplates(tosRes.data?.tos || []);
@@ -302,6 +464,7 @@ export default function InvoiceForm() {
           setItems(
             (invoice.items || []).length
               ? invoice.items.map((item) => ({
+                  productId: item.productId || "",
                   title: item.title || "",
                   description: item.description || "",
                   quantity: item.quantity || 1,
@@ -495,6 +658,25 @@ export default function InvoiceForm() {
     );
   };
 
+  const setItemProduct = (index, product) => {
+    setItems((prev) =>
+      prev.map((item, idx) =>
+        idx === index
+          ? {
+              ...item,
+              productId: product?._id || "",
+              title: product?.title || item.title,
+              description: product?.description || item.description,
+              price:
+                product?.depositAmount !== undefined
+                  ? product.depositAmount
+                  : item.price,
+            }
+          : item,
+      ),
+    );
+  };
+
   const setDiscountValue = (index, key, value) => {
     setDiscounts((prev) =>
       prev.map((item, idx) =>
@@ -520,6 +702,7 @@ export default function InvoiceForm() {
     currency: form.currency,
     exchangeRate: normalizeNumber(form.exchangeRate) || 1,
     items: items.map((item) => ({
+      productId: item.productId || null,
       title: item.title,
       description: item.description,
       quantity: normalizeNumber(item.quantity),
@@ -812,6 +995,19 @@ export default function InvoiceForm() {
                       ) : null}
                     </div>
                     <div className="inv-grid">
+                      <div className="inv-grid-12">
+                        <label className="inv-label">Product</label>
+                        <ProductCombobox
+                          products={products}
+                          value={item.productId}
+                          onSelect={(product) => setItemProduct(index, product)}
+                          onClear={() => setItemValue(index, "productId", "")}
+                        />
+                        <div className="inv-money-hint">
+                          Pilih dari sidebar Product. Title, description, dan
+                          price tetap bisa diedit manual setelah dipilih.
+                        </div>
+                      </div>
                       <div className="inv-grid-6">
                         <label className="inv-label">Title</label>
                         <input
@@ -1032,7 +1228,7 @@ export default function InvoiceForm() {
                             }
                           >
                             <option value="">Custom / pilih cicilan</option>
-                            {Array.from({ length: 25 }, (_, itemIndex) => {
+                            {Array.from({ length: 36 }, (_, itemIndex) => {
                               const label = `Cicilan ${itemIndex + 1}`;
                               return (
                                 <option key={label} value={label}>
