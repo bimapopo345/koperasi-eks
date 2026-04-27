@@ -68,6 +68,8 @@ import salesTaxRoutes from "./salesTax.routes.js";
 import reportsRoutes from "./reports.routes.js";
 import expenseRoutes from "./expense.routes.js";
 import financeExportRoutes from "./financeExport.routes.js";
+import invoiceRoutes from "./invoice.routes.js";
+import tosRoutes from "./tos.routes.js";
 import {
   getAccountsByType,
   getAccountDetail,
@@ -169,6 +171,8 @@ router.use("/sales-tax", verifyToken, salesTaxRoutes);
 router.use("/reports", verifyToken, reportsRoutes);
 router.use("/expenses", verifyToken, expenseRoutes);
 router.use("/finance/export", verifyToken, financeExportRoutes);
+router.use("/invoices", verifyToken, invoiceRoutes);
+router.use("/tos", verifyToken, tosRoutes);
 
 // Legacy compatibility routes (samitbank-style path naming)
 router.get("/chart-of-accounts", verifyToken, getAccountsByType);

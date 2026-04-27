@@ -1,0 +1,53 @@
+import api from "./index.jsx";
+
+export const getInvoiceMeta = async (params = {}) => {
+  const response = await api.get("/api/admin/invoices/meta", { params });
+  return response.data;
+};
+
+export const getInvoices = async (params = {}) => {
+  const response = await api.get("/api/admin/invoices", { params });
+  return response.data;
+};
+
+export const getInvoice = async (invoiceNumber) => {
+  const response = await api.get(
+    `/api/admin/invoices/${encodeURIComponent(invoiceNumber)}`,
+  );
+  return response.data;
+};
+
+export const createInvoice = async (payload) => {
+  const response = await api.post("/api/admin/invoices", payload);
+  return response.data;
+};
+
+export const updateInvoice = async (invoiceNumber, payload) => {
+  const response = await api.put(
+    `/api/admin/invoices/${encodeURIComponent(invoiceNumber)}`,
+    payload,
+  );
+  return response.data;
+};
+
+export const deleteInvoice = async (invoiceNumber) => {
+  const response = await api.delete(
+    `/api/admin/invoices/${encodeURIComponent(invoiceNumber)}`,
+  );
+  return response.data;
+};
+
+export const addInvoicePayment = async (invoiceNumber, payload) => {
+  const response = await api.post(
+    `/api/admin/invoices/${encodeURIComponent(invoiceNumber)}/payments`,
+    payload,
+  );
+  return response.data;
+};
+
+export const deleteInvoicePayment = async (invoiceNumber, paymentId) => {
+  const response = await api.delete(
+    `/api/admin/invoices/${encodeURIComponent(invoiceNumber)}/payments/${encodeURIComponent(paymentId)}`,
+  );
+  return response.data;
+};

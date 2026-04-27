@@ -1,0 +1,519 @@
+import mongoose from "mongoose";
+import { Invoice } from "../../models/invoice.model.js";
+import { Member } from "../../models/member.model.js";
+import { Tos } from "../../models/tos.model.js";
+import { ApiError } from "../../utils/ApiError.js";
+import { ApiResponse } from "../../utils/ApiResponse.js";
+import { asyncHandler } from "../../utils/asyncHandler.js";
+
+const AVAILABLE_CURRENCIES = ["IDR", "JPY", "USD", "AUD", "EUR", "GBP"];
+const AVAILABLE_PAYMENT_METHODS = ["Bank", "Cash", "Transfer", "QRIS", "Other"];
+
+function normalizeNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clampMoney(value) {
+  return Math.round((normalizeNumber(value) + Number.EPSILON) * 100) / 100;
+}
+
+function normalizeString(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function parseFlexibleArray(value) {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+      return [];
+    }
+  }
+  return [];
+}
+
+function startOfDay(value) {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function endOfDay(value) {
+  const date = new Date(value);
+  date.setHours(23, 59, 59, 999);
+  return date;
+}
+
+function ensureDate(value, fieldName) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) {
+    throw new ApiError(400, `${fieldName} tidak valid`);
+  }
+  return date;
+}
+
+function buildCustomerSnapshot(member) {
+  return {
+    uuid: member?.uuid || "",
+    name: member?.name || "",
+    email: member?.email || "",
+    phone: member?.phone || "",
+    completeAddress: member?.completeAddress || "",
+    productTitle: member?.product?.title || "",
+  };
+}
+
+function normalizeItems(rawItems) {
+  const items = parseFlexibleArray(rawItems)
+    .map((item) => {
+      const quantity = clampMoney(item?.quantity);
+      const price = clampMoney(item?.price);
+      const title = normalizeString(item?.title);
+      if (!title || quantity <= 0 || price < 0) return null;
+
+      return {
+        title,
+        description: normalizeString(item?.description),
+        quantity,
+        price,
+        amount: clampMoney(quantity * price),
+      };
+    })
+    .filter(Boolean);
+
+  if (!items.length) {
+    throw new ApiError(400, "Minimal 1 item invoice wajib diisi");
+  }
+
+  return items;
+}
+
+function normalizeDiscounts(rawDiscounts, subtotal) {
+  return parseFlexibleArray(rawDiscounts)
+    .map((discount) => {
+      const label = normalizeString(discount?.label);
+      if (!label) return null;
+
+      const type = discount?.type === "percentage" ? "percentage" : "fixed";
+      const value = clampMoney(discount?.value);
+      const amount = type === "percentage"
+        ? clampMoney((subtotal * value) / 100)
+        : clampMoney(value);
+
+      if (amount <= 0) return null;
+
+      return {
+        label,
+        type,
+        value,
+        amount,
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeProjections(rawProjections) {
+  return parseFlexibleArray(rawProjections)
+    .map((projection, index) => {
+      const estimateDate = ensureDate(
+        projection?.estimateDate || projection?.estimate || projection?.date,
+        `Tanggal proyeksi #${index + 1}`
+      );
+      const amount = clampMoney(projection?.amount);
+      if (amount <= 0) return null;
+
+      return {
+        description: normalizeString(projection?.description) || `Cicilan ${index + 1}`,
+        estimateDate,
+        amount,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(a.estimateDate) - new Date(b.estimateDate));
+}
+
+function normalizePayments(rawPayments) {
+  return parseFlexibleArray(rawPayments)
+    .map((payment) => {
+      const amount = clampMoney(payment?.amount);
+      if (amount <= 0) return null;
+
+      return {
+        paymentDate: ensureDate(payment?.paymentDate || payment?.date, "Tanggal pembayaran"),
+        amount,
+        method: normalizeString(payment?.method) || "Bank",
+        notes: normalizeString(payment?.notes),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => new Date(a.paymentDate) - new Date(b.paymentDate));
+}
+
+function computeInvoiceStatus(statusInput, dueDate, total, totalPaid) {
+  if ((statusInput || "draft") === "draft" && totalPaid <= 0) {
+    return "draft";
+  }
+
+  if (clampMoney(totalPaid) >= clampMoney(total)) {
+    return "paid";
+  }
+
+  const today = startOfDay(new Date());
+  const safeDueDate = startOfDay(dueDate);
+
+  if (safeDueDate < today) {
+    return "overdue";
+  }
+
+  if (totalPaid > 0) {
+    return "partial";
+  }
+
+  return "sent";
+}
+
+function enrichProjections(projections, payments) {
+  const totalPaid = payments.reduce((sum, payment) => sum + clampMoney(payment.amount), 0);
+  let runningProjection = 0;
+
+  return projections.map((projection) => {
+    const previousRunning = runningProjection;
+    runningProjection += clampMoney(projection.amount);
+
+    let status = "Unpaid";
+    if (totalPaid >= runningProjection) {
+      status = "Paid";
+    } else if (totalPaid > previousRunning) {
+      status = "Partial";
+    }
+
+    return {
+      ...projection,
+      status,
+    };
+  });
+}
+
+function serializeInvoice(invoiceDoc) {
+  const invoice = typeof invoiceDoc.toObject === "function" ? invoiceDoc.toObject() : invoiceDoc;
+  const projections = enrichProjections(invoice.projections || [], invoice.payments || []);
+
+  return {
+    ...invoice,
+    projections,
+  };
+}
+
+async function generateNextInvoiceNumber(issuedDate, excludeInvoiceId = null) {
+  const issued = ensureDate(issuedDate || new Date(), "Tanggal invoice");
+  const yy = String(issued.getFullYear()).slice(-2);
+  const mm = String(issued.getMonth() + 1).padStart(2, "0");
+  const prefix = `A${yy}${mm}`;
+
+  const query = { invoiceNumber: new RegExp(`^${prefix}`) };
+  if (excludeInvoiceId) {
+    query._id = { $ne: excludeInvoiceId };
+  }
+
+  const invoices = await Invoice.find(query).select("invoiceNumber").lean();
+  const maxSequence = invoices.reduce((max, invoice) => {
+    const raw = String(invoice.invoiceNumber || "").slice(prefix.length);
+    const current = Number.parseInt(raw, 10);
+    return Number.isFinite(current) && current > max ? current : max;
+  }, 0);
+
+  return `${prefix}${String(maxSequence + 1).padStart(3, "0")}`;
+}
+
+async function buildInvoicePayload(payload, options = {}) {
+  const currentInvoice = options.currentInvoice || null;
+  const memberId = payload?.memberId || currentInvoice?.memberId;
+
+  if (!memberId || !mongoose.Types.ObjectId.isValid(String(memberId))) {
+    throw new ApiError(400, "Customer anggota wajib dipilih");
+  }
+
+  const member = await Member.findById(memberId)
+    .populate("product", "title")
+    .lean();
+
+  if (!member) {
+    throw new ApiError(404, "Anggota tidak ditemukan");
+  }
+
+  const issuedDate = ensureDate(payload?.issuedDate || currentInvoice?.issuedDate || new Date(), "Tanggal invoice");
+  const dueDate = ensureDate(payload?.dueDate || currentInvoice?.dueDate || issuedDate, "Tanggal jatuh tempo");
+  const items = normalizeItems(payload?.items || currentInvoice?.items || []);
+  const subtotal = clampMoney(items.reduce((sum, item) => sum + item.amount, 0));
+  const discounts = normalizeDiscounts(payload?.discounts || currentInvoice?.discounts || [], subtotal);
+  const discountTotal = clampMoney(discounts.reduce((sum, discount) => sum + discount.amount, 0));
+  const total = Math.max(clampMoney(subtotal - discountTotal), 0);
+  const projections = normalizeProjections(payload?.projections || currentInvoice?.projections || []);
+  const payments = normalizePayments(payload?.payments || currentInvoice?.payments || []);
+  const totalPaid = clampMoney(payments.reduce((sum, payment) => sum + payment.amount, 0));
+  const amountDue = clampMoney(total - totalPaid);
+  const paymentDates = payments.map((payment) => new Date(payment.paymentDate).getTime()).filter(Number.isFinite);
+  const invoiceNumberInput = normalizeString(payload?.invoiceNumber);
+  const invoiceNumber = (invoiceNumberInput || await generateNextInvoiceNumber(issuedDate, currentInvoice?._id)).toUpperCase();
+  const statusInput = normalizeString(payload?.status || currentInvoice?.status || "draft").toLowerCase();
+  const requestedStatus = statusInput === "draft" ? "draft" : "sent";
+  let tosId = null;
+  let termsTitle = normalizeString(payload?.termsTitle || currentInvoice?.termsTitle);
+  let terms = normalizeString(payload?.terms || currentInvoice?.terms);
+
+  if (payload?.tosId && mongoose.Types.ObjectId.isValid(String(payload.tosId))) {
+    const tos = await Tos.findById(payload.tosId).lean();
+    if (!tos) {
+      throw new ApiError(404, "Term of Services tidak ditemukan");
+    }
+    tosId = tos._id;
+    termsTitle = tos.title || termsTitle;
+    terms = terms || tos.content || "";
+  } else if (currentInvoice?.tosId) {
+    tosId = currentInvoice.tosId;
+  }
+
+  if (!AVAILABLE_CURRENCIES.includes(payload?.currency || currentInvoice?.currency || "IDR")) {
+    throw new ApiError(400, "Currency invoice tidak didukung");
+  }
+
+  const status = computeInvoiceStatus(requestedStatus, dueDate, total, totalPaid);
+
+  return {
+    invoiceNumber,
+    memberId: member._id,
+    customerSnapshot: buildCustomerSnapshot(member),
+    salesCode: normalizeString(payload?.salesCode),
+    issuedDate,
+    dueDate,
+    currency: payload?.currency || currentInvoice?.currency || "IDR",
+    exchangeRate: clampMoney(payload?.exchangeRate || currentInvoice?.exchangeRate || 1) || 1,
+    status,
+    items,
+    discounts,
+    projections,
+    payments,
+    notes: normalizeString(payload?.notes),
+    terms,
+    tosId,
+    termsTitle,
+    subtotal,
+    discountTotal,
+    total,
+    totalPaid,
+    amountDue,
+    lastPaymentDate: paymentDates.length ? new Date(Math.max(...paymentDates)) : null,
+  };
+}
+
+export const getInvoiceMeta = asyncHandler(async (req, res) => {
+  const issuedDate = req.query.issuedDate || new Date();
+  const nextInvoiceNumber = await generateNextInvoiceNumber(issuedDate);
+
+  res.status(200).json(
+    new ApiResponse(200, {
+      nextInvoiceNumber,
+      currencies: AVAILABLE_CURRENCIES,
+      paymentMethods: AVAILABLE_PAYMENT_METHODS,
+    })
+  );
+});
+
+export const getAllInvoices = asyncHandler(async (req, res) => {
+  const page = Math.max(normalizeNumber(req.query.page, 1), 1);
+  const limit = Math.min(Math.max(normalizeNumber(req.query.limit, 12), 1), 100);
+  const search = normalizeString(req.query.search);
+  const memberId = normalizeString(req.query.memberId);
+  const statusFilter = normalizeString(req.query.status).toLowerCase();
+  const tag = normalizeString(req.query.tag).toLowerCase();
+  const issuedFrom = normalizeString(req.query.issuedFrom);
+  const issuedTo = normalizeString(req.query.issuedTo);
+
+  const query = {};
+  if (memberId && mongoose.Types.ObjectId.isValid(memberId)) {
+    query.memberId = memberId;
+  }
+  if (issuedFrom || issuedTo) {
+    query.issuedDate = {};
+    if (issuedFrom) query.issuedDate.$gte = startOfDay(issuedFrom);
+    if (issuedTo) query.issuedDate.$lte = endOfDay(issuedTo);
+  }
+  if (search) {
+    const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    query.$or = [
+      { invoiceNumber: regex },
+      { salesCode: regex },
+      { "customerSnapshot.name": regex },
+      { "customerSnapshot.uuid": regex },
+    ];
+  }
+
+  const rawInvoices = await Invoice.find(query).sort({ issuedDate: -1, createdAt: -1 }).lean();
+  const hydrated = rawInvoices.map((invoice) => serializeInvoice(invoice));
+
+  const filtered = hydrated.filter((invoice) => {
+    if (tag === "draft" && invoice.status !== "draft") return false;
+    if (tag === "unpaid" && ["paid", "draft"].includes(invoice.status)) return false;
+    if (statusFilter && invoice.status !== statusFilter) return false;
+    return true;
+  });
+
+  const summary = {
+    totalInvoices: filtered.length,
+    totalDraft: filtered.filter((invoice) => invoice.status === "draft").length,
+    totalPaid: filtered.filter((invoice) => invoice.status === "paid").length,
+    totalOutstanding: clampMoney(filtered.reduce((sum, invoice) => sum + Math.max(invoice.amountDue || 0, 0), 0)),
+    totalValue: clampMoney(filtered.reduce((sum, invoice) => sum + (invoice.total || 0), 0)),
+  };
+
+  const startIndex = (page - 1) * limit;
+  const paginated = filtered.slice(startIndex, startIndex + limit);
+
+  res.status(200).json(
+    new ApiResponse(200, {
+      invoices: paginated,
+      summary,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.max(Math.ceil(filtered.length / limit), 1),
+        totalItems: filtered.length,
+        itemsPerPage: limit,
+      },
+    })
+  );
+});
+
+export const getInvoiceByNumber = asyncHandler(async (req, res) => {
+  const invoiceNumber = String(req.params.invoiceNumber || "").trim().toUpperCase();
+  const invoice = await Invoice.findOne({ invoiceNumber }).lean();
+
+  if (!invoice) {
+    throw new ApiError(404, "Invoice tidak ditemukan");
+  }
+
+  res.status(200).json(new ApiResponse(200, serializeInvoice(invoice)));
+});
+
+export const createInvoice = asyncHandler(async (req, res) => {
+  const payload = await buildInvoicePayload(req.body);
+
+  const duplicate = await Invoice.findOne({ invoiceNumber: payload.invoiceNumber }).lean();
+  if (duplicate) {
+    throw new ApiError(400, "Nomor invoice sudah digunakan");
+  }
+
+  const invoice = await Invoice.create({
+    ...payload,
+    createdBy: req.user?.userId || null,
+    updatedBy: req.user?.userId || null,
+  });
+
+  res.status(201).json(new ApiResponse(201, serializeInvoice(invoice), "Invoice berhasil dibuat"));
+});
+
+export const updateInvoice = asyncHandler(async (req, res) => {
+  const currentNumber = String(req.params.invoiceNumber || "").trim().toUpperCase();
+  const currentInvoice = await Invoice.findOne({ invoiceNumber: currentNumber });
+
+  if (!currentInvoice) {
+    throw new ApiError(404, "Invoice tidak ditemukan");
+  }
+
+  const payload = await buildInvoicePayload(
+    {
+      ...currentInvoice.toObject(),
+      ...req.body,
+      payments: currentInvoice.payments,
+    },
+    { currentInvoice }
+  );
+
+  const duplicate = await Invoice.findOne({
+    invoiceNumber: payload.invoiceNumber,
+    _id: { $ne: currentInvoice._id },
+  }).lean();
+  if (duplicate) {
+    throw new ApiError(400, "Nomor invoice sudah digunakan");
+  }
+
+  Object.assign(currentInvoice, {
+    ...payload,
+    updatedBy: req.user?.userId || null,
+  });
+
+  await currentInvoice.save();
+
+  res.status(200).json(new ApiResponse(200, serializeInvoice(currentInvoice), "Invoice berhasil diperbarui"));
+});
+
+export const deleteInvoice = asyncHandler(async (req, res) => {
+  const invoiceNumber = String(req.params.invoiceNumber || "").trim().toUpperCase();
+  const invoice = await Invoice.findOneAndDelete({ invoiceNumber }).lean();
+
+  if (!invoice) {
+    throw new ApiError(404, "Invoice tidak ditemukan");
+  }
+
+  res.status(200).json(new ApiResponse(200, invoice, "Invoice berhasil dihapus"));
+});
+
+export const addInvoicePayment = asyncHandler(async (req, res) => {
+  const invoiceNumber = String(req.params.invoiceNumber || "").trim().toUpperCase();
+  const invoice = await Invoice.findOne({ invoiceNumber });
+
+  if (!invoice) {
+    throw new ApiError(404, "Invoice tidak ditemukan");
+  }
+
+  const payment = normalizePayments([req.body])[0];
+  if (!payment) {
+    throw new ApiError(400, "Data pembayaran tidak valid");
+  }
+
+  invoice.payments.push(payment);
+  const rebuilt = await buildInvoicePayload(invoice.toObject(), { currentInvoice: invoice });
+  Object.assign(invoice, {
+    ...rebuilt,
+    payments: normalizePayments(invoice.payments),
+    updatedBy: req.user?.userId || null,
+  });
+  await invoice.save();
+
+  res.status(200).json(new ApiResponse(200, serializeInvoice(invoice), "Pembayaran berhasil ditambahkan"));
+});
+
+export const deleteInvoicePayment = asyncHandler(async (req, res) => {
+  const invoiceNumber = String(req.params.invoiceNumber || "").trim().toUpperCase();
+  const paymentId = String(req.params.paymentId || "").trim();
+  const invoice = await Invoice.findOne({ invoiceNumber });
+
+  if (!invoice) {
+    throw new ApiError(404, "Invoice tidak ditemukan");
+  }
+
+  const nextPayments = (invoice.payments || []).filter((payment) => String(payment._id) !== paymentId);
+  if (nextPayments.length === (invoice.payments || []).length) {
+    throw new ApiError(404, "Pembayaran tidak ditemukan");
+  }
+
+  const rebuilt = await buildInvoicePayload(
+    {
+      ...invoice.toObject(),
+      payments: nextPayments,
+    },
+    { currentInvoice: invoice }
+  );
+
+  Object.assign(invoice, {
+    ...rebuilt,
+    payments: nextPayments,
+    updatedBy: req.user?.userId || null,
+  });
+  await invoice.save();
+
+  res.status(200).json(new ApiResponse(200, serializeInvoice(invoice), "Pembayaran berhasil dihapus"));
+});

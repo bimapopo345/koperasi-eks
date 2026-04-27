@@ -39,6 +39,16 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       path: "/laporan",
     },
     {
+      title: "Invoice",
+      icon: "🧾",
+      path: "/invoice",
+    },
+    {
+      title: "Term of Services",
+      icon: "📄",
+      path: "/tos",
+    },
+    {
       title: "Master Data",
       icon: "📋",
       children: [
@@ -129,11 +139,13 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
 
   const isItemActive = (item) => {
     if (item.path) return isActive(item.path);
-    if (item.children) return item.children.some((child) => isItemActive(child));
+    if (item.children)
+      return item.children.some((child) => isItemActive(child));
     return false;
   };
 
-  const isGroupActive = (children) => children?.some((child) => isItemActive(child));
+  const isGroupActive = (children) =>
+    children?.some((child) => isItemActive(child));
 
   const [openMenus, setOpenMenus] = useState(() => {
     const initial = {};
@@ -167,7 +179,11 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                 <span className="mr-3">{item.icon}</span>
                 <span className="font-medium">{item.title}</span>
               </div>
-              <span className={`text-xs transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}>&#9662;</span>
+              <span
+                className={`text-xs transition-transform duration-200 ${isOpen ? "rotate-180" : ""}`}
+              >
+                &#9662;
+              </span>
             </button>
             <div
               className={`overflow-hidden transition-all duration-200 ease-in-out ${
@@ -232,9 +248,11 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       </div>
 
       {/* Mobile Sidebar */}
-      <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:hidden ${
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-      }`}>
+      <div
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform transition-transform duration-300 ease-in-out lg:hidden ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <div className="flex flex-col h-full">
           <div className="p-4 border-b border-pink-200 bg-gradient-to-r from-pink-50 to-rose-50">
             <div className="flex items-center justify-between">
@@ -243,7 +261,9 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                   <span className="text-white text-sm font-bold">🌸</span>
                 </div>
                 <div>
-                  <h1 className="text-base font-bold text-gray-900">LPK SAMIT</h1>
+                  <h1 className="text-base font-bold text-gray-900">
+                    LPK SAMIT
+                  </h1>
                   <p className="text-xs text-gray-500">Sakura Mitra</p>
                 </div>
               </div>
@@ -268,7 +288,9 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
                 </span>
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-900">{user?.name}</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {user?.name}
+                </p>
                 <p className="text-xs text-gray-500">{user?.role}</p>
               </div>
             </div>

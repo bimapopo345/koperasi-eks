@@ -31,6 +31,10 @@ import ExpenseReport from "../pages/expense/ExpenseReport.jsx";
 import ExpenseDetail from "../pages/expense/ExpenseDetail.jsx";
 import ExpenseEdit from "../pages/expense/ExpenseEdit.jsx";
 import FinanceExport from "../pages/expense/FinanceExport.jsx";
+import Invoices from "../pages/invoice/Invoices.jsx";
+import InvoiceForm from "../pages/invoice/InvoiceForm.jsx";
+import InvoiceDetail from "../pages/invoice/InvoiceDetail.jsx";
+import TermOfServices from "../pages/invoice/TermOfServices.jsx";
 
 const router = createBrowserRouter(
   createRoutesFromElements(
@@ -41,7 +45,13 @@ const router = createBrowserRouter(
       </Route>
 
       {/* Main Layout - untuk halaman dengan sidebar/header (Protected) */}
-      <Route element={<PrivateRoute><MainLayout /></PrivateRoute>}>
+      <Route
+        element={
+          <PrivateRoute>
+            <MainLayout />
+          </PrivateRoute>
+        }
+      >
         <Route path="/" element={<Dashboard />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/master/anggota" element={<Members />} />
@@ -59,25 +69,45 @@ const router = createBrowserRouter(
         <Route path="/transactions/upload" element={<Transactions />} />
         <Route path="/reports/profit-loss" element={<ProfitLoss />} />
         <Route path="/reports/balance-sheet" element={<BalanceSheet />} />
-        <Route path="/reports/account-transactions" element={<AccountTransactions />} />
+        <Route
+          path="/reports/account-transactions"
+          element={<AccountTransactions />}
+        />
         <Route path="/expense/admin" element={<ExpenseAdmin />} />
         <Route path="/expense/new" element={<ExpenseCreate />} />
         <Route path="/expense/report" element={<ExpenseReport />} />
         <Route path="/expense/detail/:id" element={<ExpenseDetail />} />
         <Route path="/expense/edit/:id" element={<ExpenseEdit />} />
         <Route path="/finance/export" element={<FinanceExport />} />
-        <Route path="/akuntansi/rekonsiliasi" element={<ReconciliationPage />} />
+        <Route path="/invoice" element={<Invoices />} />
+        <Route path="/invoice/new" element={<InvoiceForm />} />
+        <Route path="/invoice/:invoiceNumber/edit" element={<InvoiceForm />} />
+        <Route path="/invoice/:invoiceNumber" element={<InvoiceDetail />} />
+        <Route path="/tos" element={<TermOfServices />} />
+        <Route
+          path="/akuntansi/rekonsiliasi"
+          element={<ReconciliationPage />}
+        />
         <Route path="/akuntansi/coa" element={<ChartOfAccounts />} />
-        <Route path="/akuntansi/chart-of-accounts" element={<ChartOfAccounts />} />
+        <Route
+          path="/akuntansi/chart-of-accounts"
+          element={<ChartOfAccounts />}
+        />
         <Route path="/chart-of-accounts" element={<ChartOfAccounts />} />
         <Route path="/chart-of-accounts/create" element={<ChartOfAccounts />} />
-        <Route path="/chart-of-accounts/edit/:id" element={<ChartOfAccounts />} />
-        <Route path="/chart-of-accounts/delete/:id" element={<ChartOfAccounts />} />
+        <Route
+          path="/chart-of-accounts/edit/:id"
+          element={<ChartOfAccounts />}
+        />
+        <Route
+          path="/chart-of-accounts/delete/:id"
+          element={<ChartOfAccounts />}
+        />
         <Route path="/chart-of-accounts/:type" element={<ChartOfAccounts />} />
         <Route path="/akuntansi/pajak" element={<SalesTaxes />} />
       </Route>
-    </Route>
-  )
+    </Route>,
+  ),
 );
 
 export { router };
