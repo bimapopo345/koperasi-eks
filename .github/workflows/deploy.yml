@@ -61,13 +61,15 @@ jobs:
               if [ -n "$CHANGED_FILES" ]; then
                 echo "Changed files:"
                 echo "$CHANGED_FILES"
-                echo "$CHANGED_FILES" | grep -qE '^(server/|package\.json|package-lock\.json)$' && BUILD_API=1 || true
-                echo "$CHANGED_FILES" | grep -qE '^(client/|package\.json|package-lock\.json)$' && BUILD_WEB=1 || true
+                echo "$CHANGED_FILES" | grep -qE '^(server/|package\.json$|package-lock\.json$)' && BUILD_API=1 || true
+                echo "$CHANGED_FILES" | grep -qE '^(client/|package\.json$|package-lock\.json$)' && BUILD_WEB=1 || true
+                echo "$CHANGED_FILES" | grep -qE '^\.github/workflows/deploy\.yml$' && { BUILD_API=1; BUILD_WEB=1; } || true
                 if echo "$CHANGED_FILES" | grep -qvE '^(server/|client/|\.github/|checkpoint/|postman/|.*\.md$|context\.md$|memori[0-9]*\.md$|MERN-Koperasi-Postman-Collection\.json$|get_saving.*\.php$|saving_json\.php$)'; then
                   BUILD_API=1
                   BUILD_WEB=1
                 fi
               fi
+              echo "Deploy decision: backend=$BUILD_API frontend=$BUILD_WEB"
             fi
 
             container_running() {

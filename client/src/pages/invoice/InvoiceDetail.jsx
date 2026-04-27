@@ -109,6 +109,7 @@ function InvoiceLetterhead({ title = "INVOICE", fromLabel = "From," }) {
 export default function InvoiceDetail({
   printOnly = false,
   initialPrintVariant = "standard",
+  initialDetailTab = "invoice",
 }) {
   const navigate = useNavigate();
   const { invoiceNumber } = useParams();
@@ -119,7 +120,7 @@ export default function InvoiceDetail({
   const [error, setError] = useState("");
   const [invoice, setInvoice] = useState(null);
   const [printVariant, setPrintVariant] = useState(initialPrintVariant);
-  const [activeDetailTab, setActiveDetailTab] = useState("invoice");
+  const [activeDetailTab, setActiveDetailTab] = useState(initialDetailTab);
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [addingPayment, setAddingPayment] = useState(false);
   const [assetsAccounts, setAssetsAccounts] = useState({});
@@ -158,6 +159,10 @@ export default function InvoiceDetail({
   useEffect(() => {
     loadInvoice();
   }, [invoiceNumber]);
+
+  useEffect(() => {
+    if (!printOnly) setActiveDetailTab(initialDetailTab);
+  }, [initialDetailTab, invoiceNumber, printOnly]);
 
   useEffect(() => {
     const loadAccountingOptions = async () => {
@@ -266,8 +271,16 @@ export default function InvoiceDetail({
   const switchDetailTab = (tabName) => {
     const sectionRef =
       tabName === "payment" ? paymentSectionRef : invoiceSectionRef;
+    const detailPath =
+      tabName === "payment"
+        ? `/payment/${invoiceNumber}`
+        : `/invoice/${invoiceNumber}`;
 
     setActiveDetailTab(tabName);
+    if (!printOnly && window.location.pathname !== detailPath) {
+      navigate(detailPath);
+    }
+
     window.setTimeout(() => {
       sectionRef.current?.scrollIntoView({
         behavior: "smooth",
