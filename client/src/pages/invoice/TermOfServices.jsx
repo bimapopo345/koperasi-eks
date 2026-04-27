@@ -8,6 +8,7 @@ import {
   unarchiveTos,
   updateTos,
 } from "../../api/tosApi.jsx";
+import RichTextEditor from "./RichTextEditor.jsx";
 import "./invoice.css";
 
 const emptyForm = { title: "", content: "" };
@@ -205,11 +206,11 @@ export default function TermOfServices() {
             <label className="inv-label" style={{ marginTop: 12 }}>
               Content
             </label>
-            <textarea
-              className="inv-textarea inv-tos-editor"
+            <RichTextEditor
               value={form.content}
-              onChange={(event) =>
-                setForm((prev) => ({ ...prev, content: event.target.value }))
+              placeholder="Tulis Term of Services..."
+              onChange={(value) =>
+                setForm((prev) => ({ ...prev, content: value }))
               }
             />
             <div className="inv-inline-actions" style={{ marginTop: 12 }}>

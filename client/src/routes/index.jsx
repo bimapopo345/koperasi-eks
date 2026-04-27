@@ -81,6 +81,14 @@ const router = createBrowserRouter(
         <Route path="/finance/export" element={<FinanceExport />} />
         <Route path="/invoice" element={<Invoices />} />
         <Route path="/invoice/new" element={<InvoiceForm />} />
+        <Route
+          path="/invoice/print/:invoiceNumber"
+          element={<InvoiceDetail printOnly initialPrintVariant="standard" />}
+        />
+        <Route
+          path="/invoice/print-japan/:invoiceNumber"
+          element={<InvoiceDetail printOnly initialPrintVariant="japan" />}
+        />
         <Route path="/invoice/:invoiceNumber/edit" element={<InvoiceForm />} />
         <Route path="/invoice/:invoiceNumber" element={<InvoiceDetail />} />
         <Route path="/tos" element={<TermOfServices />} />

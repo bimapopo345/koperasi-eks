@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import {
@@ -48,6 +48,13 @@ const formatPaymentDate = (value) => {
   });
 };
 
+const formatJapaneseDate = (value) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+};
+
 const statusLabel = {
   draft: "Draft",
   sent: "Sent",
@@ -66,12 +73,17 @@ function HtmlBlock({ html, empty = "Tidak ada catatan" }) {
   );
 }
 
-export default function InvoiceDetail() {
+export default function InvoiceDetail({
+  printOnly = false,
+  initialPrintVariant = "standard",
+}) {
   const navigate = useNavigate();
   const { invoiceNumber } = useParams();
+  const autoPrintRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [invoice, setInvoice] = useState(null);
+  const [printVariant, setPrintVariant] = useState(initialPrintVariant);
   const [addingPayment, setAddingPayment] = useState(false);
   const [paymentForm, setPaymentForm] = useState({
     paymentDate: new Date().toISOString().slice(0, 10),
@@ -100,6 +112,18 @@ export default function InvoiceDetail() {
   useEffect(() => {
     loadInvoice();
   }, [invoiceNumber]);
+
+  useEffect(() => {
+    if (!printOnly || !invoice || autoPrintRef.current) return;
+    autoPrintRef.current = true;
+    const timer = window.setTimeout(() => window.print(), 350);
+    return () => window.clearTimeout(timer);
+  }, [invoice, printOnly]);
+
+  const handlePrint = (variant = "standard") => {
+    setPrintVariant(variant);
+    window.setTimeout(() => window.print(), 80);
+  };
 
   const projectionTotal = useMemo(
     () =>
@@ -195,9 +219,16 @@ export default function InvoiceDetail() {
           <button
             type="button"
             className="inv-btn-secondary"
-            onClick={() => window.print()}
+            onClick={() => handlePrint("standard")}
           >
             Print
+          </button>
+          <button
+            type="button"
+            className="inv-btn-secondary"
+            onClick={() => handlePrint("japan")}
+          >
+            Print Japan
           </button>
           <button
             type="button"
@@ -219,7 +250,12 @@ export default function InvoiceDetail() {
       {!loading && invoice ? (
         <>
           <div className="inv-print-shell">
-            <section className="inv-print-sheet" id="printableArea">
+            <section
+              className={`inv-print-sheet ${
+                printVariant === "standard" ? "" : "is-hidden"
+              }`}
+              id="printableArea"
+            >
               <div className="inv-print-top">
                 <div className="inv-print-logo">
                   <img src="/logo-samit.png" alt="SAMIT" />
@@ -411,6 +447,208 @@ export default function InvoiceDetail() {
 
               <div className="inv-print-terms inv-print-page-break">
                 <h3>Notes/Terms</h3>
+                <HtmlBlock html={invoice.terms} />
+              </div>
+            </section>
+
+            <section
+              className={`inv-print-sheet inv-print-japan ${
+                printVariant === "japan" ? "" : "is-hidden"
+              }`}
+            >
+              <div className="inv-print-top">
+                <div className="inv-print-logo">
+                  <img src="/logo-samit.png" alt="SAMIT" />
+                </div>
+                <address className="inv-print-from">
+                  <h2>請求書</h2>
+                  <h6>発行元</h6>
+                  <strong>{companyProfile.name}</strong>
+                  {companyProfile.address.map((line) => (
+                    <span key={`jp-${line}`}>{line}</span>
+                  ))}
+                  <span>{companyProfile.phone}</span>
+                  <span>{companyProfile.website}</span>
+                </address>
+              </div>
+
+              <hr className="inv-print-divider" />
+
+              <div className="inv-print-bill-row">
+                <address className="inv-print-to">
+                  <h6>ご請求先</h6>
+                  <h4>{invoice.customerSnapshot?.name || "-"}</h4>
+                  <p>{invoice.customerSnapshot?.productTitle || "-"}</p>
+                  <p>
+                    {invoice.customerSnapshot?.completeAddress || "住所未入力"}
+                  </p>
+                  <strong>{invoice.customerSnapshot?.phone || "-"}</strong>
+                  <strong>{invoice.customerSnapshot?.email || "-"}</strong>
+                </address>
+
+                <table className="inv-print-meta">
+                  <tbody>
+                    <tr>
+                      <td>請求書番号</td>
+                      <td>:</td>
+                      <td>{invoice.invoiceNumber}</td>
+                    </tr>
+                    <tr>
+                      <td>営業コード</td>
+                      <td>:</td>
+                      <td>{invoice.salesCode || "-"}</td>
+                    </tr>
+                    <tr>
+                      <td>発行日</td>
+                      <td>:</td>
+                      <td>{formatJapaneseDate(invoice.issuedDate)}</td>
+                    </tr>
+                    <tr>
+                      <td>支払期限</td>
+                      <td>:</td>
+                      <td>{formatJapaneseDate(invoice.dueDate)}</td>
+                    </tr>
+                    <tr>
+                      <td>請求残額</td>
+                      <td>:</td>
+                      <td>
+                        {formatMoney(invoice.amountDue, invoice.currency)}
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="inv-table-wrap inv-print-items-wrap">
+                <table className="inv-print-table">
+                  <thead>
+                    <tr>
+                      <th>品目</th>
+                      <th className="center">数量</th>
+                      <th className="right">単価</th>
+                      <th className="right">金額</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(invoice.items || []).map((item) => (
+                      <tr key={`jp-item-${item._id}`}>
+                        <td>
+                          <strong>{item.title}</strong>
+                          <div>{item.description || "-"}</div>
+                        </td>
+                        <td className="center">{item.quantity}</td>
+                        <td className="right">
+                          {formatMoney(item.price, invoice.currency)}
+                        </td>
+                        <td className="right">
+                          {formatMoney(item.amount, invoice.currency)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="inv-print-summary-row">
+                <table className="inv-print-summary">
+                  <tbody>
+                    <tr>
+                      <td>小計</td>
+                      <td>:</td>
+                      <td>{formatMoney(invoice.subtotal, invoice.currency)}</td>
+                    </tr>
+                    {(invoice.discounts || []).map((discount) => (
+                      <tr
+                        className="discount"
+                        key={`jp-discount-${discount._id}`}
+                      >
+                        <td>{discount.label}</td>
+                        <td>:</td>
+                        <td>
+                          <i>
+                            {discount.type === "percentage"
+                              ? `${discount.value}%`
+                              : formatMoney(discount.value, invoice.currency)}
+                          </i>
+                        </td>
+                      </tr>
+                    ))}
+                    <tr className="total">
+                      <td>合計</td>
+                      <td>:</td>
+                      <td>{formatMoney(invoice.total, invoice.currency)}</td>
+                    </tr>
+                    {(invoice.payments || []).map((payment) => (
+                      <tr className="payment" key={`jp-payment-${payment._id}`}>
+                        <td>
+                          入金 {formatJapaneseDate(payment.paymentDate)} /{" "}
+                          {payment.method}
+                        </td>
+                        <td>:</td>
+                        <td>
+                          ({formatMoney(payment.amount, invoice.currency)})
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <hr className="inv-print-divider" />
+
+              <div className="inv-print-amount-due">
+                <span>請求残額</span>
+                <strong
+                  className={Number(invoice.amountDue) < 0 ? "negative" : ""}
+                >
+                  {Number(invoice.amountDue) < 0
+                    ? `(${formatMoney(Math.abs(invoice.amountDue), invoice.currency)})`
+                    : formatMoney(invoice.amountDue, invoice.currency)}
+                </strong>
+              </div>
+
+              <div className="inv-print-projection">
+                <h3>お支払い予定</h3>
+                <table className="inv-print-table compact">
+                  <thead>
+                    <tr>
+                      <th>内容</th>
+                      <th>支払期日</th>
+                      <th className="right">金額</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(invoice.projections || []).length ? (
+                      (invoice.projections || []).map((projection) => (
+                        <tr key={`jp-projection-${projection._id}`}>
+                          <td>{projection.description}</td>
+                          <td>{formatJapaneseDate(projection.estimateDate)}</td>
+                          <td className="right">
+                            {formatMoney(projection.amount, invoice.currency)}
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan="3" className="center">
+                          お支払い予定はありません
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan="2">合計</td>
+                      <td className="right">
+                        {formatMoney(projectionTotal, invoice.currency)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              <div className="inv-print-terms inv-print-page-break">
+                <h3>備考・条件</h3>
                 <HtmlBlock html={invoice.terms} />
               </div>
             </section>
@@ -650,7 +888,7 @@ export default function InvoiceDetail() {
             <div className="inv-grid-4">
               <div className="inv-card">
                 <div className="inv-section-title">Personal Note</div>
-                <div className="inv-muted">{invoice.notes || "-"}</div>
+                <HtmlBlock html={invoice.notes || "-"} />
               </div>
             </div>
           </div>

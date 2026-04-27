@@ -5,6 +5,13 @@ export const getInvoiceMeta = async (params = {}) => {
   return response.data;
 };
 
+export const validateInvoiceNumber = async (params = {}) => {
+  const response = await api.get("/api/admin/invoices/validate-number", {
+    params,
+  });
+  return response.data;
+};
+
 export const getInvoices = async (params = {}) => {
   const response = await api.get("/api/admin/invoices", { params });
   return response.data;

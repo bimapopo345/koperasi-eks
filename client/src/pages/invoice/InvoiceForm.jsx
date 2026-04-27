@@ -7,8 +7,10 @@ import {
   getInvoice,
   getInvoiceMeta,
   updateInvoice,
+  validateInvoiceNumber,
 } from "../../api/invoiceApi.jsx";
 import { getTosList } from "../../api/tosApi.jsx";
+import RichTextEditor from "./RichTextEditor.jsx";
 import "./invoice.css";
 
 const formatMoney = (amount, currency = "IDR") => {
@@ -26,6 +28,32 @@ const normalizeNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const parseMoneyInput = (value) => {
+  if (value === "" || value === null || value === undefined) return "";
+  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+
+  const raw = String(value)
+    .replace(/[^\d,.-]/g, "")
+    .trim();
+  if (!raw) return "";
+
+  const normalized = raw.includes(",")
+    ? raw.replace(/\./g, "").replace(",", ".")
+    : raw.replace(/\./g, "");
+  const parsed = Number.parseFloat(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+const normalizeMoney = (value) => normalizeNumber(parseMoneyInput(value));
+
+const formatMoneyInput = (value) => {
+  if (value === "" || value === null || value === undefined) return "";
+  return new Intl.NumberFormat("id-ID", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(normalizeMoney(value));
+};
+
 const toDateInput = (value) => {
   if (!value) return "";
   return new Date(value).toISOString().slice(0, 10);
@@ -38,6 +66,19 @@ const emptyProjection = (date = "") => ({
   estimateDate: date,
   amount: 0,
 });
+
+function MoneyInput({ value, onChange, placeholder = "0" }) {
+  return (
+    <input
+      className="inv-input"
+      type="text"
+      inputMode="decimal"
+      placeholder={placeholder}
+      value={formatMoneyInput(value)}
+      onChange={(event) => onChange(parseMoneyInput(event.target.value))}
+    />
+  );
+}
 
 const getMemberLabel = (member) => {
   if (!member) return "";
@@ -207,8 +248,12 @@ export default function InvoiceForm() {
     termsTitle: "",
   });
   const [items, setItems] = useState([emptyItem()]);
-  const [discounts, setDiscounts] = useState([]);
+  const [discounts, setDiscounts] = useState([emptyDiscount()]);
   const [projections, setProjections] = useState([emptyProjection(today)]);
+  const [invoiceNumberCheck, setInvoiceNumberCheck] = useState({
+    status: "idle",
+    message: "",
+  });
 
   useEffect(() => {
     const load = async () => {
@@ -265,14 +310,16 @@ export default function InvoiceForm() {
               : [emptyItem()],
           );
           setDiscounts(
-            (invoice.discounts || []).map((discount) => ({
-              label: discount.label || "",
-              type: discount.type || "fixed",
-              value:
-                discount.type === "percentage"
-                  ? discount.value || 0
-                  : discount.amount || discount.value || 0,
-            })),
+            (invoice.discounts || []).length
+              ? (invoice.discounts || []).map((discount) => ({
+                  label: discount.label || "",
+                  type: discount.type || "fixed",
+                  value:
+                    discount.type === "percentage"
+                      ? discount.value || 0
+                      : discount.amount || discount.value || 0,
+                }))
+              : [emptyDiscount()],
           );
           setProjections(
             (invoice.projections || []).length
@@ -324,6 +371,65 @@ export default function InvoiceForm() {
     };
   }, [form.issuedDate, invoiceNumberLocked, isEdit]);
 
+  useEffect(() => {
+    const invoiceNumberValue = String(form.invoiceNumber || "")
+      .trim()
+      .toUpperCase();
+
+    if (!invoiceNumberValue) {
+      setInvoiceNumberCheck({ status: "idle", message: "" });
+      return;
+    }
+
+    if (
+      isEdit &&
+      originalInvoiceNumber &&
+      invoiceNumberValue === String(originalInvoiceNumber).toUpperCase()
+    ) {
+      setInvoiceNumberCheck({
+        status: "available",
+        message: "Nomor invoice saat ini.",
+      });
+      return;
+    }
+
+    let ignore = false;
+    setInvoiceNumberCheck({
+      status: "checking",
+      message: "Mengecek nomor invoice...",
+    });
+
+    const timer = window.setTimeout(() => {
+      validateInvoiceNumber({
+        invoiceNumber: invoiceNumberValue,
+        exclude: isEdit ? originalInvoiceNumber : "",
+      })
+        .then((res) => {
+          if (ignore) return;
+          const available = Boolean(res?.data?.available);
+          setInvoiceNumberCheck({
+            status: available ? "available" : "duplicate",
+            message: available
+              ? "Nomor invoice bisa dipakai."
+              : "Nomor invoice sudah dipakai.",
+          });
+        })
+        .catch(() => {
+          if (!ignore) {
+            setInvoiceNumberCheck({
+              status: "error",
+              message: "Gagal mengecek nomor invoice.",
+            });
+          }
+        });
+    }, 350);
+
+    return () => {
+      ignore = true;
+      window.clearTimeout(timer);
+    };
+  }, [form.invoiceNumber, isEdit, originalInvoiceNumber]);
+
   const selectedMember = useMemo(
     () =>
       members.find((member) => String(member._id) === String(form.memberId)) ||
@@ -341,19 +447,27 @@ export default function InvoiceForm() {
     [items],
   );
 
-  const normalizedDiscounts = useMemo(
-    () =>
-      discounts.map((discount) => {
-        const value = normalizeNumber(discount.value);
-        const amount =
-          discount.type === "percentage" ? (subtotal * value) / 100 : value;
-        return {
-          ...discount,
-          amount,
-        };
-      }),
-    [discounts, subtotal],
-  );
+  const normalizedDiscounts = useMemo(() => {
+    let runningTotal = subtotal;
+
+    return discounts.map((discount, index) => {
+      const value =
+        discount.type === "percentage"
+          ? normalizeNumber(discount.value)
+          : normalizeMoney(discount.value);
+      const amount =
+        discount.type === "percentage" ? (runningTotal * value) / 100 : value;
+
+      runningTotal = Math.max(runningTotal - amount, 0);
+
+      return {
+        ...discount,
+        label: discount.label || `Discount ${index + 1}`,
+        value,
+        amount,
+      };
+    });
+  }, [discounts, subtotal]);
 
   const discountTotal = useMemo(
     () =>
@@ -364,7 +478,14 @@ export default function InvoiceForm() {
     [normalizedDiscounts],
   );
 
-  const total = Math.max(subtotal - discountTotal, 0);
+  const total = normalizedDiscounts.reduce(
+    (runningTotal, discount) => Math.max(runningTotal - discount.amount, 0),
+    subtotal,
+  );
+  const expectedReceiveIDR = total * (normalizeNumber(form.exchangeRate) || 1);
+  const invoiceNumberBlocked = ["checking", "duplicate"].includes(
+    invoiceNumberCheck.status,
+  );
 
   const setItemValue = (index, key, value) => {
     setItems((prev) =>
@@ -402,20 +523,23 @@ export default function InvoiceForm() {
       title: item.title,
       description: item.description,
       quantity: normalizeNumber(item.quantity),
-      price: normalizeNumber(item.price),
+      price: normalizeMoney(item.price),
     })),
     discounts: discounts
-      .map((discount) => ({
-        label: discount.label,
+      .map((discount, index) => ({
+        label: discount.label || `Discount ${index + 1}`,
         type: discount.type,
-        value: normalizeNumber(discount.value),
+        value:
+          discount.type === "percentage"
+            ? normalizeNumber(discount.value)
+            : normalizeMoney(discount.value),
       }))
-      .filter((discount) => discount.label),
+      .filter((discount) => discount.value > 0),
     projections: projections
       .map((projection, index) => ({
         description: projection.description || `Cicilan ${index + 1}`,
         estimateDate: projection.estimateDate,
-        amount: normalizeNumber(projection.amount),
+        amount: normalizeMoney(projection.amount),
       }))
       .filter((projection) => projection.estimateDate && projection.amount > 0),
     notes: form.notes,
@@ -435,6 +559,12 @@ export default function InvoiceForm() {
 
       if (!payload.memberId) {
         throw new Error("Customer anggota wajib dipilih.");
+      }
+      if (invoiceNumberCheck.status === "duplicate") {
+        throw new Error("Nomor invoice sudah dipakai.");
+      }
+      if (invoiceNumberCheck.status === "checking") {
+        throw new Error("Tunggu validasi nomor invoice selesai.");
       }
       if (!payload.items.some((item) => item.title && item.quantity > 0)) {
         throw new Error("Minimal 1 item invoice wajib diisi.");
@@ -538,7 +668,13 @@ export default function InvoiceForm() {
                 <div className="inv-grid-6">
                   <label className="inv-label">Invoice Number</label>
                   <input
-                    className="inv-input"
+                    className={`inv-input ${
+                      invoiceNumberCheck.status === "duplicate"
+                        ? "is-invalid"
+                        : invoiceNumberCheck.status === "available"
+                          ? "is-valid"
+                          : ""
+                    }`}
                     value={form.invoiceNumber}
                     onChange={(event) => {
                       setInvoiceNumberLocked(true);
@@ -548,6 +684,13 @@ export default function InvoiceForm() {
                       }));
                     }}
                   />
+                  {invoiceNumberCheck.message ? (
+                    <div
+                      className={`inv-field-hint ${invoiceNumberCheck.status}`}
+                    >
+                      {invoiceNumberCheck.message}
+                    </div>
+                  ) : null}
                 </div>
                 <div className="inv-grid-6">
                   <label className="inv-label">Sales Code</label>
@@ -694,16 +837,20 @@ export default function InvoiceForm() {
                       </div>
                       <div className="inv-grid-4">
                         <label className="inv-label">Price</label>
-                        <input
-                          className="inv-input"
-                          type="number"
-                          min="0"
-                          step="0.01"
+                        <MoneyInput
                           value={item.price}
-                          onChange={(event) =>
-                            setItemValue(index, "price", event.target.value)
+                          onChange={(value) =>
+                            setItemValue(index, "price", value)
                           }
                         />
+                        <div className="inv-money-hint">
+                          Amount:{" "}
+                          {formatMoney(
+                            normalizeNumber(item.quantity) *
+                              normalizeMoney(item.price),
+                            form.currency,
+                          )}
+                        </div>
                       </div>
                       <div className="inv-grid-12">
                         <label className="inv-label">Description</label>
@@ -743,9 +890,6 @@ export default function InvoiceForm() {
                   Add Discount
                 </button>
               </div>
-              {!discounts.length ? (
-                <div className="inv-empty">Belum ada discount.</div>
-              ) : null}
               <div className="inv-page">
                 {discounts.map((discount, index) => (
                   <div key={`discount-${index}`} className="inv-line-card">
@@ -756,17 +900,19 @@ export default function InvoiceForm() {
                       >
                         Discount {index + 1}
                       </div>
-                      <button
-                        type="button"
-                        className="inv-remove"
-                        onClick={() =>
-                          setDiscounts((prev) =>
-                            prev.filter((_, idx) => idx !== index),
-                          )
-                        }
-                      >
-                        Remove
-                      </button>
+                      {discounts.length > 1 ? (
+                        <button
+                          type="button"
+                          className="inv-remove"
+                          onClick={() =>
+                            setDiscounts((prev) =>
+                              prev.filter((_, idx) => idx !== index),
+                            )
+                          }
+                        >
+                          Remove
+                        </button>
+                      ) : null}
                     </div>
                     <div className="inv-grid">
                       <div className="inv-grid-6">
@@ -798,16 +944,36 @@ export default function InvoiceForm() {
                             ? "Percent"
                             : "Amount"}
                         </label>
-                        <input
-                          className="inv-input"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={discount.value}
-                          onChange={(event) =>
-                            setDiscountValue(index, "value", event.target.value)
-                          }
-                        />
+                        {discount.type === "percentage" ? (
+                          <input
+                            className="inv-input"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={discount.value}
+                            onChange={(event) =>
+                              setDiscountValue(
+                                index,
+                                "value",
+                                event.target.value,
+                              )
+                            }
+                          />
+                        ) : (
+                          <MoneyInput
+                            value={discount.value}
+                            onChange={(value) =>
+                              setDiscountValue(index, "value", value)
+                            }
+                          />
+                        )}
+                        <div className="inv-money-hint">
+                          Potongan:{" "}
+                          {formatMoney(
+                            normalizedDiscounts[index]?.amount || 0,
+                            form.currency,
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -836,81 +1002,123 @@ export default function InvoiceForm() {
                   Add Projection
                 </button>
               </div>
-              <div className="inv-page">
-                {projections.map((projection, index) => (
-                  <div key={`projection-${index}`} className="inv-line-card">
-                    <div className="inv-line-top">
-                      <div
-                        className="inv-section-title"
-                        style={{ marginBottom: 0 }}
-                      >
-                        Projection {index + 1}
-                      </div>
-                      {projections.length > 1 ? (
-                        <button
-                          type="button"
-                          className="inv-remove"
-                          onClick={() =>
-                            setProjections((prev) =>
-                              prev.filter((_, idx) => idx !== index),
-                            )
-                          }
-                        >
-                          Remove
-                        </button>
-                      ) : null}
-                    </div>
-                    <div className="inv-grid">
-                      <div className="inv-grid-6">
-                        <label className="inv-label">Description</label>
-                        <input
-                          className="inv-input"
-                          value={projection.description}
-                          onChange={(event) =>
-                            setProjectionValue(
-                              index,
-                              "description",
-                              event.target.value,
-                            )
-                          }
-                          placeholder={`Cicilan ${index + 1}`}
-                        />
-                      </div>
-                      <div className="inv-grid-3">
-                        <label className="inv-label">Estimate Date</label>
-                        <input
-                          className="inv-input"
-                          type="date"
-                          value={projection.estimateDate}
-                          onChange={(event) =>
-                            setProjectionValue(
-                              index,
-                              "estimateDate",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                      <div className="inv-grid-3">
-                        <label className="inv-label">Amount</label>
-                        <input
-                          className="inv-input"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={projection.amount}
-                          onChange={(event) =>
-                            setProjectionValue(
-                              index,
-                              "amount",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              <div className="inv-table-wrap">
+                <table className="inv-table inv-projection-edit-table">
+                  <thead>
+                    <tr>
+                      <th style={{ width: "38%" }}>Description</th>
+                      <th style={{ width: "22%" }}>Estimate Date</th>
+                      <th className="right" style={{ width: "26%" }}>
+                        Amount
+                      </th>
+                      <th className="center" style={{ width: "14%" }}>
+                        Action
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {projections.map((projection, index) => (
+                      <tr key={`projection-${index}`}>
+                        <td>
+                          <select
+                            className="inv-select"
+                            value={projection.description}
+                            onChange={(event) =>
+                              setProjectionValue(
+                                index,
+                                "description",
+                                event.target.value,
+                              )
+                            }
+                          >
+                            <option value="">Custom / pilih cicilan</option>
+                            {Array.from({ length: 25 }, (_, itemIndex) => {
+                              const label = `Cicilan ${itemIndex + 1}`;
+                              return (
+                                <option key={label} value={label}>
+                                  {label}
+                                </option>
+                              );
+                            })}
+                            {projection.description &&
+                            !/^Cicilan \d+$/.test(projection.description) ? (
+                              <option value={projection.description}>
+                                {projection.description}
+                              </option>
+                            ) : null}
+                          </select>
+                          <input
+                            className="inv-input"
+                            style={{ marginTop: 6 }}
+                            value={projection.description}
+                            onChange={(event) =>
+                              setProjectionValue(
+                                index,
+                                "description",
+                                event.target.value,
+                              )
+                            }
+                            placeholder={`Cicilan ${index + 1}`}
+                          />
+                        </td>
+                        <td>
+                          <input
+                            className="inv-input"
+                            type="date"
+                            value={projection.estimateDate}
+                            onChange={(event) =>
+                              setProjectionValue(
+                                index,
+                                "estimateDate",
+                                event.target.value,
+                              )
+                            }
+                          />
+                        </td>
+                        <td>
+                          <MoneyInput
+                            value={projection.amount}
+                            onChange={(value) =>
+                              setProjectionValue(index, "amount", value)
+                            }
+                          />
+                        </td>
+                        <td className="center">
+                          {projections.length > 1 ? (
+                            <button
+                              type="button"
+                              className="inv-mini-danger"
+                              onClick={() =>
+                                setProjections((prev) =>
+                                  prev.filter((_, idx) => idx !== index),
+                                )
+                              }
+                            >
+                              Delete
+                            </button>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan="2">Total Projection</td>
+                      <td className="right">
+                        {formatMoney(
+                          projections.reduce(
+                            (sum, item) => sum + normalizeMoney(item.amount),
+                            0,
+                          ),
+                          form.currency,
+                        )}
+                      </td>
+                      <td />
+                    </tr>
+                  </tfoot>
+                </table>
               </div>
             </div>
 
@@ -919,13 +1127,13 @@ export default function InvoiceForm() {
               <div className="inv-grid">
                 <div className="inv-grid-6">
                   <label className="inv-label">Notes</label>
-                  <textarea
-                    className="inv-textarea"
+                  <RichTextEditor
                     value={form.notes}
-                    onChange={(event) =>
+                    placeholder="Tulis personal note invoice..."
+                    onChange={(value) =>
                       setForm((prev) => ({
                         ...prev,
-                        notes: event.target.value,
+                        notes: value,
                       }))
                     }
                   />
@@ -957,13 +1165,13 @@ export default function InvoiceForm() {
                   <label className="inv-label" style={{ marginTop: 12 }}>
                     Note/Term of Services
                   </label>
-                  <textarea
-                    className="inv-textarea inv-tos-editor"
+                  <RichTextEditor
                     value={form.terms}
-                    onChange={(event) =>
+                    placeholder="Tulis term of services..."
+                    onChange={(value) =>
                       setForm((prev) => ({
                         ...prev,
-                        terms: event.target.value,
+                        terms: value,
                         tosId: "",
                         termsTitle: "",
                       }))
@@ -994,7 +1202,7 @@ export default function InvoiceForm() {
                 <span>
                   {formatMoney(
                     projections.reduce(
-                      (sum, item) => sum + normalizeNumber(item.amount),
+                      (sum, item) => sum + normalizeMoney(item.amount),
                       0,
                     ),
                     form.currency,
@@ -1005,11 +1213,15 @@ export default function InvoiceForm() {
                 <span>Exchange Rate</span>
                 <span>{normalizeNumber(form.exchangeRate) || 1}</span>
               </div>
+              <div className="inv-summary-row">
+                <span>Expected Receive (IDR)</span>
+                <span>{formatMoney(expectedReceiveIDR, "IDR")}</span>
+              </div>
               <div className="inv-inline-actions" style={{ marginTop: 16 }}>
                 <button
                   type="button"
                   className="inv-btn-ghost"
-                  disabled={submitting}
+                  disabled={submitting || invoiceNumberBlocked}
                   onClick={() => submitForm("draft")}
                 >
                   Save Draft
@@ -1017,7 +1229,7 @@ export default function InvoiceForm() {
                 <button
                   type="button"
                   className="inv-btn"
-                  disabled={submitting}
+                  disabled={submitting || invoiceNumberBlocked}
                   onClick={() => submitForm("sent")}
                 >
                   Save & Send

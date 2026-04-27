@@ -93,18 +93,21 @@ function normalizeItems(rawItems) {
 }
 
 function normalizeDiscounts(rawDiscounts, subtotal) {
-  return parseFlexibleArray(rawDiscounts)
-    .map((discount) => {
-      const label = normalizeString(discount?.label);
-      if (!label) return null;
+  let runningTotal = subtotal;
 
+  return parseFlexibleArray(rawDiscounts)
+    .map((discount, index) => {
+      const label = normalizeString(discount?.label) || `Discount ${index + 1}`;
       const type = discount?.type === "percentage" ? "percentage" : "fixed";
       const value = clampMoney(discount?.value);
-      const amount = type === "percentage"
-        ? clampMoney((subtotal * value) / 100)
-        : clampMoney(value);
+      const amount =
+        type === "percentage"
+          ? clampMoney((runningTotal * value) / 100)
+          : clampMoney(value);
 
       if (amount <= 0) return null;
+
+      runningTotal = Math.max(clampMoney(runningTotal - amount), 0);
 
       return {
         label,
@@ -121,13 +124,14 @@ function normalizeProjections(rawProjections) {
     .map((projection, index) => {
       const estimateDate = ensureDate(
         projection?.estimateDate || projection?.estimate || projection?.date,
-        `Tanggal proyeksi #${index + 1}`
+        `Tanggal proyeksi #${index + 1}`,
       );
       const amount = clampMoney(projection?.amount);
       if (amount <= 0) return null;
 
       return {
-        description: normalizeString(projection?.description) || `Cicilan ${index + 1}`,
+        description:
+          normalizeString(projection?.description) || `Cicilan ${index + 1}`,
         estimateDate,
         amount,
       };
@@ -143,7 +147,10 @@ function normalizePayments(rawPayments) {
       if (amount <= 0) return null;
 
       return {
-        paymentDate: ensureDate(payment?.paymentDate || payment?.date, "Tanggal pembayaran"),
+        paymentDate: ensureDate(
+          payment?.paymentDate || payment?.date,
+          "Tanggal pembayaran",
+        ),
         amount,
         method: normalizeString(payment?.method) || "Bank",
         notes: normalizeString(payment?.notes),
@@ -177,7 +184,10 @@ function computeInvoiceStatus(statusInput, dueDate, total, totalPaid) {
 }
 
 function enrichProjections(projections, payments) {
-  const totalPaid = payments.reduce((sum, payment) => sum + clampMoney(payment.amount), 0);
+  const totalPaid = payments.reduce(
+    (sum, payment) => sum + clampMoney(payment.amount),
+    0,
+  );
   let runningProjection = 0;
 
   return projections.map((projection) => {
@@ -199,8 +209,14 @@ function enrichProjections(projections, payments) {
 }
 
 function serializeInvoice(invoiceDoc) {
-  const invoice = typeof invoiceDoc.toObject === "function" ? invoiceDoc.toObject() : invoiceDoc;
-  const projections = enrichProjections(invoice.projections || [], invoice.payments || []);
+  const invoice =
+    typeof invoiceDoc.toObject === "function"
+      ? invoiceDoc.toObject()
+      : invoiceDoc;
+  const projections = enrichProjections(
+    invoice.projections || [],
+    invoice.payments || [],
+  );
 
   return {
     ...invoice,
@@ -245,27 +261,58 @@ async function buildInvoicePayload(payload, options = {}) {
     throw new ApiError(404, "Anggota tidak ditemukan");
   }
 
-  const issuedDate = ensureDate(payload?.issuedDate || currentInvoice?.issuedDate || new Date(), "Tanggal invoice");
-  const dueDate = ensureDate(payload?.dueDate || currentInvoice?.dueDate || issuedDate, "Tanggal jatuh tempo");
+  const issuedDate = ensureDate(
+    payload?.issuedDate || currentInvoice?.issuedDate || new Date(),
+    "Tanggal invoice",
+  );
+  const dueDate = ensureDate(
+    payload?.dueDate || currentInvoice?.dueDate || issuedDate,
+    "Tanggal jatuh tempo",
+  );
   const items = normalizeItems(payload?.items || currentInvoice?.items || []);
-  const subtotal = clampMoney(items.reduce((sum, item) => sum + item.amount, 0));
-  const discounts = normalizeDiscounts(payload?.discounts || currentInvoice?.discounts || [], subtotal);
-  const discountTotal = clampMoney(discounts.reduce((sum, discount) => sum + discount.amount, 0));
+  const subtotal = clampMoney(
+    items.reduce((sum, item) => sum + item.amount, 0),
+  );
+  const discounts = normalizeDiscounts(
+    payload?.discounts || currentInvoice?.discounts || [],
+    subtotal,
+  );
+  const discountTotal = clampMoney(
+    discounts.reduce((sum, discount) => sum + discount.amount, 0),
+  );
   const total = Math.max(clampMoney(subtotal - discountTotal), 0);
-  const projections = normalizeProjections(payload?.projections || currentInvoice?.projections || []);
-  const payments = normalizePayments(payload?.payments || currentInvoice?.payments || []);
-  const totalPaid = clampMoney(payments.reduce((sum, payment) => sum + payment.amount, 0));
+  const projections = normalizeProjections(
+    payload?.projections || currentInvoice?.projections || [],
+  );
+  const payments = normalizePayments(
+    payload?.payments || currentInvoice?.payments || [],
+  );
+  const totalPaid = clampMoney(
+    payments.reduce((sum, payment) => sum + payment.amount, 0),
+  );
   const amountDue = clampMoney(total - totalPaid);
-  const paymentDates = payments.map((payment) => new Date(payment.paymentDate).getTime()).filter(Number.isFinite);
+  const paymentDates = payments
+    .map((payment) => new Date(payment.paymentDate).getTime())
+    .filter(Number.isFinite);
   const invoiceNumberInput = normalizeString(payload?.invoiceNumber);
-  const invoiceNumber = (invoiceNumberInput || await generateNextInvoiceNumber(issuedDate, currentInvoice?._id)).toUpperCase();
-  const statusInput = normalizeString(payload?.status || currentInvoice?.status || "draft").toLowerCase();
+  const invoiceNumber = (
+    invoiceNumberInput ||
+    (await generateNextInvoiceNumber(issuedDate, currentInvoice?._id))
+  ).toUpperCase();
+  const statusInput = normalizeString(
+    payload?.status || currentInvoice?.status || "draft",
+  ).toLowerCase();
   const requestedStatus = statusInput === "draft" ? "draft" : "sent";
   let tosId = null;
-  let termsTitle = normalizeString(payload?.termsTitle || currentInvoice?.termsTitle);
+  let termsTitle = normalizeString(
+    payload?.termsTitle || currentInvoice?.termsTitle,
+  );
   let terms = normalizeString(payload?.terms || currentInvoice?.terms);
 
-  if (payload?.tosId && mongoose.Types.ObjectId.isValid(String(payload.tosId))) {
+  if (
+    payload?.tosId &&
+    mongoose.Types.ObjectId.isValid(String(payload.tosId))
+  ) {
     const tos = await Tos.findById(payload.tosId).lean();
     if (!tos) {
       throw new ApiError(404, "Term of Services tidak ditemukan");
@@ -277,11 +324,20 @@ async function buildInvoicePayload(payload, options = {}) {
     tosId = currentInvoice.tosId;
   }
 
-  if (!AVAILABLE_CURRENCIES.includes(payload?.currency || currentInvoice?.currency || "IDR")) {
+  if (
+    !AVAILABLE_CURRENCIES.includes(
+      payload?.currency || currentInvoice?.currency || "IDR",
+    )
+  ) {
     throw new ApiError(400, "Currency invoice tidak didukung");
   }
 
-  const status = computeInvoiceStatus(requestedStatus, dueDate, total, totalPaid);
+  const status = computeInvoiceStatus(
+    requestedStatus,
+    dueDate,
+    total,
+    totalPaid,
+  );
 
   return {
     invoiceNumber,
@@ -291,7 +347,9 @@ async function buildInvoicePayload(payload, options = {}) {
     issuedDate,
     dueDate,
     currency: payload?.currency || currentInvoice?.currency || "IDR",
-    exchangeRate: clampMoney(payload?.exchangeRate || currentInvoice?.exchangeRate || 1) || 1,
+    exchangeRate:
+      clampMoney(payload?.exchangeRate || currentInvoice?.exchangeRate || 1) ||
+      1,
     status,
     items,
     discounts,
@@ -306,7 +364,9 @@ async function buildInvoicePayload(payload, options = {}) {
     total,
     totalPaid,
     amountDue,
-    lastPaymentDate: paymentDates.length ? new Date(Math.max(...paymentDates)) : null,
+    lastPaymentDate: paymentDates.length
+      ? new Date(Math.max(...paymentDates))
+      : null,
   };
 }
 
@@ -319,13 +379,36 @@ export const getInvoiceMeta = asyncHandler(async (req, res) => {
       nextInvoiceNumber,
       currencies: AVAILABLE_CURRENCIES,
       paymentMethods: AVAILABLE_PAYMENT_METHODS,
-    })
+    }),
+  );
+});
+
+export const validateInvoiceNumber = asyncHandler(async (req, res) => {
+  const invoiceNumber = normalizeString(req.query.invoiceNumber).toUpperCase();
+  const exclude = normalizeString(req.query.exclude).toUpperCase();
+
+  if (!invoiceNumber) {
+    throw new ApiError(400, "Nomor invoice wajib diisi");
+  }
+
+  const duplicate = await Invoice.findOne({ invoiceNumber }).lean();
+  const available =
+    !duplicate || (exclude && duplicate.invoiceNumber === exclude);
+
+  res.status(200).json(
+    new ApiResponse(200, {
+      invoiceNumber,
+      available,
+    }),
   );
 });
 
 export const getAllInvoices = asyncHandler(async (req, res) => {
   const page = Math.max(normalizeNumber(req.query.page, 1), 1);
-  const limit = Math.min(Math.max(normalizeNumber(req.query.limit, 12), 1), 100);
+  const limit = Math.min(
+    Math.max(normalizeNumber(req.query.limit, 12), 1),
+    100,
+  );
   const search = normalizeString(req.query.search);
   const memberId = normalizeString(req.query.memberId);
   const statusFilter = normalizeString(req.query.status).toLowerCase();
@@ -343,7 +426,10 @@ export const getAllInvoices = asyncHandler(async (req, res) => {
     if (issuedTo) query.issuedDate.$lte = endOfDay(issuedTo);
   }
   if (search) {
-    const regex = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    const regex = new RegExp(
+      search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+      "i",
+    );
     query.$or = [
       { invoiceNumber: regex },
       { salesCode: regex },
@@ -352,12 +438,15 @@ export const getAllInvoices = asyncHandler(async (req, res) => {
     ];
   }
 
-  const rawInvoices = await Invoice.find(query).sort({ issuedDate: -1, createdAt: -1 }).lean();
+  const rawInvoices = await Invoice.find(query)
+    .sort({ issuedDate: -1, createdAt: -1 })
+    .lean();
   const hydrated = rawInvoices.map((invoice) => serializeInvoice(invoice));
 
   const filtered = hydrated.filter((invoice) => {
     if (tag === "draft" && invoice.status !== "draft") return false;
-    if (tag === "unpaid" && ["paid", "draft"].includes(invoice.status)) return false;
+    if (tag === "unpaid" && ["paid", "draft"].includes(invoice.status))
+      return false;
     if (statusFilter && invoice.status !== statusFilter) return false;
     return true;
   });
@@ -366,8 +455,15 @@ export const getAllInvoices = asyncHandler(async (req, res) => {
     totalInvoices: filtered.length,
     totalDraft: filtered.filter((invoice) => invoice.status === "draft").length,
     totalPaid: filtered.filter((invoice) => invoice.status === "paid").length,
-    totalOutstanding: clampMoney(filtered.reduce((sum, invoice) => sum + Math.max(invoice.amountDue || 0, 0), 0)),
-    totalValue: clampMoney(filtered.reduce((sum, invoice) => sum + (invoice.total || 0), 0)),
+    totalOutstanding: clampMoney(
+      filtered.reduce(
+        (sum, invoice) => sum + Math.max(invoice.amountDue || 0, 0),
+        0,
+      ),
+    ),
+    totalValue: clampMoney(
+      filtered.reduce((sum, invoice) => sum + (invoice.total || 0), 0),
+    ),
   };
 
   const startIndex = (page - 1) * limit;
@@ -383,12 +479,14 @@ export const getAllInvoices = asyncHandler(async (req, res) => {
         totalItems: filtered.length,
         itemsPerPage: limit,
       },
-    })
+    }),
   );
 });
 
 export const getInvoiceByNumber = asyncHandler(async (req, res) => {
-  const invoiceNumber = String(req.params.invoiceNumber || "").trim().toUpperCase();
+  const invoiceNumber = String(req.params.invoiceNumber || "")
+    .trim()
+    .toUpperCase();
   const invoice = await Invoice.findOne({ invoiceNumber }).lean();
 
   if (!invoice) {
@@ -401,7 +499,9 @@ export const getInvoiceByNumber = asyncHandler(async (req, res) => {
 export const createInvoice = asyncHandler(async (req, res) => {
   const payload = await buildInvoicePayload(req.body);
 
-  const duplicate = await Invoice.findOne({ invoiceNumber: payload.invoiceNumber }).lean();
+  const duplicate = await Invoice.findOne({
+    invoiceNumber: payload.invoiceNumber,
+  }).lean();
   if (duplicate) {
     throw new ApiError(400, "Nomor invoice sudah digunakan");
   }
@@ -412,12 +512,24 @@ export const createInvoice = asyncHandler(async (req, res) => {
     updatedBy: req.user?.userId || null,
   });
 
-  res.status(201).json(new ApiResponse(201, serializeInvoice(invoice), "Invoice berhasil dibuat"));
+  res
+    .status(201)
+    .json(
+      new ApiResponse(
+        201,
+        serializeInvoice(invoice),
+        "Invoice berhasil dibuat",
+      ),
+    );
 });
 
 export const updateInvoice = asyncHandler(async (req, res) => {
-  const currentNumber = String(req.params.invoiceNumber || "").trim().toUpperCase();
-  const currentInvoice = await Invoice.findOne({ invoiceNumber: currentNumber });
+  const currentNumber = String(req.params.invoiceNumber || "")
+    .trim()
+    .toUpperCase();
+  const currentInvoice = await Invoice.findOne({
+    invoiceNumber: currentNumber,
+  });
 
   if (!currentInvoice) {
     throw new ApiError(404, "Invoice tidak ditemukan");
@@ -429,7 +541,7 @@ export const updateInvoice = asyncHandler(async (req, res) => {
       ...req.body,
       payments: currentInvoice.payments,
     },
-    { currentInvoice }
+    { currentInvoice },
   );
 
   const duplicate = await Invoice.findOne({
@@ -447,22 +559,36 @@ export const updateInvoice = asyncHandler(async (req, res) => {
 
   await currentInvoice.save();
 
-  res.status(200).json(new ApiResponse(200, serializeInvoice(currentInvoice), "Invoice berhasil diperbarui"));
+  res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        serializeInvoice(currentInvoice),
+        "Invoice berhasil diperbarui",
+      ),
+    );
 });
 
 export const deleteInvoice = asyncHandler(async (req, res) => {
-  const invoiceNumber = String(req.params.invoiceNumber || "").trim().toUpperCase();
+  const invoiceNumber = String(req.params.invoiceNumber || "")
+    .trim()
+    .toUpperCase();
   const invoice = await Invoice.findOneAndDelete({ invoiceNumber }).lean();
 
   if (!invoice) {
     throw new ApiError(404, "Invoice tidak ditemukan");
   }
 
-  res.status(200).json(new ApiResponse(200, invoice, "Invoice berhasil dihapus"));
+  res
+    .status(200)
+    .json(new ApiResponse(200, invoice, "Invoice berhasil dihapus"));
 });
 
 export const addInvoicePayment = asyncHandler(async (req, res) => {
-  const invoiceNumber = String(req.params.invoiceNumber || "").trim().toUpperCase();
+  const invoiceNumber = String(req.params.invoiceNumber || "")
+    .trim()
+    .toUpperCase();
   const invoice = await Invoice.findOne({ invoiceNumber });
 
   if (!invoice) {
@@ -475,7 +601,9 @@ export const addInvoicePayment = asyncHandler(async (req, res) => {
   }
 
   invoice.payments.push(payment);
-  const rebuilt = await buildInvoicePayload(invoice.toObject(), { currentInvoice: invoice });
+  const rebuilt = await buildInvoicePayload(invoice.toObject(), {
+    currentInvoice: invoice,
+  });
   Object.assign(invoice, {
     ...rebuilt,
     payments: normalizePayments(invoice.payments),
@@ -483,11 +611,21 @@ export const addInvoicePayment = asyncHandler(async (req, res) => {
   });
   await invoice.save();
 
-  res.status(200).json(new ApiResponse(200, serializeInvoice(invoice), "Pembayaran berhasil ditambahkan"));
+  res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        serializeInvoice(invoice),
+        "Pembayaran berhasil ditambahkan",
+      ),
+    );
 });
 
 export const deleteInvoicePayment = asyncHandler(async (req, res) => {
-  const invoiceNumber = String(req.params.invoiceNumber || "").trim().toUpperCase();
+  const invoiceNumber = String(req.params.invoiceNumber || "")
+    .trim()
+    .toUpperCase();
   const paymentId = String(req.params.paymentId || "").trim();
   const invoice = await Invoice.findOne({ invoiceNumber });
 
@@ -495,7 +633,9 @@ export const deleteInvoicePayment = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Invoice tidak ditemukan");
   }
 
-  const nextPayments = (invoice.payments || []).filter((payment) => String(payment._id) !== paymentId);
+  const nextPayments = (invoice.payments || []).filter(
+    (payment) => String(payment._id) !== paymentId,
+  );
   if (nextPayments.length === (invoice.payments || []).length) {
     throw new ApiError(404, "Pembayaran tidak ditemukan");
   }
@@ -505,7 +645,7 @@ export const deleteInvoicePayment = asyncHandler(async (req, res) => {
       ...invoice.toObject(),
       payments: nextPayments,
     },
-    { currentInvoice: invoice }
+    { currentInvoice: invoice },
   );
 
   Object.assign(invoice, {
@@ -515,5 +655,13 @@ export const deleteInvoicePayment = asyncHandler(async (req, res) => {
   });
   await invoice.save();
 
-  res.status(200).json(new ApiResponse(200, serializeInvoice(invoice), "Pembayaran berhasil dihapus"));
+  res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        serializeInvoice(invoice),
+        "Pembayaran berhasil dihapus",
+      ),
+    );
 });
