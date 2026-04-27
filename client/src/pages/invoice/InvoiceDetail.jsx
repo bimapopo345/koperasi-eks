@@ -10,7 +10,7 @@ import {
 import "./invoice.css";
 
 const companyProfile = {
-  name: "PT SAKURA MITRA INTERNASIONAL",
+  name: "KOPERASI SAKURA MITRA INTERNASIONAL",
   address: [
     "Ruko Dalton Utara No. 05",
     "Jl. Scientia Square Selatan, Kel. Curug Sangereng,",
@@ -19,6 +19,8 @@ const companyProfile = {
   phone: "+622159995428",
   website: "www.sakuramitra.com",
 };
+
+const invoiceLetterheadSrc = "/coop%20panjang.png";
 
 const formatMoney = (amount, currency = "IDR") => {
   const locale = currency === "IDR" ? "id-ID" : "en-US";
@@ -70,6 +72,25 @@ function HtmlBlock({ html, empty = "Tidak ada catatan" }) {
   if (!html) return <i>{empty}</i>;
   return (
     <div className="inv-rich-text" dangerouslySetInnerHTML={{ __html: html }} />
+  );
+}
+
+function InvoiceLetterhead({ title = "INVOICE", fromLabel = "From," }) {
+  return (
+    <header className="inv-print-top">
+      <img
+        className="inv-print-letterhead-img"
+        src={invoiceLetterheadSrc}
+        alt={companyProfile.name}
+      />
+      <div className="inv-print-title-row">
+        <h2>{title}</h2>
+        <address className="inv-print-from">
+          <h6>{fromLabel}</h6>
+          <strong>{companyProfile.name}</strong>
+        </address>
+      </div>
+    </header>
   );
 }
 
@@ -256,21 +277,7 @@ export default function InvoiceDetail({
               }`}
               id="printableArea"
             >
-              <div className="inv-print-top">
-                <div className="inv-print-logo">
-                  <img src="/logo-samit.png" alt="SAMIT" />
-                </div>
-                <address className="inv-print-from">
-                  <h2>INVOICE</h2>
-                  <h6>From,</h6>
-                  <strong>{companyProfile.name}</strong>
-                  {companyProfile.address.map((line) => (
-                    <span key={line}>{line}</span>
-                  ))}
-                  <span>{companyProfile.phone}</span>
-                  <span>{companyProfile.website}</span>
-                </address>
-              </div>
+              <InvoiceLetterhead />
 
               <hr className="inv-print-divider" />
 
@@ -456,21 +463,7 @@ export default function InvoiceDetail({
                 printVariant === "japan" ? "" : "is-hidden"
               }`}
             >
-              <div className="inv-print-top">
-                <div className="inv-print-logo">
-                  <img src="/logo-samit.png" alt="SAMIT" />
-                </div>
-                <address className="inv-print-from">
-                  <h2>請求書</h2>
-                  <h6>発行元</h6>
-                  <strong>{companyProfile.name}</strong>
-                  {companyProfile.address.map((line) => (
-                    <span key={`jp-${line}`}>{line}</span>
-                  ))}
-                  <span>{companyProfile.phone}</span>
-                  <span>{companyProfile.website}</span>
-                </address>
-              </div>
+              <InvoiceLetterhead title="請求書" fromLabel="発行元" />
 
               <hr className="inv-print-divider" />
 
