@@ -187,6 +187,7 @@ export default function InvoiceDetail({
   }, [invoice, printOnly]);
 
   const handlePrint = (variant = "standard") => {
+    setActiveDetailTab("invoice");
     setPrintVariant(variant);
     window.setTimeout(() => window.print(), 80);
   };
@@ -262,9 +263,17 @@ export default function InvoiceDetail({
     setPaymentSplitMode(false);
   };
 
-  const scrollToSection = (sectionRef, tabName) => {
-    if (tabName) setActiveDetailTab(tabName);
-    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const switchDetailTab = (tabName) => {
+    const sectionRef =
+      tabName === "payment" ? paymentSectionRef : invoiceSectionRef;
+
+    setActiveDetailTab(tabName);
+    window.setTimeout(() => {
+      sectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, 40);
   };
 
   const startPayment = (projection = null) => {
@@ -284,8 +293,7 @@ export default function InvoiceDetail({
     setPaymentAttachment(null);
     setPaymentSplitMode(false);
     setAddingPayment(true);
-    setActiveDetailTab("payment");
-    window.setTimeout(() => scrollToSection(paymentSectionRef, "payment"), 80);
+    switchDetailTab("payment");
   };
 
   const selectPaymentCategory = (value) => {
@@ -609,7 +617,7 @@ export default function InvoiceDetail({
             className={`inv-samit-tab ${
               activeDetailTab === "invoice" ? "active" : ""
             }`}
-            onClick={() => scrollToSection(invoiceSectionRef, "invoice")}
+            onClick={() => switchDetailTab("invoice")}
           >
             Invoice
           </button>
@@ -618,7 +626,7 @@ export default function InvoiceDetail({
             className={`inv-samit-tab ${
               activeDetailTab === "payment" ? "active" : ""
             }`}
-            onClick={() => scrollToSection(paymentSectionRef, "payment")}
+            onClick={() => switchDetailTab("payment")}
           >
             Payment
           </button>
@@ -708,385 +716,351 @@ export default function InvoiceDetail({
 
       {!loading && invoice ? (
         <>
-          <div className="inv-print-shell" ref={invoiceSectionRef}>
-            <section
-              className={`inv-print-sheet ${
-                printVariant === "standard" ? "" : "is-hidden"
-              }`}
-              id="printableArea"
-            >
-              <InvoiceLetterhead />
+          <div
+            className={`inv-tab-panel ${
+              activeDetailTab === "invoice" ? "" : "is-hidden"
+            }`}
+            ref={invoiceSectionRef}
+          >
+            <div className="inv-print-shell">
+              <section
+                className={`inv-print-sheet ${
+                  printVariant === "standard" ? "" : "is-hidden"
+                }`}
+                id="printableArea"
+              >
+                <InvoiceLetterhead />
 
-              <hr className="inv-print-divider" />
+                <hr className="inv-print-divider" />
 
-              <div className="inv-print-bill-row">
-                <address className="inv-print-to">
-                  <h6>To,</h6>
-                  <h4>{invoice.customerSnapshot?.name || "-"}</h4>
-                  <p>{invoice.customerSnapshot?.productTitle || "-"}</p>
-                  <p>
-                    {invoice.customerSnapshot?.completeAddress ||
-                      "Alamat belum diisi"}
-                  </p>
-                  <strong>{invoice.customerSnapshot?.phone || "-"}</strong>
-                  <strong>{invoice.customerSnapshot?.email || "-"}</strong>
-                </address>
+                <div className="inv-print-bill-row">
+                  <address className="inv-print-to">
+                    <h6>To,</h6>
+                    <h4>{invoice.customerSnapshot?.name || "-"}</h4>
+                    <p>{invoice.customerSnapshot?.productTitle || "-"}</p>
+                    <p>
+                      {invoice.customerSnapshot?.completeAddress ||
+                        "Alamat belum diisi"}
+                    </p>
+                    <strong>{invoice.customerSnapshot?.phone || "-"}</strong>
+                    <strong>{invoice.customerSnapshot?.email || "-"}</strong>
+                  </address>
 
-                <table className="inv-print-meta">
-                  <tbody>
-                    <tr>
-                      <td>Invoice Number</td>
-                      <td>:</td>
-                      <td>{invoice.invoiceNumber}</td>
-                    </tr>
-                    <tr>
-                      <td>Sales Code</td>
-                      <td>:</td>
-                      <td>{invoice.salesCode || "-"}</td>
-                    </tr>
-                    <tr>
-                      <td>Invoice Date</td>
-                      <td>:</td>
-                      <td>{formatDate(invoice.issuedDate)}</td>
-                    </tr>
-                    <tr>
-                      <td>Payment Due</td>
-                      <td>:</td>
-                      <td>{formatDate(invoice.dueDate)}</td>
-                    </tr>
-                    <tr>
-                      <td>Amount Due</td>
-                      <td>:</td>
-                      <td>
-                        {formatMoney(invoice.amountDue, invoice.currency)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="inv-table-wrap inv-print-items-wrap">
-                <table className="inv-print-table">
-                  <thead>
-                    <tr>
-                      <th>Item</th>
-                      <th className="center">Quantity</th>
-                      <th className="right">Price</th>
-                      <th className="right">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(invoice.items || []).map((item) => (
-                      <tr key={item._id}>
-                        <td>
-                          <strong>{item.title}</strong>
-                          <div>{item.description || "-"}</div>
-                        </td>
-                        <td className="center">{item.quantity}</td>
-                        <td className="right">
-                          {formatMoney(item.price, invoice.currency)}
-                        </td>
-                        <td className="right">
-                          {formatMoney(item.amount, invoice.currency)}
-                        </td>
+                  <table className="inv-print-meta">
+                    <tbody>
+                      <tr>
+                        <td>Invoice Number</td>
+                        <td>:</td>
+                        <td>{invoice.invoiceNumber}</td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="inv-print-summary-row">
-                <table className="inv-print-summary">
-                  <tbody>
-                    <tr>
-                      <td>Subtotal</td>
-                      <td>:</td>
-                      <td>{formatMoney(invoice.subtotal, invoice.currency)}</td>
-                    </tr>
-                    {(invoice.discounts || []).map((discount) => (
-                      <tr className="discount" key={discount._id}>
-                        <td>{discount.label}</td>
+                      <tr>
+                        <td>Sales Code</td>
+                        <td>:</td>
+                        <td>{invoice.salesCode || "-"}</td>
+                      </tr>
+                      <tr>
+                        <td>Invoice Date</td>
+                        <td>:</td>
+                        <td>{formatDate(invoice.issuedDate)}</td>
+                      </tr>
+                      <tr>
+                        <td>Payment Due</td>
+                        <td>:</td>
+                        <td>{formatDate(invoice.dueDate)}</td>
+                      </tr>
+                      <tr>
+                        <td>Amount Due</td>
                         <td>:</td>
                         <td>
-                          <i>
-                            {discount.type === "percentage"
-                              ? `${discount.value}%`
-                              : formatMoney(discount.value, invoice.currency)}
-                          </i>
+                          {formatMoney(invoice.amountDue, invoice.currency)}
                         </td>
                       </tr>
-                    ))}
-                    <tr className="total">
-                      <td>Total</td>
-                      <td>:</td>
-                      <td>{formatMoney(invoice.total, invoice.currency)}</td>
-                    </tr>
-                    {(invoice.payments || []).map((payment) => (
-                      <tr className="payment" key={payment._id}>
-                        <td>
-                          Payment on {formatPaymentDate(payment.paymentDate)} by{" "}
-                          {payment.method}
-                        </td>
-                        <td>:</td>
-                        <td>
-                          ({formatMoney(payment.amount, invoice.currency)})
-                        </td>
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="inv-table-wrap inv-print-items-wrap">
+                  <table className="inv-print-table">
+                    <thead>
+                      <tr>
+                        <th>Item</th>
+                        <th className="center">Quantity</th>
+                        <th className="right">Price</th>
+                        <th className="right">Amount</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <hr className="inv-print-divider" />
-
-              <div className="inv-print-amount-due">
-                <span>Amount due</span>
-                <strong
-                  className={Number(invoice.amountDue) < 0 ? "negative" : ""}
-                >
-                  {Number(invoice.amountDue) < 0
-                    ? `(${formatMoney(Math.abs(invoice.amountDue), invoice.currency)})`
-                    : formatMoney(invoice.amountDue, invoice.currency)}
-                </strong>
-              </div>
-
-              <div className="inv-print-projection">
-                <h3>Payment Projection</h3>
-                <table className="inv-print-table compact">
-                  <thead>
-                    <tr>
-                      <th>Description</th>
-                      <th>Due Date</th>
-                      <th className="right">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(invoice.projections || []).length ? (
-                      (invoice.projections || []).map((projection) => (
-                        <tr key={projection._id}>
-                          <td>{projection.description}</td>
-                          <td>{formatDate(projection.estimateDate)}</td>
+                    </thead>
+                    <tbody>
+                      {(invoice.items || []).map((item) => (
+                        <tr key={item._id}>
+                          <td>
+                            <strong>{item.title}</strong>
+                            <div>{item.description || "-"}</div>
+                          </td>
+                          <td className="center">{item.quantity}</td>
                           <td className="right">
-                            {formatMoney(projection.amount, invoice.currency)}
+                            {formatMoney(item.price, invoice.currency)}
+                          </td>
+                          <td className="right">
+                            {formatMoney(item.amount, invoice.currency)}
                           </td>
                         </tr>
-                      ))
-                    ) : (
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="inv-print-summary-row">
+                  <table className="inv-print-summary">
+                    <tbody>
                       <tr>
-                        <td colSpan="3" className="center">
-                          No payment projection
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td colSpan="2">Total Projection</td>
-                      <td className="right">
-                        {formatMoney(projectionTotal, invoice.currency)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-
-              <div className="inv-print-terms inv-print-page-break">
-                <h3>Notes/Terms</h3>
-                <HtmlBlock html={invoice.terms} />
-              </div>
-            </section>
-
-            <section
-              className={`inv-print-sheet inv-print-japan ${
-                printVariant === "japan" ? "" : "is-hidden"
-              }`}
-            >
-              <InvoiceLetterhead title="請求書" fromLabel="発行元" />
-
-              <hr className="inv-print-divider" />
-
-              <div className="inv-print-bill-row">
-                <address className="inv-print-to">
-                  <h6>ご請求先</h6>
-                  <h4>{invoice.customerSnapshot?.name || "-"}</h4>
-                  <p>{invoice.customerSnapshot?.productTitle || "-"}</p>
-                  <p>
-                    {invoice.customerSnapshot?.completeAddress || "住所未入力"}
-                  </p>
-                  <strong>{invoice.customerSnapshot?.phone || "-"}</strong>
-                  <strong>{invoice.customerSnapshot?.email || "-"}</strong>
-                </address>
-
-                <table className="inv-print-meta">
-                  <tbody>
-                    <tr>
-                      <td>請求書番号</td>
-                      <td>:</td>
-                      <td>{invoice.invoiceNumber}</td>
-                    </tr>
-                    <tr>
-                      <td>営業コード</td>
-                      <td>:</td>
-                      <td>{invoice.salesCode || "-"}</td>
-                    </tr>
-                    <tr>
-                      <td>発行日</td>
-                      <td>:</td>
-                      <td>{formatJapaneseDate(invoice.issuedDate)}</td>
-                    </tr>
-                    <tr>
-                      <td>支払期限</td>
-                      <td>:</td>
-                      <td>{formatJapaneseDate(invoice.dueDate)}</td>
-                    </tr>
-                    <tr>
-                      <td>請求残額</td>
-                      <td>:</td>
-                      <td>
-                        {formatMoney(invoice.amountDue, invoice.currency)}
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="inv-table-wrap inv-print-items-wrap">
-                <table className="inv-print-table">
-                  <thead>
-                    <tr>
-                      <th>品目</th>
-                      <th className="center">数量</th>
-                      <th className="right">単価</th>
-                      <th className="right">金額</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(invoice.items || []).map((item) => (
-                      <tr key={`jp-item-${item._id}`}>
-                        <td>
-                          <strong>{item.title}</strong>
-                          <div>{item.description || "-"}</div>
-                        </td>
-                        <td className="center">{item.quantity}</td>
-                        <td className="right">
-                          {formatMoney(item.price, invoice.currency)}
-                        </td>
-                        <td className="right">
-                          {formatMoney(item.amount, invoice.currency)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="inv-print-summary-row">
-                <table className="inv-print-summary">
-                  <tbody>
-                    <tr>
-                      <td>小計</td>
-                      <td>:</td>
-                      <td>{formatMoney(invoice.subtotal, invoice.currency)}</td>
-                    </tr>
-                    {(invoice.discounts || []).map((discount) => (
-                      <tr
-                        className="discount"
-                        key={`jp-discount-${discount._id}`}
-                      >
-                        <td>{discount.label}</td>
+                        <td>Subtotal</td>
                         <td>:</td>
                         <td>
-                          <i>
-                            {discount.type === "percentage"
-                              ? `${discount.value}%`
-                              : formatMoney(discount.value, invoice.currency)}
-                          </i>
+                          {formatMoney(invoice.subtotal, invoice.currency)}
                         </td>
                       </tr>
-                    ))}
-                    <tr className="total">
-                      <td>合計</td>
-                      <td>:</td>
-                      <td>{formatMoney(invoice.total, invoice.currency)}</td>
-                    </tr>
-                    {(invoice.payments || []).map((payment) => (
-                      <tr className="payment" key={`jp-payment-${payment._id}`}>
-                        <td>
-                          入金 {formatJapaneseDate(payment.paymentDate)} /{" "}
-                          {payment.method}
-                        </td>
-                        <td>:</td>
-                        <td>
-                          ({formatMoney(payment.amount, invoice.currency)})
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <hr className="inv-print-divider" />
-
-              <div className="inv-print-amount-due">
-                <span>請求残額</span>
-                <strong
-                  className={Number(invoice.amountDue) < 0 ? "negative" : ""}
-                >
-                  {Number(invoice.amountDue) < 0
-                    ? `(${formatMoney(Math.abs(invoice.amountDue), invoice.currency)})`
-                    : formatMoney(invoice.amountDue, invoice.currency)}
-                </strong>
-              </div>
-
-              <div className="inv-print-projection">
-                <h3>お支払い予定</h3>
-                <table className="inv-print-table compact">
-                  <thead>
-                    <tr>
-                      <th>内容</th>
-                      <th>支払期日</th>
-                      <th className="right">金額</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(invoice.projections || []).length ? (
-                      (invoice.projections || []).map((projection) => (
-                        <tr key={`jp-projection-${projection._id}`}>
-                          <td>{projection.description}</td>
-                          <td>{formatJapaneseDate(projection.estimateDate)}</td>
-                          <td className="right">
-                            {formatMoney(projection.amount, invoice.currency)}
+                      {(invoice.discounts || []).map((discount) => (
+                        <tr className="discount" key={discount._id}>
+                          <td>{discount.label}</td>
+                          <td>:</td>
+                          <td>
+                            <i>
+                              {discount.type === "percentage"
+                                ? `${discount.value}%`
+                                : formatMoney(discount.value, invoice.currency)}
+                            </i>
                           </td>
                         </tr>
-                      ))
-                    ) : (
+                      ))}
+                      <tr className="total">
+                        <td>Total</td>
+                        <td>:</td>
+                        <td>{formatMoney(invoice.total, invoice.currency)}</td>
+                      </tr>
+                      {(invoice.payments || []).map((payment) => (
+                        <tr className="payment" key={payment._id}>
+                          <td>
+                            Payment on {formatPaymentDate(payment.paymentDate)}{" "}
+                            by {payment.method}
+                          </td>
+                          <td>:</td>
+                          <td>
+                            ({formatMoney(payment.amount, invoice.currency)})
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <hr className="inv-print-divider" />
+
+                <div className="inv-print-amount-due">
+                  <span>Amount due</span>
+                  <strong
+                    className={Number(invoice.amountDue) < 0 ? "negative" : ""}
+                  >
+                    {Number(invoice.amountDue) < 0
+                      ? `(${formatMoney(Math.abs(invoice.amountDue), invoice.currency)})`
+                      : formatMoney(invoice.amountDue, invoice.currency)}
+                  </strong>
+                </div>
+
+                <div className="inv-print-terms inv-print-page-break">
+                  <h3>Note/Term of Services</h3>
+                  <HtmlBlock html={invoice.terms} />
+                </div>
+
+                <div className="inv-personal-note inv-no-print">
+                  <h3>Personal Note</h3>
+                  <HtmlBlock html={invoice.notes} empty="-" />
+                </div>
+
+                <div className="inv-detail-footer-actions inv-no-print">
+                  <button
+                    type="button"
+                    className="inv-detail-action danger"
+                    onClick={removeInvoice}
+                  >
+                    Delete
+                  </button>
+                  <button
+                    type="button"
+                    className="inv-detail-action edit"
+                    onClick={() => navigate(`/invoice/${invoiceNumber}/edit`)}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="inv-detail-action print"
+                    onClick={() => handlePrint("standard")}
+                  >
+                    Print
+                  </button>
+                </div>
+              </section>
+
+              <section
+                className={`inv-print-sheet inv-print-japan ${
+                  printVariant === "japan" ? "" : "is-hidden"
+                }`}
+              >
+                <InvoiceLetterhead title="請求書" fromLabel="発行元" />
+
+                <hr className="inv-print-divider" />
+
+                <div className="inv-print-bill-row">
+                  <address className="inv-print-to">
+                    <h6>ご請求先</h6>
+                    <h4>{invoice.customerSnapshot?.name || "-"}</h4>
+                    <p>{invoice.customerSnapshot?.productTitle || "-"}</p>
+                    <p>
+                      {invoice.customerSnapshot?.completeAddress ||
+                        "住所未入力"}
+                    </p>
+                    <strong>{invoice.customerSnapshot?.phone || "-"}</strong>
+                    <strong>{invoice.customerSnapshot?.email || "-"}</strong>
+                  </address>
+
+                  <table className="inv-print-meta">
+                    <tbody>
                       <tr>
-                        <td colSpan="3" className="center">
-                          お支払い予定はありません
+                        <td>請求書番号</td>
+                        <td>:</td>
+                        <td>{invoice.invoiceNumber}</td>
+                      </tr>
+                      <tr>
+                        <td>営業コード</td>
+                        <td>:</td>
+                        <td>{invoice.salesCode || "-"}</td>
+                      </tr>
+                      <tr>
+                        <td>発行日</td>
+                        <td>:</td>
+                        <td>{formatJapaneseDate(invoice.issuedDate)}</td>
+                      </tr>
+                      <tr>
+                        <td>支払期限</td>
+                        <td>:</td>
+                        <td>{formatJapaneseDate(invoice.dueDate)}</td>
+                      </tr>
+                      <tr>
+                        <td>請求残額</td>
+                        <td>:</td>
+                        <td>
+                          {formatMoney(invoice.amountDue, invoice.currency)}
                         </td>
                       </tr>
-                    )}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td colSpan="2">合計</td>
-                      <td className="right">
-                        {formatMoney(projectionTotal, invoice.currency)}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+                    </tbody>
+                  </table>
+                </div>
 
-              <div className="inv-print-terms inv-print-page-break">
-                <h3>備考・条件</h3>
-                <HtmlBlock html={invoice.terms} />
-              </div>
-            </section>
+                <div className="inv-table-wrap inv-print-items-wrap">
+                  <table className="inv-print-table">
+                    <thead>
+                      <tr>
+                        <th>品目</th>
+                        <th className="center">数量</th>
+                        <th className="right">単価</th>
+                        <th className="right">金額</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(invoice.items || []).map((item) => (
+                        <tr key={`jp-item-${item._id}`}>
+                          <td>
+                            <strong>{item.title}</strong>
+                            <div>{item.description || "-"}</div>
+                          </td>
+                          <td className="center">{item.quantity}</td>
+                          <td className="right">
+                            {formatMoney(item.price, invoice.currency)}
+                          </td>
+                          <td className="right">
+                            {formatMoney(item.amount, invoice.currency)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="inv-print-summary-row">
+                  <table className="inv-print-summary">
+                    <tbody>
+                      <tr>
+                        <td>小計</td>
+                        <td>:</td>
+                        <td>
+                          {formatMoney(invoice.subtotal, invoice.currency)}
+                        </td>
+                      </tr>
+                      {(invoice.discounts || []).map((discount) => (
+                        <tr
+                          className="discount"
+                          key={`jp-discount-${discount._id}`}
+                        >
+                          <td>{discount.label}</td>
+                          <td>:</td>
+                          <td>
+                            <i>
+                              {discount.type === "percentage"
+                                ? `${discount.value}%`
+                                : formatMoney(discount.value, invoice.currency)}
+                            </i>
+                          </td>
+                        </tr>
+                      ))}
+                      <tr className="total">
+                        <td>合計</td>
+                        <td>:</td>
+                        <td>{formatMoney(invoice.total, invoice.currency)}</td>
+                      </tr>
+                      {(invoice.payments || []).map((payment) => (
+                        <tr
+                          className="payment"
+                          key={`jp-payment-${payment._id}`}
+                        >
+                          <td>
+                            入金 {formatJapaneseDate(payment.paymentDate)} /{" "}
+                            {payment.method}
+                          </td>
+                          <td>:</td>
+                          <td>
+                            ({formatMoney(payment.amount, invoice.currency)})
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <hr className="inv-print-divider" />
+
+                <div className="inv-print-amount-due">
+                  <span>請求残額</span>
+                  <strong
+                    className={Number(invoice.amountDue) < 0 ? "negative" : ""}
+                  >
+                    {Number(invoice.amountDue) < 0
+                      ? `(${formatMoney(Math.abs(invoice.amountDue), invoice.currency)})`
+                      : formatMoney(invoice.amountDue, invoice.currency)}
+                  </strong>
+                </div>
+
+                <div className="inv-print-terms inv-print-page-break">
+                  <h3>備考・条件</h3>
+                  <HtmlBlock html={invoice.terms} />
+                </div>
+              </section>
+            </div>
           </div>
 
           <section
-            className="inv-payment-section inv-no-print"
+            className={`inv-payment-section inv-no-print inv-tab-panel ${
+              activeDetailTab === "payment" ? "" : "is-hidden"
+            }`}
             id="payment"
             ref={paymentSectionRef}
           >
@@ -1646,21 +1620,6 @@ export default function InvoiceDetail({
               </div>
             </div>
           </section>
-
-          <div className="inv-grid inv-no-print">
-            <div className="inv-grid-8">
-              <div className="inv-card">
-                <div className="inv-section-title">Note/Term of Services</div>
-                <HtmlBlock html={invoice.terms} />
-              </div>
-            </div>
-            <div className="inv-grid-4">
-              <div className="inv-card">
-                <div className="inv-section-title">Personal Note</div>
-                <HtmlBlock html={invoice.notes || "-"} />
-              </div>
-            </div>
-          </div>
         </>
       ) : null}
     </div>

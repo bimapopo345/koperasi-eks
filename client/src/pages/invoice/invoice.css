@@ -550,10 +550,12 @@
 .inv-samit-hero {
   position: relative;
   display: flex;
+  width: min(100%, 1040px);
   min-height: 92px;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
+  margin: 0 auto;
   overflow: hidden;
   border: 1px solid #dbeafe;
   border-radius: 14px;
@@ -722,6 +724,15 @@
 .inv-samit-tab.active {
   background: #0a7ea4;
   color: #fff;
+}
+
+.inv-tab-panel {
+  width: 100%;
+  scroll-margin-top: 20px;
+}
+
+.inv-tab-panel.is-hidden {
+  display: none;
 }
 
 .inv-payment-section {
@@ -1157,10 +1168,10 @@
   width: 100%;
   max-width: 1040px;
   background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 28px;
-  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+  border: 1px solid #eef2f7;
+  border-radius: 10px;
+  padding: 30px;
+  box-shadow: 0 16px 44px rgba(15, 23, 42, 0.055);
 }
 
 .inv-print-sheet.is-hidden {
@@ -1382,6 +1393,53 @@
   margin-top: 28px;
 }
 
+.inv-personal-note {
+  margin-top: 22px;
+  border-top: 1px solid #e2e8f0;
+  background: #f4f7fb;
+  color: #56647c;
+  padding: 18px;
+}
+
+.inv-personal-note h3 {
+  margin: 0 0 10px;
+  color: #56647c;
+  font-size: 0.95rem;
+  font-style: italic;
+  font-weight: 800;
+}
+
+.inv-detail-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 18px;
+}
+
+.inv-detail-action {
+  border: 0;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-weight: 800;
+  padding: 10px 16px;
+}
+
+.inv-detail-action.danger {
+  background: #ef8a6a;
+}
+
+.inv-detail-action.edit {
+  background: #5fd4bc;
+}
+
+.inv-detail-action.print {
+  background: #5b7df0;
+}
+
 .inv-rich-text {
   color: #334155;
   font-size: 0.9rem;
@@ -1529,8 +1587,10 @@
     align-items: stretch;
   }
 
-  .inv-samit-toolbar-actions {
+  .inv-samit-toolbar-actions,
+  .inv-detail-footer-actions {
     justify-content: flex-start;
+    flex-wrap: wrap;
   }
 
   .inv-payment-summary-card {
@@ -1587,6 +1647,10 @@
     flex-direction: column;
   }
 
+  .inv-detail-action {
+    flex: 1 1 110px;
+  }
+
   .inv-print-from,
   .inv-print-meta td:first-child {
     text-align: left;
@@ -1610,6 +1674,10 @@
 
   .inv-no-print {
     display: none !important;
+  }
+
+  .inv-tab-panel.is-hidden {
+    display: block !important;
   }
 
   .inv-print-shell {
