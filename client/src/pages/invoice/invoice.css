@@ -390,6 +390,10 @@
   padding: 6px;
 }
 
+.inv-payment-modal .inv-combobox-menu {
+  z-index: 90;
+}
+
 .inv-combobox-option {
   width: 100%;
   border: 0;
@@ -726,6 +730,14 @@
   color: #fff;
 }
 
+.inv-samit-tab.disabled,
+.inv-samit-tab:disabled {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
 .inv-tab-panel {
   width: 100%;
   scroll-margin-top: 20px;
@@ -750,6 +762,59 @@
   justify-content: space-between;
   gap: 14px;
   padding: 4px 2px;
+}
+
+.inv-draft-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(100%, 1040px);
+  gap: 16px;
+  margin: 0 auto 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  background: #f8fafc;
+  padding: 14px 18px;
+}
+
+.inv-draft-bar p {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  color: #475569;
+}
+
+.inv-draft-bar strong {
+  color: #334155;
+}
+
+.inv-payment-overview {
+  display: grid;
+  width: min(100%, 1040px);
+  gap: 16px;
+  margin: 18px auto 0;
+}
+
+.inv-muted-dash {
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.inv-payment-head-summary {
+  display: grid;
+  min-width: 160px;
+  text-align: right;
+}
+
+.inv-payment-head-summary small,
+.inv-payment-head-summary span {
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.inv-payment-head-summary strong {
+  color: #0f172a;
+  font-size: 1rem;
 }
 
 .inv-record-payment-card {
@@ -914,6 +979,7 @@
   grid-template-columns: minmax(160px, 0.9fr) minmax(200px, 1.1fr) 38px;
   gap: 12px;
   align-items: end;
+  overflow: visible;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   background: #fff;
@@ -1067,6 +1133,99 @@
   gap: 6px;
 }
 
+.inv-payment-ledger {
+  display: grid;
+  gap: 12px;
+}
+
+.inv-payment-record {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.inv-payment-record-number {
+  display: grid;
+  min-width: 44px;
+  place-items: start center;
+  background: #0f172a;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 800;
+  padding: 12px 8px;
+}
+
+.inv-payment-record-body {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+}
+
+.inv-payment-record-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.inv-payment-record-top > div {
+  display: grid;
+  gap: 4px;
+}
+
+.inv-payment-record-top span {
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.inv-payment-record-top strong {
+  color: #0f172a;
+}
+
+.inv-payment-record-top small {
+  color: #64748b;
+}
+
+.inv-payment-record-amount {
+  color: #0f766e !important;
+  font-size: 1.1rem;
+  white-space: nowrap;
+}
+
+.inv-payment-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inv-payment-record-actions a,
+.inv-payment-record-actions button,
+.inv-payment-record-actions span {
+  border: 0;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 700;
+  padding: 0;
+  text-decoration: none;
+}
+
+.inv-payment-record-actions span {
+  color: #94a3b8;
+  cursor: not-allowed;
+}
+
+.inv-payment-record-actions a::before,
+.inv-payment-record-actions button::before,
+.inv-payment-record-actions span::before {
+  content: "•";
+  margin-right: 5px;
+}
+
 .inv-mini-print {
   border: 1px solid #bfdbfe;
   border-radius: 8px;
@@ -1186,14 +1345,43 @@
 .inv-print-top {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
 }
 
 .inv-print-letterhead-img {
-  width: 100%;
+  width: 50%;
+  max-width: 430px;
   height: auto;
   display: block;
+  margin: 0 auto;
   object-fit: contain;
+}
+
+.inv-print-letterhead-text {
+  display: grid;
+  gap: 3px;
+  width: 86%;
+  margin: 0 auto;
+  color: #475569;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 0.95rem;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.inv-print-letterhead-text span {
+  display: block;
+}
+
+.inv-print-document-title {
+  margin: 12px 0 0;
+  color: #0f172a;
+  font-size: 1.55rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-align: center;
 }
 
 .inv-print-title-row {

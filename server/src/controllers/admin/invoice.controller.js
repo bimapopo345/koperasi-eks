@@ -879,6 +879,47 @@ export const updateInvoice = asyncHandler(async (req, res) => {
     );
 });
 
+export const approveInvoiceDraft = asyncHandler(async (req, res) => {
+  const invoiceNumber = String(req.params.invoiceNumber || "")
+    .trim()
+    .toUpperCase();
+  const invoice = await Invoice.findOne({ invoiceNumber });
+
+  if (!invoice) {
+    throw new ApiError(404, "Invoice tidak ditemukan");
+  }
+
+  if (invoice.status !== "draft") {
+    throw new ApiError(400, "Invoice ini bukan draft");
+  }
+
+  const rebuilt = await buildInvoicePayload(
+    {
+      ...invoice.toObject(),
+      status: "sent",
+      payments: invoice.payments,
+    },
+    { currentInvoice: invoice },
+  );
+
+  Object.assign(invoice, {
+    ...rebuilt,
+    updatedBy: req.user?.userId || null,
+  });
+
+  await invoice.save();
+
+  res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        serializeInvoice(invoice),
+        "Draft invoice berhasil di-approve",
+      ),
+    );
+});
+
 export const deleteInvoice = asyncHandler(async (req, res) => {
   const invoiceNumber = String(req.params.invoiceNumber || "")
     .trim()
@@ -907,6 +948,13 @@ export const addInvoicePayment = asyncHandler(async (req, res) => {
 
   if (!invoice) {
     throw new ApiError(404, "Invoice tidak ditemukan");
+  }
+
+  if (invoice.status === "draft") {
+    throw new ApiError(
+      400,
+      "Approve draft invoice dulu sebelum record payment",
+    );
   }
 
   let createdTransaction = null;

@@ -37,6 +37,13 @@ export const updateInvoice = async (invoiceNumber, payload) => {
   return response.data;
 };
 
+export const approveInvoiceDraft = async (invoiceNumber) => {
+  const response = await api.patch(
+    `/api/admin/invoices/${encodeURIComponent(invoiceNumber)}/approve`,
+  );
+  return response.data;
+};
+
 export const deleteInvoice = async (invoiceNumber) => {
   const response = await api.delete(
     `/api/admin/invoices/${encodeURIComponent(invoiceNumber)}`,

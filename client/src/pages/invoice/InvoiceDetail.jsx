@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import {
   addInvoicePayment,
+  approveInvoiceDraft,
   deleteInvoice,
   deleteInvoicePayment,
   getInvoice,
@@ -17,11 +18,9 @@ import "./invoice.css";
 const companyProfile = {
   name: "KOPERASI SAKURA MITRA INTERNASIONAL",
   address: [
-    "Ruko Dalton Utara No. 05",
-    "Jl. Scientia Square Selatan, Kel. Curug Sangereng,",
-    "Kec. Kelapa Dua, Tangerang, Banten 15810 Indonesia",
+    "Ruko Dalton Utara No. 05, Jl. Scientia Square Selatan, Kel. Curug Sangereng, Kec. Kelapa Dua, Tangerang, Banten 15810 Indonesia",
   ],
-  phone: "+622159995428",
+  phone: "+6221 59995428",
   website: "www.sakuramitra.com",
 };
 
@@ -87,7 +86,7 @@ function HtmlBlock({ html, empty = "Tidak ada catatan" }) {
   );
 }
 
-function InvoiceLetterhead({ title = "INVOICE", fromLabel = "From," }) {
+function InvoiceLetterhead({ title = "INVOICE" }) {
   return (
     <header className="inv-print-top">
       <img
@@ -95,14 +94,130 @@ function InvoiceLetterhead({ title = "INVOICE", fromLabel = "From," }) {
         src={invoiceLetterheadSrc}
         alt={companyProfile.name}
       />
-      <div className="inv-print-title-row">
-        <h2>{title}</h2>
-        <address className="inv-print-from">
-          <h6>{fromLabel}</h6>
-          <strong>{companyProfile.name}</strong>
-        </address>
-      </div>
+      <address className="inv-print-letterhead-text">
+        {companyProfile.address.map((line) => (
+          <span key={line}>{line}</span>
+        ))}
+        <span>Phone : {companyProfile.phone}</span>
+        <span>Website : {companyProfile.website}</span>
+      </address>
+      <h2 className="inv-print-document-title">{title}</h2>
     </header>
+  );
+}
+
+function PaymentSearchSelect({
+  value,
+  options,
+  onChange,
+  placeholder = "Search...",
+  emptyText = "No option found.",
+}) {
+  const [search, setSearch] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+
+  const selectedOption = useMemo(
+    () => options.find((option) => String(option.value) === String(value)),
+    [options, value],
+  );
+
+  useEffect(() => {
+    if (isOpen) return;
+    setSearch(selectedOption?.label || "");
+  }, [isOpen, selectedOption]);
+
+  const filteredOptions = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const selectedLabel = selectedOption?.label?.toLowerCase() || "";
+
+    if (!query || query === selectedLabel) return options.slice(0, 40);
+
+    return options
+      .filter((option) =>
+        [option.label, option.meta, option.search]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase()
+          .includes(query),
+      )
+      .slice(0, 40);
+  }, [options, search, selectedOption]);
+
+  const selectOption = (option) => {
+    onChange(option.value);
+    setSearch(option.label);
+    setIsOpen(false);
+  };
+
+  return (
+    <div
+      className="inv-combobox"
+      onBlur={() => {
+        window.setTimeout(() => setIsOpen(false), 120);
+      }}
+    >
+      <input
+        className="inv-input inv-combobox-input"
+        value={search}
+        placeholder={placeholder}
+        onFocus={() => setIsOpen(true)}
+        onChange={(event) => {
+          setSearch(event.target.value);
+          setIsOpen(true);
+          if (value) onChange("");
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            if (filteredOptions[0]) selectOption(filteredOptions[0]);
+          }
+          if (event.key === "Escape") setIsOpen(false);
+        }}
+      />
+
+      {value ? (
+        <button
+          type="button"
+          className="inv-combobox-clear"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            onChange("");
+            setSearch("");
+            setIsOpen(true);
+          }}
+          aria-label="Clear selected option"
+        >
+          ×
+        </button>
+      ) : null}
+
+      {isOpen ? (
+        <div className="inv-combobox-menu">
+          {filteredOptions.length ? (
+            filteredOptions.map((option) => (
+              <button
+                type="button"
+                key={option.value}
+                className={`inv-combobox-option ${
+                  String(option.value) === String(value) ? "active" : ""
+                }`}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  selectOption(option);
+                }}
+              >
+                <span className="inv-combobox-name">{option.label}</span>
+                {option.meta ? (
+                  <span className="inv-combobox-meta">{option.meta}</span>
+                ) : null}
+              </button>
+            ))
+          ) : (
+            <div className="inv-combobox-empty">{emptyText}</div>
+          )}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -123,6 +238,7 @@ export default function InvoiceDetail({
   const [activeDetailTab, setActiveDetailTab] = useState(initialDetailTab);
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [addingPayment, setAddingPayment] = useState(false);
+  const [approvingDraft, setApprovingDraft] = useState(false);
   const [assetsAccounts, setAssetsAccounts] = useState({});
   const [categories, setCategories] = useState([]);
   const [paymentSplits, setPaymentSplits] = useState([]);
@@ -163,6 +279,17 @@ export default function InvoiceDetail({
   useEffect(() => {
     if (!printOnly) setActiveDetailTab(initialDetailTab);
   }, [initialDetailTab, invoiceNumber, printOnly]);
+
+  useEffect(() => {
+    if (
+      !printOnly &&
+      invoice?.status === "draft" &&
+      activeDetailTab === "payment"
+    ) {
+      setActiveDetailTab("invoice");
+      navigate(`/invoice/${invoiceNumber}`, { replace: true });
+    }
+  }, [activeDetailTab, invoice?.status, invoiceNumber, navigate, printOnly]);
 
   useEffect(() => {
     const loadAccountingOptions = async () => {
@@ -211,12 +338,20 @@ export default function InvoiceDetail({
     [assetsAccounts],
   );
 
-  const assetAccountGroups = useMemo(
+  const accountOptions = useMemo(
     () =>
-      Object.entries(assetsAccounts)
-        .map(([groupName, accounts]) => [groupName, accounts || []])
-        .filter(([, accounts]) => accounts.length),
-    [assetsAccounts],
+      flatAssetAccounts.map((account) => {
+        const code = account.accountCode || account.account_code || "";
+        const name = account.accountName || account.account_name || "Account";
+        const currency = account.currency || "";
+        return {
+          value: account._id || account.id,
+          label: [code, name].filter(Boolean).join(" - "),
+          meta: currency ? `Currency: ${currency}` : "",
+          search: [code, name, currency].filter(Boolean).join(" "),
+        };
+      }),
+    [flatAssetAccounts],
   );
 
   const categoryOptions = useMemo(
@@ -230,6 +365,15 @@ export default function InvoiceDetail({
           key: `${type}-${category.id}`,
           value: `${type}|${category.id}`,
           label: `${prefix}${category.name}${code}`,
+          meta:
+            type === "master"
+              ? "Master"
+              : type === "submenu"
+                ? "Submenu"
+                : "Account",
+          search: [category.name, category.code, type]
+            .filter(Boolean)
+            .join(" "),
         };
       }),
     [categories],
@@ -243,6 +387,8 @@ export default function InvoiceDetail({
     [flatAssetAccounts, paymentForm.accountId],
   );
 
+  const invoiceIsDraft = invoice?.status === "draft";
+  const paymentRecords = invoice?.payments || [];
   const paymentCurrencyPrefix =
     selectedAccount?.currency || invoice?.currency || "Rp";
   const paymentAmount = Number(paymentForm.amount || 0);
@@ -269,6 +415,11 @@ export default function InvoiceDetail({
   };
 
   const switchDetailTab = (tabName) => {
+    if (tabName === "payment" && invoiceIsDraft) {
+      toast.info("Approve draft invoice dulu sebelum masuk ke Payment");
+      return;
+    }
+
     const sectionRef =
       tabName === "payment" ? paymentSectionRef : invoiceSectionRef;
     const detailPath =
@@ -290,6 +441,13 @@ export default function InvoiceDetail({
   };
 
   const startPayment = (projection = null) => {
+    if (invoiceIsDraft) {
+      toast.error(
+        "Invoice masih draft. Approve draft dulu sebelum record payment",
+      );
+      return;
+    }
+
     setPaymentForm({
       paymentDate: new Date().toISOString().slice(0, 10),
       amount: projection ? String(projection.amount || "") : "",
@@ -573,6 +731,34 @@ export default function InvoiceDetail({
     }
   };
 
+  const approveDraft = async () => {
+    if (
+      !window.confirm(
+        "Approve draft invoice ini? Setelah approve, invoice bisa dipakai untuk record payment.",
+      )
+    ) {
+      return;
+    }
+
+    setApprovingDraft(true);
+    setError("");
+    try {
+      const res = await approveInvoiceDraft(invoiceNumber);
+      if (!res?.success)
+        throw new Error(res?.message || "Failed to approve draft");
+      toast.success("Draft invoice approved");
+      setInvoice(res.data);
+    } catch (err) {
+      setError(
+        err?.response?.data?.message ||
+          err.message ||
+          "Failed to approve draft",
+      );
+    } finally {
+      setApprovingDraft(false);
+    }
+  };
+
   const removeInvoice = async () => {
     if (!window.confirm(`Hapus invoice ${invoiceNumber}?`)) return;
     try {
@@ -589,6 +775,234 @@ export default function InvoiceDetail({
       );
     }
   };
+
+  const PaymentOverviewTables = () => (
+    <div className="inv-payment-overview inv-no-print">
+      <div className="inv-grid">
+        <div className="inv-grid-6">
+          <div className="inv-projection-card">
+            <div className="inv-projection-head blue">Payment Projection</div>
+            <div className="inv-table-wrap">
+              <table className="inv-table inv-samit-projection-table">
+                <thead>
+                  <tr>
+                    <th>Description</th>
+                    <th>Due Date</th>
+                    <th className="right">Amount</th>
+                    <th className="center">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(invoice.projections || []).length ? (
+                    (invoice.projections || []).map((projection, index) => (
+                      <tr key={projection._id}>
+                        <td>
+                          <span className="inv-row-badge blue">
+                            {index + 1}
+                          </span>
+                          {projection.description}
+                        </td>
+                        <td>{formatDate(projection.estimateDate)}</td>
+                        <td className="right">
+                          {formatMoney(projection.amount, invoice.currency)}
+                        </td>
+                        <td className="center">
+                          {invoiceIsDraft ? (
+                            <span className="inv-muted-dash">-</span>
+                          ) : String(projection.status || "").toLowerCase() ===
+                            "paid" ? (
+                            <span className="inv-status paid">Paid</span>
+                          ) : (
+                            <button
+                              type="button"
+                              className="inv-pay-projection-btn"
+                              onClick={() => startPayment(projection)}
+                            >
+                              Pay
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="4" className="center">
+                        No payment projection
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan="2">Total Projection</td>
+                    <td className="right">
+                      {formatMoney(projectionTotal, invoice.currency)}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div className="inv-grid-6">
+          <div className="inv-projection-card">
+            <div className="inv-projection-head pink">Realization</div>
+            <div className="inv-table-wrap">
+              <table className="inv-table inv-samit-realization-table">
+                <thead>
+                  <tr>
+                    <th>Payment Date</th>
+                    <th className="right">Amount</th>
+                    <th className="center">File</th>
+                    <th className="center">Print</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paymentRecords.length ? (
+                    paymentRecords.map((payment, index) => (
+                      <tr key={payment._id}>
+                        <td>
+                          <span className="inv-row-badge pink">
+                            {index + 1}
+                          </span>
+                          <strong>{formatDate(payment.paymentDate)}</strong>
+                          <br />
+                          <small>{payment.method || "Bank"}</small>
+                          {payment.notes ? (
+                            <div className="inv-payment-note">
+                              {payment.notes}
+                            </div>
+                          ) : null}
+                        </td>
+                        <td className="right">
+                          <strong>
+                            {formatMoney(payment.amount, invoice.currency)}
+                          </strong>
+                        </td>
+                        <td className="center">
+                          {payment.attachment ? (
+                            <a
+                              className="inv-file-link"
+                              href={`${API_URL}/uploads/transactions/${encodeURIComponent(
+                                payment.attachment,
+                              )}`}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {payment.attachmentOriginalName || "File"}
+                            </a>
+                          ) : (
+                            "-"
+                          )}
+                        </td>
+                        <td className="center">
+                          <button
+                            type="button"
+                            className="inv-mini-print"
+                            onClick={() => handlePrint("standard")}
+                          >
+                            Print
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="4" className="center">
+                        No payment recorded
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td>Total Received</td>
+                    <td className="right">
+                      {formatMoney(invoice.totalPaid, invoice.currency)}
+                    </td>
+                    <td colSpan="2" />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="inv-payment-summary-card">
+        <div className="inv-payment-summary-item blue">
+          <span>Total Projection</span>
+          <strong>{formatMoney(projectionTotal, invoice.currency)}</strong>
+        </div>
+        <div className="inv-payment-summary-item pink">
+          <span>Total Received</span>
+          <strong>{formatMoney(invoice.totalPaid, invoice.currency)}</strong>
+        </div>
+        <div className="inv-payment-summary-item violet">
+          <span>Amount Due</span>
+          <strong>
+            {Number(invoice.amountDue) < 0
+              ? `(${formatMoney(Math.abs(invoice.amountDue), invoice.currency)})`
+              : formatMoney(invoice.amountDue, invoice.currency)}
+          </strong>
+        </div>
+      </div>
+    </div>
+  );
+
+  const PaymentRecordList = () => (
+    <div className="inv-payment-ledger">
+      {!paymentRecords.length ? (
+        <div className="inv-empty">No payment data</div>
+      ) : (
+        paymentRecords.map((payment, index) => (
+          <article className="inv-payment-record" key={payment._id}>
+            <div className="inv-payment-record-number">{index + 1}</div>
+            <div className="inv-payment-record-body">
+              <div className="inv-payment-record-top">
+                <div>
+                  <span>Payment received</span>
+                  <strong>{formatDate(payment.paymentDate)}</strong>
+                  <small>
+                    {payment.notes || "-"} - <b>{payment.method || "Bank"}</b>
+                  </small>
+                </div>
+                <strong className="inv-payment-record-amount">
+                  {formatMoney(payment.amount, invoice.currency)}
+                </strong>
+              </div>
+              <div className="inv-payment-record-actions">
+                <button type="button" onClick={() => handlePrint("standard")}>
+                  Print
+                </button>
+                {payment.attachment ? (
+                  <a
+                    href={`${API_URL}/uploads/transactions/${encodeURIComponent(
+                      payment.attachment,
+                    )}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    View Attachment
+                  </a>
+                ) : (
+                  <span>No attachment</span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => removePayment(payment._id)}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </article>
+        ))
+      )}
+    </div>
+  );
 
   return (
     <div className="inv-page inv-invoice-page">
@@ -638,8 +1052,12 @@ export default function InvoiceDetail({
             type="button"
             className={`inv-samit-tab ${
               activeDetailTab === "payment" ? "active" : ""
-            }`}
+            } ${invoiceIsDraft ? "disabled" : ""}`}
             onClick={() => switchDetailTab("payment")}
+            disabled={invoiceIsDraft}
+            title={
+              invoiceIsDraft ? "Approve draft dulu untuk membuka Payment" : ""
+            }
           >
             Payment
           </button>
@@ -719,6 +1137,23 @@ export default function InvoiceDetail({
           </div>
         </div>
       </div>
+
+      {!loading && invoiceIsDraft ? (
+        <div className="inv-draft-bar inv-no-print">
+          <p>
+            <strong>Draft invoice</strong>
+            <span>Invoice masih draft dan belum bisa menerima payment.</span>
+          </p>
+          <button
+            type="button"
+            className="inv-btn"
+            onClick={approveDraft}
+            disabled={approvingDraft}
+          >
+            {approvingDraft ? "Approving..." : "Approve Draft"}
+          </button>
+        </div>
+      ) : null}
 
       {error ? <div className="inv-error inv-no-print">{error}</div> : null}
       {loading ? (
@@ -919,7 +1354,7 @@ export default function InvoiceDetail({
                   printVariant === "japan" ? "" : "is-hidden"
                 }`}
               >
-                <InvoiceLetterhead title="請求書" fromLabel="発行元" />
+                <InvoiceLetterhead title="請求書" />
 
                 <hr className="inv-print-divider" />
 
@@ -1068,6 +1503,7 @@ export default function InvoiceDetail({
                 </div>
               </section>
             </div>
+            <PaymentOverviewTables />
           </div>
 
           <section
@@ -1083,8 +1519,15 @@ export default function InvoiceDetail({
                   Payment
                 </div>
                 <div className="inv-sub">
-                  Projection, realization, dan record pembayaran invoice.
+                  Record pembayaran yang sudah diterima untuk invoice ini.
                 </div>
+              </div>
+              <div className="inv-payment-head-summary">
+                <small>amount due</small>
+                <strong>
+                  {formatMoney(invoice.amountDue, invoice.currency)}
+                </strong>
+                <span>{formatMoney(invoice.totalPaid, invoice.currency)}</span>
               </div>
               <button
                 type="button"
@@ -1153,57 +1596,35 @@ export default function InvoiceDetail({
                         <label className="inv-label">
                           Record Account <span className="inv-required">*</span>
                         </label>
-                        <select
-                          className="inv-select"
+                        <PaymentSearchSelect
                           value={paymentForm.accountId}
-                          onChange={(event) =>
+                          options={accountOptions}
+                          placeholder="Search account..."
+                          emptyText="Account tidak ditemukan."
+                          onChange={(accountId) =>
                             setPaymentForm((prev) => ({
                               ...prev,
-                              accountId: event.target.value,
+                              accountId,
                             }))
                           }
-                        >
-                          <option value="">Select account...</option>
-                          {assetAccountGroups.map(([groupName, accounts]) => (
-                            <optgroup key={groupName} label={groupName}>
-                              {accounts.map((account) => (
-                                <option key={account._id} value={account._id}>
-                                  {account.accountCode
-                                    ? `${account.accountCode} - `
-                                    : ""}
-                                  {account.accountName}
-                                  {account.currency
-                                    ? ` (${account.currency})`
-                                    : ""}
-                                </option>
-                              ))}
-                            </optgroup>
-                          ))}
-                        </select>
+                        />
                       </div>
                       {!paymentSplitMode ? (
                         <div className="inv-grid-12">
                           <label className="inv-label">
                             Category <span className="inv-required">*</span>
                           </label>
-                          <select
-                            className="inv-select"
+                          <PaymentSearchSelect
                             value={
                               paymentForm.categoryId
                                 ? `${paymentForm.categoryType}|${paymentForm.categoryId}`
                                 : ""
                             }
-                            onChange={(event) =>
-                              selectPaymentCategory(event.target.value)
-                            }
-                          >
-                            <option value="">Select category...</option>
-                            {categoryOptions.map((category) => (
-                              <option key={category.key} value={category.value}>
-                                {category.label}
-                              </option>
-                            ))}
-                          </select>
+                            options={categoryOptions}
+                            placeholder="Search category..."
+                            emptyText="Category tidak ditemukan."
+                            onChange={selectPaymentCategory}
+                          />
                         </div>
                       ) : null}
                       <div className="inv-grid-12">
@@ -1280,32 +1701,19 @@ export default function InvoiceDetail({
                                     <label className="inv-label">
                                       Category
                                     </label>
-                                    <select
-                                      className="inv-select"
+                                    <PaymentSearchSelect
                                       value={
                                         split.categoryId
                                           ? `${split.categoryType}|${split.categoryId}`
                                           : ""
                                       }
-                                      onChange={(event) =>
-                                        updatePaymentSplitCategory(
-                                          index,
-                                          event.target.value,
-                                        )
+                                      options={categoryOptions}
+                                      placeholder="Search category..."
+                                      emptyText="Category tidak ditemukan."
+                                      onChange={(value) =>
+                                        updatePaymentSplitCategory(index, value)
                                       }
-                                    >
-                                      <option value="">
-                                        Select category...
-                                      </option>
-                                      {categoryOptions.map((category) => (
-                                        <option
-                                          key={`${index}-${category.key}`}
-                                          value={category.value}
-                                        >
-                                          {category.label}
-                                        </option>
-                                      ))}
-                                    </select>
+                                    />
                                   </div>
                                   <button
                                     type="button"
@@ -1434,204 +1842,7 @@ export default function InvoiceDetail({
               </div>
             ) : null}
 
-            <div className="inv-grid">
-              <div className="inv-grid-6">
-                <div className="inv-projection-card">
-                  <div className="inv-projection-head blue">
-                    Payment Projection
-                  </div>
-                  <div className="inv-table-wrap">
-                    <table className="inv-table inv-samit-projection-table">
-                      <thead>
-                        <tr>
-                          <th>Description</th>
-                          <th>Due Date</th>
-                          <th className="right">Amount</th>
-                          <th className="center">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(invoice.projections || []).length ? (
-                          (invoice.projections || []).map(
-                            (projection, index) => (
-                              <tr key={projection._id}>
-                                <td>
-                                  <span className="inv-row-badge blue">
-                                    {index + 1}
-                                  </span>
-                                  {projection.description}
-                                </td>
-                                <td>{formatDate(projection.estimateDate)}</td>
-                                <td className="right">
-                                  {formatMoney(
-                                    projection.amount,
-                                    invoice.currency,
-                                  )}
-                                </td>
-                                <td className="center">
-                                  {String(
-                                    projection.status || "",
-                                  ).toLowerCase() === "paid" ? (
-                                    <span className="inv-status paid">
-                                      Paid
-                                    </span>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className="inv-pay-projection-btn"
-                                      onClick={() => startPayment(projection)}
-                                    >
-                                      Pay
-                                    </button>
-                                  )}
-                                </td>
-                              </tr>
-                            ),
-                          )
-                        ) : (
-                          <tr>
-                            <td colSpan="4" className="center">
-                              No payment projection
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                      <tfoot>
-                        <tr>
-                          <td colSpan="2">Total Projection</td>
-                          <td className="right">
-                            {formatMoney(projectionTotal, invoice.currency)}
-                          </td>
-                          <td />
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </div>
-              </div>
-
-              <div className="inv-grid-6">
-                <div className="inv-projection-card">
-                  <div className="inv-projection-head pink">Realization</div>
-                  <div className="inv-table-wrap">
-                    <table className="inv-table inv-samit-realization-table">
-                      <thead>
-                        <tr>
-                          <th>Payment Date</th>
-                          <th className="right">Amount</th>
-                          <th className="center">File</th>
-                          <th className="center">Print</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {(invoice.payments || []).length ? (
-                          (invoice.payments || []).map((payment, index) => (
-                            <tr key={payment._id}>
-                              <td>
-                                <span className="inv-row-badge pink">
-                                  {index + 1}
-                                </span>
-                                <strong>
-                                  {formatDate(payment.paymentDate)}
-                                </strong>
-                                <br />
-                                <small>{payment.method || "Bank"}</small>
-                                {payment.notes ? (
-                                  <div className="inv-payment-note">
-                                    {payment.notes}
-                                  </div>
-                                ) : null}
-                              </td>
-                              <td className="right">
-                                <strong>
-                                  {formatMoney(
-                                    payment.amount,
-                                    invoice.currency,
-                                  )}
-                                </strong>
-                              </td>
-                              <td className="center">
-                                {payment.attachment ? (
-                                  <a
-                                    className="inv-file-link"
-                                    href={`${API_URL}/uploads/transactions/${encodeURIComponent(
-                                      payment.attachment,
-                                    )}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                  >
-                                    {payment.attachmentOriginalName || "File"}
-                                  </a>
-                                ) : (
-                                  "-"
-                                )}
-                              </td>
-                              <td className="center">
-                                <div className="inv-payment-actions">
-                                  <button
-                                    type="button"
-                                    className="inv-mini-print"
-                                    onClick={() => handlePrint("standard")}
-                                  >
-                                    Print
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="inv-mini-danger"
-                                    onClick={() => removePayment(payment._id)}
-                                    title="Delete payment"
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))
-                        ) : (
-                          <tr>
-                            <td colSpan="4" className="center">
-                              No payment recorded
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                      <tfoot>
-                        <tr>
-                          <td>Total Received</td>
-                          <td className="right">
-                            {formatMoney(invoice.totalPaid, invoice.currency)}
-                          </td>
-                          <td colSpan="2" />
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="inv-payment-summary-card">
-              <div className="inv-payment-summary-item blue">
-                <span>Total Projection</span>
-                <strong>
-                  {formatMoney(projectionTotal, invoice.currency)}
-                </strong>
-              </div>
-              <div className="inv-payment-summary-item pink">
-                <span>Total Received</span>
-                <strong>
-                  {formatMoney(invoice.totalPaid, invoice.currency)}
-                </strong>
-              </div>
-              <div className="inv-payment-summary-item violet">
-                <span>Amount Due</span>
-                <strong>
-                  {Number(invoice.amountDue) < 0
-                    ? `(${formatMoney(Math.abs(invoice.amountDue), invoice.currency)})`
-                    : formatMoney(invoice.amountDue, invoice.currency)}
-                </strong>
-              </div>
-            </div>
+            <PaymentRecordList />
           </section>
         </>
       ) : null}

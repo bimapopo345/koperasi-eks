@@ -3,6 +3,7 @@ import multer from "multer";
 import path from "path";
 import {
   addInvoicePayment,
+  approveInvoiceDraft,
   createInvoice,
   deleteInvoice,
   deleteInvoicePayment,
@@ -56,6 +57,7 @@ router.get("/", getAllInvoices);
 router.get("/:invoiceNumber", getInvoiceByNumber);
 router.post("/", createInvoice);
 router.put("/:invoiceNumber", updateInvoice);
+router.patch("/:invoiceNumber/approve", approveInvoiceDraft);
 router.delete("/:invoiceNumber", deleteInvoice);
 router.post(
   "/:invoiceNumber/payments",
