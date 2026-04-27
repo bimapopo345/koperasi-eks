@@ -269,7 +269,6 @@ const invoiceSchema = new mongoose.Schema(
   }
 );
 
-invoiceSchema.index({ invoiceNumber: 1 });
 invoiceSchema.index({ memberId: 1, issuedDate: -1 });
 invoiceSchema.index({ status: 1, dueDate: 1 });
 

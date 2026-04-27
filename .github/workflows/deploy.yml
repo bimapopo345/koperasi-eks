@@ -58,11 +58,19 @@ jobs:
             podman rm api || true
 
             # Mount uploads volume so files survive container recreation
-            podman run -d --name api --network host \
+            API_CONTAINER_ID=$(podman run -d --name api --network host \
               --env-file .env \
               -e UPLOADS_DIR="/data/uploads" \
               -v "$UPLOADS_HOST_DIR:/data/uploads:Z" \
-              koperasi-api
+              koperasi-api)
+            echo "$API_CONTAINER_ID"
+
+            sleep 5
+            if ! podman ps --format '{{.Names}}' | grep -qx api; then
+              echo "❌ API container stopped after deploy. Last logs:"
+              podman logs --tail=200 api || true
+              exit 1
+            fi
 
             echo "⚛ Frontend"
             cd "$APP_DIR/client"
