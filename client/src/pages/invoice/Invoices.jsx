@@ -207,20 +207,22 @@ export default function Invoices() {
           </div>
           <div className="inv-search-wrap">
             <label className="inv-label">Search</label>
-            <input
-              className="inv-input"
-              type="text"
-              placeholder="Invoice / customer / sales code"
-              value={filters.search}
-              onChange={(event) => setFilter("search", event.target.value)}
-            />
-            <button
-              type="button"
-              className="inv-search-button"
-              onClick={() => setFilter("search", filters.search)}
-            >
-              Search
-            </button>
+            <div className="inv-search-field">
+              <input
+                className="inv-input"
+                type="text"
+                placeholder="Invoice / customer / sales code"
+                value={filters.search}
+                onChange={(event) => setFilter("search", event.target.value)}
+              />
+              <button
+                type="button"
+                className="inv-search-button"
+                onClick={() => setFilter("search", filters.search)}
+              >
+                Cari
+              </button>
+            </div>
           </div>
         </div>
         <div className="inv-inline-actions" style={{ marginTop: 12 }}>

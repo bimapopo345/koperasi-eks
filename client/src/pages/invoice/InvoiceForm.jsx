@@ -39,6 +39,137 @@ const emptyProjection = (date = "") => ({
   amount: 0,
 });
 
+const getMemberLabel = (member) => {
+  if (!member) return "";
+  return [member.name, member.uuid ? `• ${member.uuid}` : ""]
+    .filter(Boolean)
+    .join(" ");
+};
+
+const getMemberSearchValue = (member) =>
+  [
+    member?.name,
+    member?.uuid,
+    member?.email,
+    member?.phone,
+    member?.completeAddress,
+    member?.product?.title,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+function CustomerCombobox({ members, value, onChange }) {
+  const [search, setSearch] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+
+  const selectedMember = useMemo(
+    () =>
+      members.find((member) => String(member._id) === String(value)) || null,
+    [members, value],
+  );
+
+  useEffect(() => {
+    if (isOpen) return;
+    setSearch(selectedMember ? getMemberLabel(selectedMember) : "");
+  }, [isOpen, selectedMember]);
+
+  const filteredMembers = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    const selectedLabel = selectedMember
+      ? getMemberLabel(selectedMember).toLowerCase()
+      : "";
+
+    if (!query || query === selectedLabel) return members.slice(0, 30);
+
+    return members
+      .filter((member) => getMemberSearchValue(member).includes(query))
+      .slice(0, 30);
+  }, [members, search, selectedMember]);
+
+  const selectMember = (member) => {
+    onChange(member._id);
+    setSearch(getMemberLabel(member));
+    setIsOpen(false);
+  };
+
+  return (
+    <div
+      className="inv-combobox"
+      onBlur={() => {
+        window.setTimeout(() => setIsOpen(false), 120);
+      }}
+    >
+      <input
+        className="inv-input inv-combobox-input"
+        value={search}
+        placeholder="Search nama, UUID, email, atau nomor HP..."
+        onFocus={() => setIsOpen(true)}
+        onChange={(event) => {
+          setSearch(event.target.value);
+          setIsOpen(true);
+          if (value) onChange("");
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            if (filteredMembers[0]) selectMember(filteredMembers[0]);
+          }
+          if (event.key === "Escape") setIsOpen(false);
+        }}
+      />
+      {value ? (
+        <button
+          type="button"
+          className="inv-combobox-clear"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            onChange("");
+            setSearch("");
+            setIsOpen(true);
+          }}
+          aria-label="Clear customer"
+        >
+          ×
+        </button>
+      ) : null}
+
+      {isOpen ? (
+        <div className="inv-combobox-menu">
+          {filteredMembers.length ? (
+            filteredMembers.map((member) => (
+              <button
+                type="button"
+                key={member._id}
+                className={`inv-combobox-option ${
+                  String(member._id) === String(value) ? "active" : ""
+                }`}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  selectMember(member);
+                }}
+              >
+                <span className="inv-combobox-name">{member.name}</span>
+                <span className="inv-combobox-meta">
+                  {member.uuid || "-"} {member.phone ? `• ${member.phone}` : ""}
+                </span>
+                <span className="inv-combobox-meta">
+                  {member.email || "-"}{" "}
+                  {member.product?.title ? `• ${member.product.title}` : ""}
+                </span>
+              </button>
+            ))
+          ) : (
+            <div className="inv-combobox-empty">
+              Tidak ada anggota yang cocok.
+            </div>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export default function InvoiceForm() {
   const navigate = useNavigate();
   const { invoiceNumber } = useParams();
@@ -369,23 +500,16 @@ export default function InvoiceForm() {
               <div className="inv-grid">
                 <div className="inv-grid-12">
                   <label className="inv-label">Anggota</label>
-                  <select
-                    className="inv-select"
+                  <CustomerCombobox
+                    members={members}
                     value={form.memberId}
-                    onChange={(event) =>
+                    onChange={(memberId) =>
                       setForm((prev) => ({
                         ...prev,
-                        memberId: event.target.value,
+                        memberId,
                       }))
                     }
-                  >
-                    <option value="">Select Customer</option>
-                    {members.map((member) => (
-                      <option key={member._id} value={member._id}>
-                        {member.name} {member.uuid ? `• ${member.uuid}` : ""}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
               </div>
               {selectedMember ? (
