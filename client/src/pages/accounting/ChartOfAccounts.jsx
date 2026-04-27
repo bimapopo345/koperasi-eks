@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import toast from "react-hot-toast";
 import {
@@ -11,7 +11,13 @@ import {
 } from "../../api/accountingApi";
 
 const TABS = ["Assets", "Liabilities", "Income", "Expenses", "Equity"];
-const TAB_DISPLAY = { Assets: "Assets", Liabilities: "Liabilities & Credit Cards", Equity: "Equity", Income: "Income", Expenses: "Expenses" };
+const TAB_DISPLAY = {
+  Assets: "Assets",
+  Liabilities: "Liabilities & Credit Cards",
+  Equity: "Equity",
+  Income: "Income",
+  Expenses: "Expenses",
+};
 
 // Account types that show the currency field (conditional, matching samitbank)
 const CURRENCY_TYPES = ["Assets", "Liabilities", "Equity"];
@@ -190,6 +196,99 @@ const normalizeMasterType = (rawType) => {
   return null;
 };
 
+const toAccountCodeSegment = (segment) => {
+  if (/^\d+$/.test(segment)) return Number(segment);
+  return segment.toLowerCase();
+};
+
+const compareAccountCodeKeys = (aKey, bKey) => {
+  const maxLength = Math.max(aKey.length, bKey.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    if (aKey[index] === undefined) return -1;
+    if (bKey[index] === undefined) return 1;
+
+    const aValue = aKey[index];
+    const bValue = bKey[index];
+    if (aValue === bValue) continue;
+
+    if (typeof aValue === "number" && typeof bValue === "number") {
+      return aValue - bValue;
+    }
+    return String(aValue).localeCompare(String(bValue), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  }
+
+  return 0;
+};
+
+const buildAccountCodeKey = (
+  code,
+  codeSet,
+  cache = new Map(),
+  seen = new Set(),
+) => {
+  const normalizedCode = String(code || "").trim();
+  if (!normalizedCode) return [Number.MAX_SAFE_INTEGER];
+  if (cache.has(normalizedCode)) return cache.get(normalizedCode);
+  if (seen.has(normalizedCode))
+    return normalizedCode.split(".").map(toAccountCodeSegment);
+
+  seen.add(normalizedCode);
+  const parts = normalizedCode.split(".");
+  let key;
+
+  if (parts.length === 2 && /^\d+$/.test(parts[1]) && parts[1].length > 2) {
+    const [baseCode, suffix] = parts;
+
+    for (let cut = suffix.length - 1; cut > 0; cut -= 1) {
+      const possibleParent = `${baseCode}.${suffix.slice(0, cut)}`;
+      if (codeSet.has(possibleParent)) {
+        key = [
+          ...buildAccountCodeKey(possibleParent, codeSet, cache, seen),
+          toAccountCodeSegment(suffix.slice(cut)),
+        ];
+        break;
+      }
+    }
+  }
+
+  if (!key) {
+    key = parts.map(toAccountCodeSegment);
+  }
+
+  cache.set(normalizedCode, key);
+  seen.delete(normalizedCode);
+  return key;
+};
+
+const sortAccountsByCode = (accounts = []) => {
+  const codeSet = new Set(
+    accounts
+      .map((account) => String(account.accountCode || "").trim())
+      .filter(Boolean),
+  );
+  const keyCache = new Map();
+
+  return [...accounts].sort((a, b) => {
+    const codeResult = compareAccountCodeKeys(
+      buildAccountCodeKey(a.accountCode, codeSet, keyCache),
+      buildAccountCodeKey(b.accountCode, codeSet, keyCache),
+    );
+
+    if (codeResult !== 0) return codeResult;
+    return String(a.accountName || "").localeCompare(
+      String(b.accountName || ""),
+      undefined,
+      {
+        sensitivity: "base",
+      },
+    );
+  });
+};
+
 export default function ChartOfAccounts() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -236,12 +335,28 @@ export default function ChartOfAccounts() {
     }
   }, [currentType]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const accountSubtypeEntries = useMemo(
+    () =>
+      Object.entries(accountsBySubtype).map(([submenuName, data]) => [
+        submenuName,
+        {
+          ...data,
+          accounts: sortAccountsByCode(data?.accounts || []),
+        },
+      ]),
+    [accountsBySubtype],
+  );
 
   // Keep active tab synced when legacy route includes account type
   useEffect(() => {
     const typeFromPath = normalizeMasterType(params.type);
-    const typeFromQuery = normalizeMasterType(new URLSearchParams(location.search).get("type"));
+    const typeFromQuery = normalizeMasterType(
+      new URLSearchParams(location.search).get("type"),
+    );
     const nextType = typeFromPath || typeFromQuery;
     if (nextType && nextType !== currentType) {
       setCurrentType(nextType);
@@ -251,7 +366,8 @@ export default function ChartOfAccounts() {
   // Close dropdown on outside click
   useEffect(() => {
     const handleClick = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setOpenDropdown(null);
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target))
+        setOpenDropdown(null);
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
@@ -259,11 +375,10 @@ export default function ChartOfAccounts() {
 
   const openCreateModal = async (options = {}) => {
     const resolvedOptions =
-      typeof options === "string"
-        ? { submenuId: options }
-        : options;
+      typeof options === "string" ? { submenuId: options } : options;
     const submenuId = resolvedOptions.submenuId || "";
-    const masterType = normalizeMasterType(resolvedOptions.masterType) || currentType;
+    const masterType =
+      normalizeMasterType(resolvedOptions.masterType) || currentType;
     const submenuName = resolvedOptions.submenuName || "";
 
     setEditingAccount(null);
@@ -284,19 +399,27 @@ export default function ChartOfAccounts() {
       setSubmenus(fetchedSubmenus);
 
       if (!submenuId && submenuName) {
-        const matchedSubmenu = fetchedSubmenus.find((s) => s.submenuName === submenuName);
+        const matchedSubmenu = fetchedSubmenus.find(
+          (s) => s.submenuName === submenuName,
+        );
         if (matchedSubmenu) {
           setForm((prev) => ({ ...prev, submenuId: matchedSubmenu._id }));
         }
       }
-    } catch { setSubmenus([]); }
+    } catch {
+      setSubmenus([]);
+    }
     setLoadingSubmenus(false);
     setOpenDropdown(null);
     setShowModal(true);
   };
 
   const openEditModal = async (acc, submenuName, masterType = currentType) => {
-    setEditingAccount({ ...acc, _submenuName: submenuName, _masterType: masterType });
+    setEditingAccount({
+      ...acc,
+      _submenuName: submenuName,
+      _masterType: masterType,
+    });
     setForm({
       masterType: masterType,
       accountName: acc.accountName,
@@ -313,7 +436,9 @@ export default function ChartOfAccounts() {
   const handleTabChange = (newType) => {
     setCurrentType(newType);
     if (isLegacyPath) {
-      navigate(`/chart-of-accounts/${encodeURIComponent(newType)}`, { replace: true });
+      navigate(`/chart-of-accounts/${encodeURIComponent(newType)}`, {
+        replace: true,
+      });
     }
   };
 
@@ -323,14 +448,19 @@ export default function ChartOfAccounts() {
       ...prev,
       masterType: newType,
       submenuId: "",
-      currency: CURRENCY_TYPES.includes(newType) ? (prev.currency || "") : "",
+      currency: CURRENCY_TYPES.includes(newType) ? prev.currency || "" : "",
     }));
-    if (!newType) { setSubmenus([]); return; }
+    if (!newType) {
+      setSubmenus([]);
+      return;
+    }
     setLoadingSubmenus(true);
     try {
       const res = await getSubmenusByMasterType(newType);
       setSubmenus(res.data || []);
-    } catch { setSubmenus([]); }
+    } catch {
+      setSubmenus([]);
+    }
     setLoadingSubmenus(false);
   };
 
@@ -339,9 +469,10 @@ export default function ChartOfAccounts() {
     if (!isLegacyPath) return;
 
     const pathKey = `${location.pathname}${location.search}`;
-    const isLegacyActionPath = /^\/chart-of-accounts\/(create|edit\/[^/]+|delete\/[^/]+)$/.test(
-      location.pathname
-    );
+    const isLegacyActionPath =
+      /^\/chart-of-accounts\/(create|edit\/[^/]+|delete\/[^/]+)$/.test(
+        location.pathname,
+      );
 
     if (!isLegacyActionPath) {
       handledLegacyPathRef.current = "";
@@ -354,7 +485,8 @@ export default function ChartOfAccounts() {
     if (createMatch) {
       handledLegacyPathRef.current = pathKey;
       const paramsQuery = new URLSearchParams(location.search);
-      const requestedType = normalizeMasterType(paramsQuery.get("type")) || currentType;
+      const requestedType =
+        normalizeMasterType(paramsQuery.get("type")) || currentType;
       const requestedSubtype = paramsQuery.get("subtype") || "";
 
       if (requestedType !== currentType) {
@@ -367,7 +499,9 @@ export default function ChartOfAccounts() {
       return;
     }
 
-    const editMatch = location.pathname.match(/^\/chart-of-accounts\/edit\/([^/]+)$/);
+    const editMatch = location.pathname.match(
+      /^\/chart-of-accounts\/edit\/([^/]+)$/,
+    );
     if (editMatch?.[1]) {
       handledLegacyPathRef.current = pathKey;
       const accountId = editMatch[1];
@@ -383,7 +517,8 @@ export default function ChartOfAccounts() {
           }
 
           const masterType =
-            normalizeMasterType(account?.submenuId?.masterId?.masterName) || currentType;
+            normalizeMasterType(account?.submenuId?.masterId?.masterName) ||
+            currentType;
           const submenuName = account?.submenuId?.submenuName || "";
           if (masterType !== currentType) {
             setCurrentType(masterType);
@@ -398,7 +533,9 @@ export default function ChartOfAccounts() {
       return;
     }
 
-    const deleteMatch = location.pathname.match(/^\/chart-of-accounts\/delete\/([^/]+)$/);
+    const deleteMatch = location.pathname.match(
+      /^\/chart-of-accounts\/delete\/([^/]+)$/,
+    );
     if (deleteMatch?.[1] && !deletingFromLegacyRef.current) {
       handledLegacyPathRef.current = pathKey;
       deletingFromLegacyRef.current = true;
@@ -408,9 +545,13 @@ export default function ChartOfAccounts() {
         try {
           const detailRes = await getAccountDetail(accountId);
           const masterType =
-            normalizeMasterType(detailRes?.data?.submenuId?.masterId?.masterName) || currentType;
+            normalizeMasterType(
+              detailRes?.data?.submenuId?.masterId?.masterName,
+            ) || currentType;
           await handleDelete(accountId, { skipConfirm: true });
-          navigate(`/chart-of-accounts/${encodeURIComponent(masterType)}`, { replace: true });
+          navigate(`/chart-of-accounts/${encodeURIComponent(masterType)}`, {
+            replace: true,
+          });
         } finally {
           deletingFromLegacyRef.current = false;
         }
@@ -438,7 +579,9 @@ export default function ChartOfAccounts() {
 
   const deleteFromUi = async (accountId) => {
     if (isLegacyPath) {
-      const confirmed = confirm("Are you sure you want to delete this account?");
+      const confirmed = confirm(
+        "Are you sure you want to delete this account?",
+      );
       if (!confirmed) return;
       navigate(`/chart-of-accounts/delete/${accountId}`);
       return;
@@ -448,8 +591,13 @@ export default function ChartOfAccounts() {
 
   const closeModal = () => {
     setShowModal(false);
-    if (isLegacyPath && /\/chart-of-accounts\/(create|edit\/)/.test(location.pathname)) {
-      navigate(`/chart-of-accounts/${encodeURIComponent(currentType)}`, { replace: true });
+    if (
+      isLegacyPath &&
+      /\/chart-of-accounts\/(create|edit\/)/.test(location.pathname)
+    ) {
+      navigate(`/chart-of-accounts/${encodeURIComponent(currentType)}`, {
+        replace: true,
+      });
     }
   };
 
@@ -472,13 +620,18 @@ export default function ChartOfAccounts() {
       }
 
       const targetType =
-        (editingAccount?._masterType || form.masterType || currentType);
+        editingAccount?._masterType || form.masterType || currentType;
 
       setShowModal(false);
       fetchData();
 
-      if (isLegacyPath && /\/chart-of-accounts\/(create|edit\/)/.test(location.pathname)) {
-        navigate(`/chart-of-accounts/${encodeURIComponent(targetType)}`, { replace: true });
+      if (
+        isLegacyPath &&
+        /\/chart-of-accounts\/(create|edit\/)/.test(location.pathname)
+      ) {
+        navigate(`/chart-of-accounts/${encodeURIComponent(targetType)}`, {
+          replace: true,
+        });
       }
     } catch (err) {
       toast.error(err.response?.data?.message || "Failed to save");
@@ -487,7 +640,11 @@ export default function ChartOfAccounts() {
 
   const handleDelete = async (id, options = {}) => {
     const skipConfirm = options.skipConfirm === true;
-    if (!skipConfirm && !confirm("Are you sure you want to delete this account?")) return false;
+    if (
+      !skipConfirm &&
+      !confirm("Are you sure you want to delete this account?")
+    )
+      return false;
     try {
       const res = await deleteAccount(id);
       if (res.success) {
@@ -513,7 +670,9 @@ export default function ChartOfAccounts() {
   const isChildAccount = (code) => code && code.includes(".");
 
   // Determine which master type to check for currency visibility
-  const effectiveMasterType = editingAccount ? editingAccount._masterType : form.masterType;
+  const effectiveMasterType = editingAccount
+    ? editingAccount._masterType
+    : form.masterType;
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto">
@@ -524,12 +683,18 @@ export default function ChartOfAccounts() {
             <nav className="text-xs text-gray-500 mb-1">
               <span>Accounting</span>
               <span className="mx-1.5">/</span>
-              <span className="text-pink-700 font-medium">Chart of Accounts</span>
+              <span className="text-pink-700 font-medium">
+                Chart of Accounts
+              </span>
             </nav>
-            <h1 className="text-xl font-bold text-gray-900">Chart of Accounts</h1>
+            <h1 className="text-xl font-bold text-gray-900">
+              Chart of Accounts
+            </h1>
           </div>
-          <button onClick={() => openCreateFromUi()}
-            className="px-5 py-2.5 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition text-sm font-medium shadow-sm">
+          <button
+            onClick={() => openCreateFromUi()}
+            className="px-5 py-2.5 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition text-sm font-medium shadow-sm"
+          >
             + Add a New Account
           </button>
         </div>
@@ -542,18 +707,23 @@ export default function ChartOfAccounts() {
           <div className="hidden sm:block w-12 h-px bg-gray-300 mr-3" />
           <div className="inline-flex bg-pink-50 rounded-full p-1 gap-0.5">
             {TABS.map((tab) => (
-              <button key={tab} onClick={() => handleTabChange(tab)}
+              <button
+                key={tab}
+                onClick={() => handleTabChange(tab)}
                 className={`relative px-5 py-2 rounded-full text-sm font-semibold transition-all duration-200 ${
                   currentType === tab
                     ? "bg-white text-pink-700 shadow-[0_0_9px_1px_rgba(236,72,153,0.2)]"
                     : "text-pink-600 hover:text-pink-800"
-                }`}>
+                }`}
+              >
                 {TAB_DISPLAY[tab] || tab}
-                <span className={`ml-1.5 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold ${
-                  currentType === tab
-                    ? "bg-pink-100 text-pink-700"
-                    : "bg-pink-100/60 text-pink-500"
-                }`}>
+                <span
+                  className={`ml-1.5 inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full text-[11px] font-bold ${
+                    currentType === tab
+                      ? "bg-pink-100 text-pink-700"
+                      : "bg-pink-100/60 text-pink-500"
+                  }`}
+                >
                   {accountCounts[tab] || 0}
                 </span>
               </button>
@@ -568,27 +738,48 @@ export default function ChartOfAccounts() {
         <div className="flex items-center justify-center py-16">
           <div className="w-8 h-8 border-3 border-pink-200 border-t-pink-600 rounded-full animate-spin" />
         </div>
-      ) : Object.keys(accountsBySubtype).length === 0 ? (
+      ) : accountSubtypeEntries.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16">
           <div className="w-16 h-16 rounded-full bg-pink-50 flex items-center justify-center mb-4">
-            <svg className="w-8 h-8 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+            <svg
+              className="w-8 h-8 text-pink-400"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+              />
             </svg>
           </div>
-          <h3 className="text-lg font-semibold text-gray-800 mb-1">No accounts for {currentType}</h3>
-          <p className="text-sm text-gray-500 mb-4">Start by adding your first account in this category.</p>
-          <button onClick={() => openCreateFromUi()}
-            className="px-5 py-2.5 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition text-sm font-medium shadow-sm">
+          <h3 className="text-lg font-semibold text-gray-800 mb-1">
+            No accounts for {currentType}
+          </h3>
+          <p className="text-sm text-gray-500 mb-4">
+            Start by adding your first account in this category.
+          </p>
+          <button
+            onClick={() => openCreateFromUi()}
+            className="px-5 py-2.5 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition text-sm font-medium shadow-sm"
+          >
             + Add a New Account
           </button>
         </div>
       ) : (
         <div className="space-y-6">
-          {Object.entries(accountsBySubtype).map(([submenuName, data]) => (
-            <div key={submenuName} className="bg-white rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.06)] border border-gray-100 overflow-hidden">
+          {accountSubtypeEntries.map(([submenuName, data]) => (
+            <div
+              key={submenuName}
+              className="bg-white rounded-xl shadow-[0_0_10px_rgba(0,0,0,0.06)] border border-gray-100 overflow-hidden"
+            >
               {/* Section Header */}
               <div className="bg-gray-50 px-6 py-3.5 border-b border-gray-100">
-                <h3 className="font-bold text-gray-800 text-[15px]">{submenuName}</h3>
+                <h3 className="font-bold text-gray-800 text-[15px]">
+                  {submenuName}
+                </h3>
               </div>
 
               {/* Account Items */}
@@ -597,51 +788,112 @@ export default function ChartOfAccounts() {
                   {data.accounts.map((acc) => {
                     const isChild = isChildAccount(acc.accountCode);
                     return (
-                      <div key={acc._id}
+                      <div
+                        key={acc._id}
                         className={`flex items-center justify-between px-6 py-4 border-b border-gray-50 last:border-b-0 hover:bg-pink-50/20 transition ${
                           isChild ? "pl-12 bg-gray-50/50" : ""
-                        }`}>
+                        }`}
+                      >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-3">
-                            {isChild && <span className="text-gray-300 text-sm font-mono select-none">└─</span>}
-                            <span className="font-mono text-xs text-gray-400 shrink-0">{acc.accountCode || "-"}</span>
-                            <span className="font-semibold text-gray-900">{acc.accountName}</span>
-                            <span className="text-xs text-gray-400">({acc.currency || "Rp"})</span>
+                            {isChild && (
+                              <span className="text-gray-300 text-sm font-mono select-none">
+                                └─
+                              </span>
+                            )}
+                            <span className="font-mono text-xs text-gray-400 shrink-0">
+                              {acc.accountCode || "-"}
+                            </span>
+                            <span className="font-semibold text-gray-900">
+                              {acc.accountName}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              ({acc.currency || "Rp"})
+                            </span>
                           </div>
-                          <p className={`text-xs text-gray-400 mt-0.5 ${isChild ? "ml-9" : "ml-0"}`}>No transactions for this account</p>
+                          <p
+                            className={`text-xs text-gray-400 mt-0.5 ${isChild ? "ml-9" : "ml-0"}`}
+                          >
+                            No transactions for this account
+                          </p>
                           {acc.description && (
-                            <p className={`text-xs text-gray-400 mt-0.5 line-clamp-1 ${isChild ? "ml-9" : "ml-0"}`}>{acc.description}</p>
+                            <p
+                              className={`text-xs text-gray-400 mt-0.5 line-clamp-1 ${isChild ? "ml-9" : "ml-0"}`}
+                            >
+                              {acc.description}
+                            </p>
                           )}
                         </div>
 
                         <div className="flex items-center gap-4 ml-4 shrink-0">
                           {/* Balance */}
-                          <span className={`font-mono text-sm ${(acc.balance || 0) < 0 ? "text-red-600" : "text-gray-700"}`}>
+                          <span
+                            className={`font-mono text-sm ${(acc.balance || 0) < 0 ? "text-red-600" : "text-gray-700"}`}
+                          >
                             {formatBalance(acc.balance, acc.currency)}
                           </span>
 
                           {/* Action Dropdown */}
-                          <div className="relative" ref={openDropdown === acc._id ? dropdownRef : null}>
-                            <button onClick={() => setOpenDropdown(openDropdown === acc._id ? null : acc._id)}
-                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition">
-                              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                          <div
+                            className="relative"
+                            ref={openDropdown === acc._id ? dropdownRef : null}
+                          >
+                            <button
+                              onClick={() =>
+                                setOpenDropdown(
+                                  openDropdown === acc._id ? null : acc._id,
+                                )
+                              }
+                              className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-600 transition"
+                            >
+                              <svg
+                                className="w-5 h-5"
+                                fill="currentColor"
+                                viewBox="0 0 20 20"
+                              >
                                 <path d="M10 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4zm0 6a2 2 0 110-4 2 2 0 010 4z" />
                               </svg>
                             </button>
                             {openDropdown === acc._id && (
                               <div className="absolute right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 min-w-[140px]">
-                                <button onClick={() => openEditFromUi(acc, submenuName)}
-                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                <button
+                                  onClick={() =>
+                                    openEditFromUi(acc, submenuName)
+                                  }
+                                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition flex items-center gap-2"
+                                >
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                    />
                                   </svg>
                                   Edit
                                 </button>
                                 <div className="border-t border-gray-100 my-1" />
-                                <button onClick={() => deleteFromUi(acc._id)}
-                                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2">
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                <button
+                                  onClick={() => deleteFromUi(acc._id)}
+                                  className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition flex items-center gap-2"
+                                >
+                                  <svg
+                                    className="w-4 h-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                    />
                                   </svg>
                                   Delete
                                 </button>
@@ -661,8 +913,12 @@ export default function ChartOfAccounts() {
 
               {/* Add account link at bottom of section */}
               <div className="px-6 py-3 border-t border-gray-50">
-                <button onClick={() => openCreateFromUi(data.submenuId || "", submenuName)}
-                  className="text-sm text-pink-600 hover:text-pink-800 font-medium transition">
+                <button
+                  onClick={() =>
+                    openCreateFromUi(data.submenuId || "", submenuName)
+                  }
+                  className="text-sm text-pink-600 hover:text-pink-800 font-medium transition"
+                >
                   + Add a new account
                 </button>
               </div>
@@ -673,35 +929,55 @@ export default function ChartOfAccounts() {
 
       {/* ===== Modal for Create/Edit ===== */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" onClick={closeModal}>
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={closeModal}
+        >
+          <div
+            className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="px-6 py-5 border-b border-gray-100">
-              <h2 className="text-lg font-bold text-gray-900">{editingAccount ? "Edit Account" : "Add a New Account"}</h2>
+              <h2 className="text-lg font-bold text-gray-900">
+                {editingAccount ? "Edit Account" : "Add a New Account"}
+              </h2>
             </div>
             <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
-
               {/* --- Account Type --- */}
               {editingAccount ? (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Account Type</label>
-                  <input type="text"
-                    value={TAB_DISPLAY[editingAccount._masterType] || editingAccount._masterType}
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Account Type
+                  </label>
+                  <input
+                    type="text"
+                    value={
+                      TAB_DISPLAY[editingAccount._masterType] ||
+                      editingAccount._masterType
+                    }
                     disabled
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed" />
-                  <p className="text-xs text-gray-400 mt-1">Cannot be changed after creation</p>
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Cannot be changed after creation
+                  </p>
                 </div>
               ) : (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     Account Type <span className="text-red-500">*</span>
                   </label>
-                  <select value={form.masterType}
+                  <select
+                    value={form.masterType}
                     onChange={(e) => handleMasterTypeChange(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none transition"
-                    required>
+                    required
+                  >
                     <option value="">Select one...</option>
                     {TABS.map((t) => (
-                      <option key={t} value={t}>{TAB_DISPLAY[t] || t}</option>
+                      <option key={t} value={t}>
+                        {TAB_DISPLAY[t] || t}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -710,31 +986,49 @@ export default function ChartOfAccounts() {
               {/* --- Account Subtype (Submenu) --- */}
               {editingAccount ? (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Account Subtype</label>
-                  <input type="text"
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Account Subtype
+                  </label>
+                  <input
+                    type="text"
                     value={editingAccount._submenuName || ""}
                     disabled
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed" />
-                  <p className="text-xs text-gray-400 mt-1">Cannot be changed after creation</p>
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm bg-gray-50 text-gray-500 cursor-not-allowed"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Cannot be changed after creation
+                  </p>
                 </div>
               ) : (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1.5">
                     Account Subtype <span className="text-red-500">*</span>
                   </label>
-                  <select value={form.submenuId}
-                    onChange={(e) => setForm({ ...form, submenuId: e.target.value })}
+                  <select
+                    value={form.submenuId}
+                    onChange={(e) =>
+                      setForm({ ...form, submenuId: e.target.value })
+                    }
                     className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none transition"
                     required
-                    disabled={loadingSubmenus || !form.masterType}>
+                    disabled={loadingSubmenus || !form.masterType}
+                  >
                     <option value="">
-                      {loadingSubmenus ? "Loading..." : !form.masterType ? "Select account type first..." : "Select submenu..."}
+                      {loadingSubmenus
+                        ? "Loading..."
+                        : !form.masterType
+                          ? "Select account type first..."
+                          : "Select submenu..."}
                     </option>
                     {submenus.map((s) => (
-                      <option key={s._id} value={s._id}>{s.submenuName}</option>
+                      <option key={s._id} value={s._id}>
+                        {s.submenuName}
+                      </option>
                     ))}
                   </select>
-                  <p className="text-xs text-gray-400 mt-1">Choose which submenu this account belongs to</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Choose which submenu this account belongs to
+                  </p>
                 </div>
               )}
 
@@ -743,19 +1037,32 @@ export default function ChartOfAccounts() {
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   Account Name <span className="text-red-500">*</span>
                 </label>
-                <input type="text" value={form.accountName}
-                  onChange={(e) => setForm({ ...form, accountName: e.target.value })}
+                <input
+                  type="text"
+                  value={form.accountName}
+                  onChange={(e) =>
+                    setForm({ ...form, accountName: e.target.value })
+                  }
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none transition"
-                  required minLength={3} placeholder="Enter account name" />
+                  required
+                  minLength={3}
+                  placeholder="Enter account name"
+                />
               </div>
 
               {/* --- Account Currency (conditional: Assets, Liabilities, Equity only) --- */}
               {CURRENCY_TYPES.includes(effectiveMasterType) && (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1.5">Account Currency</label>
-                  <select value={form.currency}
-                    onChange={(e) => setForm({ ...form, currency: e.target.value })}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none transition">
+                  <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                    Account Currency
+                  </label>
+                  <select
+                    value={form.currency}
+                    onChange={(e) =>
+                      setForm({ ...form, currency: e.target.value })
+                    }
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none transition"
+                  >
                     <option value="">Select currency...</option>
                     {CURRENCIES.map((c) => (
                       <option key={c.code} value={c.code}>
@@ -763,17 +1070,30 @@ export default function ChartOfAccounts() {
                       </option>
                     ))}
                   </select>
-                  <p className="text-xs text-gray-400 mt-1">Select the currency for this account</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Select the currency for this account
+                  </p>
                 </div>
               )}
 
               {/* --- Account ID --- */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Account ID</label>
-                <input type="text" value={form.accountCode}
-                  onChange={(e) => setForm({ ...form, accountCode: e.target.value })}
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Account ID
+                </label>
+                <input
+                  type="text"
+                  value={form.accountCode}
+                  onChange={(e) =>
+                    setForm({ ...form, accountCode: e.target.value })
+                  }
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none transition"
-                  placeholder={editingAccount ? "Account code" : "Leave empty for auto-generation"} />
+                  placeholder={
+                    editingAccount
+                      ? "Account code"
+                      : "Leave empty for auto-generation"
+                  }
+                />
                 <p className="text-xs text-gray-400 mt-1">
                   {editingAccount
                     ? "A unique identifier for this account"
@@ -783,21 +1103,33 @@ export default function ChartOfAccounts() {
 
               {/* --- Description --- */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Description</label>
-                <textarea value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Description
+                </label>
+                <textarea
+                  value={form.description}
+                  onChange={(e) =>
+                    setForm({ ...form, description: e.target.value })
+                  }
                   className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none transition resize-y"
-                  rows={3} placeholder="Optional description of this account" />
+                  rows={3}
+                  placeholder="Optional description of this account"
+                />
               </div>
 
               {/* --- Form Actions --- */}
               <div className="flex justify-end gap-3 pt-3 border-t border-gray-100">
-                <button type="button" onClick={closeModal}
-                  className="px-5 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="px-5 py-2.5 text-sm font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition"
+                >
                   Cancel
                 </button>
-                <button type="submit"
-                  className="px-5 py-2.5 text-sm font-medium text-white bg-pink-600 rounded-lg hover:bg-pink-700 transition shadow-sm">
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 text-sm font-medium text-white bg-pink-600 rounded-lg hover:bg-pink-700 transition shadow-sm"
+                >
                   {editingAccount ? "Update" : "Save"}
                 </button>
               </div>

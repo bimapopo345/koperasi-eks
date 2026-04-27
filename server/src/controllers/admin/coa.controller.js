@@ -95,11 +95,109 @@ function sortSubmenus(masterType, submenus) {
   const orderedMap = new Map(orderedNames.map((name, index) => [name, index]));
 
   return [...submenus].sort((a, b) => {
-    const aRank = orderedMap.has(a.submenuName) ? orderedMap.get(a.submenuName) : Number.MAX_SAFE_INTEGER;
-    const bRank = orderedMap.has(b.submenuName) ? orderedMap.get(b.submenuName) : Number.MAX_SAFE_INTEGER;
+    const aRank = orderedMap.has(a.submenuName)
+      ? orderedMap.get(a.submenuName)
+      : Number.MAX_SAFE_INTEGER;
+    const bRank = orderedMap.has(b.submenuName)
+      ? orderedMap.get(b.submenuName)
+      : Number.MAX_SAFE_INTEGER;
 
     if (aRank !== bRank) return aRank - bRank;
     return a.submenuName.localeCompare(b.submenuName);
+  });
+}
+
+function toAccountCodeSegment(segment) {
+  if (/^\d+$/.test(segment)) return Number(segment);
+  return String(segment || "").toLowerCase();
+}
+
+function compareAccountCodeKeys(aKey, bKey) {
+  const maxLength = Math.max(aKey.length, bKey.length);
+
+  for (let index = 0; index < maxLength; index += 1) {
+    if (aKey[index] === undefined) return -1;
+    if (bKey[index] === undefined) return 1;
+
+    const aValue = aKey[index];
+    const bValue = bKey[index];
+    if (aValue === bValue) continue;
+
+    if (typeof aValue === "number" && typeof bValue === "number") {
+      return aValue - bValue;
+    }
+
+    return String(aValue).localeCompare(String(bValue), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    });
+  }
+
+  return 0;
+}
+
+function buildAccountCodeKey(
+  code,
+  codeSet,
+  cache = new Map(),
+  seen = new Set(),
+) {
+  const normalizedCode = String(code || "").trim();
+  if (!normalizedCode) return [Number.MAX_SAFE_INTEGER];
+  if (cache.has(normalizedCode)) return cache.get(normalizedCode);
+  if (seen.has(normalizedCode))
+    return normalizedCode.split(".").map(toAccountCodeSegment);
+
+  seen.add(normalizedCode);
+  const parts = normalizedCode.split(".");
+  let key;
+
+  if (parts.length === 2 && /^\d+$/.test(parts[1]) && parts[1].length > 2) {
+    const [baseCode, suffix] = parts;
+
+    for (let cut = suffix.length - 1; cut > 0; cut -= 1) {
+      const possibleParent = `${baseCode}.${suffix.slice(0, cut)}`;
+      if (codeSet.has(possibleParent)) {
+        key = [
+          ...buildAccountCodeKey(possibleParent, codeSet, cache, seen),
+          toAccountCodeSegment(suffix.slice(cut)),
+        ];
+        break;
+      }
+    }
+  }
+
+  if (!key) {
+    key = parts.map(toAccountCodeSegment);
+  }
+
+  cache.set(normalizedCode, key);
+  seen.delete(normalizedCode);
+  return key;
+}
+
+function sortAccountsByCode(accounts = []) {
+  const codeSet = new Set(
+    accounts
+      .map((account) => String(account.accountCode || "").trim())
+      .filter(Boolean),
+  );
+  const keyCache = new Map();
+
+  return [...accounts].sort((a, b) => {
+    const codeResult = compareAccountCodeKeys(
+      buildAccountCodeKey(a.accountCode, codeSet, keyCache),
+      buildAccountCodeKey(b.accountCode, codeSet, keyCache),
+    );
+
+    if (codeResult !== 0) return codeResult;
+    return String(a.accountName || "").localeCompare(
+      String(b.accountName || ""),
+      undefined,
+      {
+        sensitivity: "base",
+      },
+    );
   });
 }
 
@@ -109,12 +207,18 @@ async function resolveMasterAndSubmenus(rawMasterType) {
     return { normalizedType: null, master: null, submenus: [] };
   }
 
-  const master = await CoaMaster.findOne({ masterName: normalizedType, isActive: true });
+  const master = await CoaMaster.findOne({
+    masterName: normalizedType,
+    isActive: true,
+  });
   if (!master) {
     return { normalizedType, master: null, submenus: [] };
   }
 
-  const submenus = await CoaSubmenu.find({ masterId: master._id, isActive: true });
+  const submenus = await CoaSubmenu.find({
+    masterId: master._id,
+    isActive: true,
+  });
   return {
     normalizedType,
     master,
@@ -139,7 +243,10 @@ export const getAccountsByType = async (req, res) => {
     for (const t of MASTER_TYPES) {
       const master = await CoaMaster.findOne({ masterName: t, isActive: true });
       if (master) {
-        const submenus = await CoaSubmenu.find({ masterId: master._id, isActive: true });
+        const submenus = await CoaSubmenu.find({
+          masterId: master._id,
+          isActive: true,
+        });
         const submenuIds = submenus.map((s) => s._id);
         accountCounts[t] = await CoaAccount.countDocuments({
           submenuId: { $in: submenuIds },
@@ -156,10 +263,13 @@ export const getAccountsByType = async (req, res) => {
 
     if (master) {
       for (const sub of submenus) {
-        const accounts = await CoaAccount.find({ submenuId: sub._id, isActive: true }).sort({ accountName: 1 });
+        const accounts = await CoaAccount.find({
+          submenuId: sub._id,
+          isActive: true,
+        });
         accountsBySubtype[sub.submenuName] = {
           submenuId: sub._id,
-          accounts,
+          accounts: sortAccountsByCode(accounts),
         };
       }
     }
@@ -187,7 +297,9 @@ export const getAccountDetail = async (req, res) => {
     });
 
     if (!account) {
-      return res.status(404).json({ success: false, message: "Account not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Account not found" });
     }
 
     res.status(200).json({ success: true, data: account });
@@ -201,23 +313,37 @@ export const getAccountDetail = async (req, res) => {
  */
 export const createAccount = async (req, res) => {
   try {
-    const accountName = String(pickBodyField(req.body, ["accountName", "account_name"]) || "").trim();
-    const submenuId = String(pickBodyField(req.body, ["submenuId", "submenu_id"]) || "").trim();
-    const accountCode = String(pickBodyField(req.body, ["accountCode", "account_code"]) || "").trim();
+    const accountName = String(
+      pickBodyField(req.body, ["accountName", "account_name"]) || "",
+    ).trim();
+    const submenuId = String(
+      pickBodyField(req.body, ["submenuId", "submenu_id"]) || "",
+    ).trim();
+    const accountCode = String(
+      pickBodyField(req.body, ["accountCode", "account_code"]) || "",
+    ).trim();
     const currency = String(pickBodyField(req.body, ["currency"]) || "").trim();
-    const description = String(pickBodyField(req.body, ["description"]) || "").trim();
+    const description = String(
+      pickBodyField(req.body, ["description"]) || "",
+    ).trim();
 
     if (!accountName || accountName.length < 3) {
-      return res.status(400).json({ success: false, message: "Account name minimal 3 karakter" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Account name minimal 3 karakter" });
     }
     if (!submenuId) {
-      return res.status(400).json({ success: false, message: "Submenu ID wajib diisi" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Submenu ID wajib diisi" });
     }
 
     // Get submenu with master info
     const submenu = await CoaSubmenu.findById(submenuId).populate("masterId");
     if (!submenu) {
-      return res.status(400).json({ success: false, message: "Invalid submenu" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid submenu" });
     }
 
     // Generate or validate account code
@@ -227,7 +353,9 @@ export const createAccount = async (req, res) => {
     } else {
       const exists = await CoaAccount.findOne({ accountCode: finalCode });
       if (exists) {
-        return res.status(400).json({ success: false, message: "Account code sudah ada" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Account code sudah ada" });
       }
     }
 
@@ -241,10 +369,18 @@ export const createAccount = async (req, res) => {
       isActive: true,
     });
 
-    res.status(201).json({ success: true, message: "Account created successfully", data: account });
+    res
+      .status(201)
+      .json({
+        success: true,
+        message: "Account created successfully",
+        data: account,
+      });
   } catch (error) {
     if (error?.code === 11000) {
-      return res.status(400).json({ success: false, message: "Account code sudah ada" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Account code sudah ada" });
     }
     res.status(500).json({ success: false, message: error.message });
   }
@@ -255,8 +391,14 @@ export const createAccount = async (req, res) => {
  */
 export const updateAccount = async (req, res) => {
   try {
-    const incomingAccountName = pickBodyField(req.body, ["accountName", "account_name"]);
-    const incomingAccountCode = pickBodyField(req.body, ["accountCode", "account_code"]);
+    const incomingAccountName = pickBodyField(req.body, [
+      "accountName",
+      "account_name",
+    ]);
+    const incomingAccountCode = pickBodyField(req.body, [
+      "accountCode",
+      "account_code",
+    ]);
     const incomingCurrency = pickBodyField(req.body, ["currency"]);
     const incomingDescription = pickBodyField(req.body, ["description"]);
 
@@ -268,13 +410,17 @@ export const updateAccount = async (req, res) => {
     const account = await CoaAccount.findById(req.params.id);
 
     if (!account) {
-      return res.status(404).json({ success: false, message: "Account not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Account not found" });
     }
 
     if (hasAccountName) {
       const normalizedName = String(incomingAccountName || "").trim();
       if (!normalizedName || normalizedName.length < 3) {
-        return res.status(400).json({ success: false, message: "Account name minimal 3 karakter" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Account name minimal 3 karakter" });
       }
       account.accountName = normalizedName;
     }
@@ -286,9 +432,14 @@ export const updateAccount = async (req, res) => {
 
     // Check code uniqueness
     if (normalizedCode && normalizedCode !== account.accountCode) {
-      const exists = await CoaAccount.findOne({ accountCode: normalizedCode, _id: { $ne: account._id } });
+      const exists = await CoaAccount.findOne({
+        accountCode: normalizedCode,
+        _id: { $ne: account._id },
+      });
       if (exists) {
-        return res.status(400).json({ success: false, message: "Account code sudah ada" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Account code sudah ada" });
       }
     }
 
@@ -304,10 +455,18 @@ export const updateAccount = async (req, res) => {
 
     await account.save();
 
-    res.status(200).json({ success: true, message: "Account updated successfully", data: account });
+    res
+      .status(200)
+      .json({
+        success: true,
+        message: "Account updated successfully",
+        data: account,
+      });
   } catch (error) {
     if (error?.code === 11000) {
-      return res.status(400).json({ success: false, message: "Account code sudah ada" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Account code sudah ada" });
     }
     res.status(500).json({ success: false, message: error.message });
   }
@@ -320,13 +479,17 @@ export const deleteAccount = async (req, res) => {
   try {
     const account = await CoaAccount.findById(req.params.id);
     if (!account) {
-      return res.status(404).json({ success: false, message: "Account not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Account not found" });
     }
 
     account.isActive = false;
     await account.save();
 
-    res.status(200).json({ success: true, message: "Account deleted successfully" });
+    res
+      .status(200)
+      .json({ success: true, message: "Account deleted successfully" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -337,11 +500,16 @@ export const deleteAccount = async (req, res) => {
  */
 export const getSubmenusByMasterType = async (req, res) => {
   try {
-    const requestedType = req.params.masterType || pickBodyField(req.body, ["masterType", "master_type"]);
-    const { normalizedType, master, submenus } = await resolveMasterAndSubmenus(requestedType);
+    const requestedType =
+      req.params.masterType ||
+      pickBodyField(req.body, ["masterType", "master_type"]);
+    const { normalizedType, master, submenus } =
+      await resolveMasterAndSubmenus(requestedType);
 
     if (!normalizedType || !master) {
-      return res.status(404).json({ success: false, message: "Master type not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Master type not found" });
     }
 
     res.status(200).json({ success: true, data: submenus });
@@ -355,8 +523,11 @@ export const getSubmenusByMasterType = async (req, res) => {
  */
 export const getSubmenusLegacy = async (req, res) => {
   try {
-    const requestedType = req.params.masterType || pickBodyField(req.body, ["masterType", "master_type"]);
-    const { normalizedType, master, submenus } = await resolveMasterAndSubmenus(requestedType);
+    const requestedType =
+      req.params.masterType ||
+      pickBodyField(req.body, ["masterType", "master_type"]);
+    const { normalizedType, master, submenus } =
+      await resolveMasterAndSubmenus(requestedType);
 
     if (!normalizedType || !master) {
       return res.status(200).json({ error: "Master type not found" });
@@ -374,18 +545,38 @@ export const getSubmenusLegacy = async (req, res) => {
 export const getAllCategories = async (req, res) => {
   try {
     const categories = [];
-    const masters = await CoaMaster.find({ isActive: true }).sort({ masterName: 1 });
+    const masters = await CoaMaster.find({ isActive: true }).sort({
+      masterName: 1,
+    });
 
     for (const master of masters) {
-      categories.push({ id: master._id, name: master.masterName, type: "master" });
+      categories.push({
+        id: master._id,
+        name: master.masterName,
+        type: "master",
+      });
 
-      const submenus = await CoaSubmenu.find({ masterId: master._id, isActive: true }).sort({ submenuName: 1 });
+      const submenus = await CoaSubmenu.find({
+        masterId: master._id,
+        isActive: true,
+      }).sort({ submenuName: 1 });
       for (const sub of submenus) {
-        categories.push({ id: sub._id, name: sub.submenuName, type: "submenu" });
+        categories.push({
+          id: sub._id,
+          name: sub.submenuName,
+          type: "submenu",
+        });
 
-        const accounts = await CoaAccount.find({ submenuId: sub._id, isActive: true }).sort({ accountName: 1 });
+        const accounts = sortAccountsByCode(
+          await CoaAccount.find({ submenuId: sub._id, isActive: true }),
+        );
         for (const acc of accounts) {
-          categories.push({ id: acc._id, name: acc.accountName, code: acc.accountCode || "", type: "account" });
+          categories.push({
+            id: acc._id,
+            name: acc.accountName,
+            code: acc.accountCode || "",
+            type: "account",
+          });
         }
       }
     }
@@ -401,17 +592,24 @@ export const getAllCategories = async (req, res) => {
  */
 export const getAssetsAccounts = async (req, res) => {
   try {
-    const master = await CoaMaster.findOne({ masterName: "Assets", isActive: true });
+    const master = await CoaMaster.findOne({
+      masterName: "Assets",
+      isActive: true,
+    });
     if (!master) {
       return res.status(200).json({ success: true, data: {} });
     }
 
-    const rawSubmenus = await CoaSubmenu.find({ masterId: master._id, isActive: true });
+    const rawSubmenus = await CoaSubmenu.find({
+      masterId: master._id,
+      isActive: true,
+    });
     const submenus = sortSubmenus("Assets", rawSubmenus);
     const grouped = {};
     for (const sub of submenus) {
-      const accounts = await CoaAccount.find({ submenuId: sub._id, isActive: true }).sort({ accountName: 1 });
-      grouped[sub.submenuName] = accounts;
+      grouped[sub.submenuName] = sortAccountsByCode(
+        await CoaAccount.find({ submenuId: sub._id, isActive: true }),
+      );
     }
 
     res.status(200).json({ success: true, data: grouped });
