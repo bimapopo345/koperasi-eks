@@ -25,11 +25,13 @@ jobs:
             set -euo pipefail
 
             APP_DIR="/opt/mern/koperasi"
+            FRESH_CLONE=0
 
             cd "$APP_DIR" || {
               echo "Repo not found, cloning..."
               git clone ${{ secrets.REPO_SSH_URL }} "$APP_DIR"
               cd "$APP_DIR"
+              FRESH_CLONE=1
             }
 
             BRANCH="${{ github.ref_name }}"
@@ -38,8 +40,48 @@ jobs:
               git -c safe.directory="$APP_DIR" "$@"
             }
             git_safe fetch --all --prune
+            if ! git_safe rev-parse --verify "origin/$BRANCH" >/dev/null 2>&1; then
+              BRANCH="main"
+            fi
+            TARGET_REF="origin/$BRANCH"
+            PREV_SHA="$(git_safe rev-parse HEAD 2>/dev/null || true)"
+            TARGET_SHA="$(git_safe rev-parse "$TARGET_REF")"
+            CHANGED_FILES=""
+            if [ "$FRESH_CLONE" = "0" ] && [ -n "$PREV_SHA" ] && [ "$PREV_SHA" != "$TARGET_SHA" ]; then
+              CHANGED_FILES="$(git_safe diff --name-only "$PREV_SHA" "$TARGET_SHA" || true)"
+            fi
             git_safe checkout "$BRANCH" || git_safe checkout main
-            git_safe reset --hard "origin/$BRANCH" || git_safe reset --hard origin/main
+            git_safe reset --hard "$TARGET_REF"
+
+            BUILD_API=1
+            BUILD_WEB=1
+            if [ "$FRESH_CLONE" = "0" ] && [ -n "$PREV_SHA" ]; then
+              BUILD_API=0
+              BUILD_WEB=0
+              if [ -n "$CHANGED_FILES" ]; then
+                echo "Changed files:"
+                echo "$CHANGED_FILES"
+                echo "$CHANGED_FILES" | grep -qE '^(server/|package\.json|package-lock\.json)$' && BUILD_API=1 || true
+                echo "$CHANGED_FILES" | grep -qE '^(client/|package\.json|package-lock\.json)$' && BUILD_WEB=1 || true
+                if echo "$CHANGED_FILES" | grep -qvE '^(server/|client/|\.github/|checkpoint/|postman/|.*\.md$|context\.md$|memori[0-9]*\.md$|MERN-Koperasi-Postman-Collection\.json$|get_saving.*\.php$|saving_json\.php$)'; then
+                  BUILD_API=1
+                  BUILD_WEB=1
+                fi
+              fi
+            fi
+
+            container_running() {
+              podman ps --format '{{.Names}}' | grep -qx "$1"
+            }
+
+            podman_build_cached() {
+              IMAGE_TAG="$1"
+              if podman build --help 2>/dev/null | grep -q -- '--layers'; then
+                podman build --layers -t "$IMAGE_TAG" .
+              else
+                podman build -t "$IMAGE_TAG" .
+              fi
+            }
 
             echo "📦 Backend"
             cd "$APP_DIR/server"
@@ -53,23 +95,32 @@ jobs:
               "$UPLOADS_HOST_DIR/expenses" \
               "$UPLOADS_HOST_DIR/expense-payment-proofs"
 
-            podman build --pull-always --no-cache -t koperasi-api:latest .
-            podman stop api || true
-            podman rm api || true
+            if [ "$BUILD_API" = "0" ] && ! container_running api; then
+              echo "API container is not running, forcing backend deploy"
+              BUILD_API=1
+            fi
 
-            # Mount uploads volume so files survive container recreation
-            API_CONTAINER_ID=$(podman run -d --name api --network host \
-              --env-file .env \
-              -e UPLOADS_DIR="/data/uploads" \
-              -v "$UPLOADS_HOST_DIR:/data/uploads:Z" \
-              koperasi-api)
-            echo "$API_CONTAINER_ID"
+            if [ "$BUILD_API" = "1" ]; then
+              podman_build_cached koperasi-api:latest
+              podman stop api || true
+              podman rm api || true
 
-            sleep 5
-            if ! podman ps --format '{{.Names}}' | grep -qx api; then
-              echo "❌ API container stopped after deploy. Last logs:"
-              podman logs --tail=200 api || true
-              exit 1
+              # Mount uploads volume so files survive container recreation
+              API_CONTAINER_ID=$(podman run -d --name api --network host \
+                --env-file .env \
+                -e UPLOADS_DIR="/data/uploads" \
+                -v "$UPLOADS_HOST_DIR:/data/uploads:Z" \
+                koperasi-api)
+              echo "$API_CONTAINER_ID"
+
+              sleep 5
+              if ! podman ps --format '{{.Names}}' | grep -qx api; then
+                echo "❌ API container stopped after deploy. Last logs:"
+                podman logs --tail=200 api || true
+                exit 1
+              fi
+            else
+              echo "Backend unchanged, skip rebuild/restart"
             fi
 
             echo "⚛ Frontend"
@@ -78,14 +129,23 @@ jobs:
             # Opsional tapi membantu kalau pernah ada kasus port forwarding nyangkut
             # podman network reload || true
 
-            podman build --pull-always --no-cache -t koperasi-web:latest .
-            podman stop web || true
-            podman rm web || true
-            podman run -d \
-              --replace \
-              --name web \
-              -p 3000:80 \
-              koperasi-web:latest
+            if [ "$BUILD_WEB" = "0" ] && ! container_running web; then
+              echo "Web container is not running, forcing frontend deploy"
+              BUILD_WEB=1
+            fi
+
+            if [ "$BUILD_WEB" = "1" ]; then
+              podman_build_cached koperasi-web:latest
+              podman stop web || true
+              podman rm web || true
+              podman run -d \
+                --replace \
+                --name web \
+                -p 3000:80 \
+                koperasi-web:latest
+            else
+              echo "Frontend unchanged, skip rebuild/restart"
+            fi
 
             echo "🔁 Nginx reload (kalau kamu memang pakai nginx di host)"
             sudo -n systemctl reload nginx || echo "skip reload (no change / not needed)"
