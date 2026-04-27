@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
-import api from "../../api/index.jsx";
 import { getMembers } from "../../api/accountingApi.jsx";
 import {
   createInvoice,
@@ -10,6 +9,7 @@ import {
   updateInvoice,
   validateInvoiceNumber,
 } from "../../api/invoiceApi.jsx";
+import { getInvoiceProducts } from "../../api/invoiceProductApi.jsx";
 import { getTosList } from "../../api/tosApi.jsx";
 import RichTextEditor from "./RichTextEditor.jsx";
 import "./invoice.css";
@@ -113,13 +113,7 @@ const getProductLabel = (product) => {
 };
 
 const getProductSearchValue = (product) =>
-  [
-    product?.title,
-    product?.description,
-    product?.depositAmount,
-    product?.returnProfit,
-    product?.termDuration,
-  ]
+  [product?.title, product?.description, product?.price]
     .filter((value) => value !== null && value !== undefined && value !== "")
     .join(" ")
     .toLowerCase();
@@ -257,7 +251,7 @@ function ProductCombobox({ products, value, onSelect, onClear }) {
       : "";
     const visibleProducts = products.filter(
       (product) =>
-        product.isActive !== false || String(product._id) === String(value),
+        product.archived !== true || String(product._id) === String(value),
     );
 
     if (!query || query === selectedLabel) return visibleProducts.slice(0, 30);
@@ -283,7 +277,7 @@ function ProductCombobox({ products, value, onSelect, onClear }) {
       <input
         className="inv-input inv-combobox-input"
         value={search}
-        placeholder="Search product dari master Product..."
+        placeholder="Search product invoice..."
         onFocus={() => setIsOpen(true)}
         onChange={(event) => {
           setSearch(event.target.value);
@@ -333,14 +327,8 @@ function ProductCombobox({ products, value, onSelect, onClear }) {
                   {getProductLabel(product)}
                 </span>
                 <span className="inv-combobox-meta">
-                  Setoran {formatMoney(product.depositAmount || 0)}{" "}
-                  {product.returnProfit
-                    ? `• Profit ${product.returnProfit}%`
-                    : ""}
-                  {product.termDuration
-                    ? `• ${product.termDuration} bulan`
-                    : ""}
-                  {product.isActive === false ? " • Nonaktif" : ""}
+                  Harga {formatMoney(product.price || 0)}{" "}
+                  {product.archived ? " • Archived" : ""}
                 </span>
                 {product.description ? (
                   <span className="inv-combobox-meta">
@@ -413,7 +401,7 @@ export default function InvoiceForm() {
         const [membersRes, productsRes, metaRes, invoiceRes, tosRes] =
           await Promise.all([
             getMembers(),
-            api.get("/api/products").then((response) => response.data),
+            getInvoiceProducts({ filter: "all" }),
             getInvoiceMeta({ issuedDate: today }),
             isEdit ? getInvoice(invoiceNumber) : Promise.resolve(null),
             getTosList({ filter: "active" }),
@@ -431,12 +419,9 @@ export default function InvoiceForm() {
         }
         if (productsRes?.success) {
           setProducts(
-            [...(productsRes.data || [])].sort((a, b) => {
-              const activeSort =
-                Number(b.isActive !== false) - Number(a.isActive !== false);
-              if (activeSort) return activeSort;
-              return String(a.title || "").localeCompare(String(b.title || ""));
-            }),
+            [...(productsRes.data?.invoiceProducts || [])].sort((a, b) =>
+              String(a.title || "").localeCompare(String(b.title || "")),
+            ),
           );
         }
         if (tosRes?.success) {
@@ -464,7 +449,7 @@ export default function InvoiceForm() {
           setItems(
             (invoice.items || []).length
               ? invoice.items.map((item) => ({
-                  productId: item.productId || "",
+                  productId: item.productId?._id || item.productId || "",
                   title: item.title || "",
                   description: item.description || "",
                   quantity: item.quantity || 1,
@@ -667,10 +652,7 @@ export default function InvoiceForm() {
               productId: product?._id || "",
               title: product?.title || item.title,
               description: product?.description || item.description,
-              price:
-                product?.depositAmount !== undefined
-                  ? product.depositAmount
-                  : item.price,
+              price: product?.price !== undefined ? product.price : item.price,
             }
           : item,
       ),
@@ -1004,8 +986,9 @@ export default function InvoiceForm() {
                           onClear={() => setItemValue(index, "productId", "")}
                         />
                         <div className="inv-money-hint">
-                          Pilih dari sidebar Product. Title, description, dan
-                          price tetap bisa diedit manual setelah dipilih.
+                          Pilih dari sidebar Product Invoice. Title,
+                          description, dan price tetap bisa diedit manual
+                          setelah dipilih.
                         </div>
                       </div>
                       <div className="inv-grid-6">

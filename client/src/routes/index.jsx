@@ -34,6 +34,7 @@ import FinanceExport from "../pages/expense/FinanceExport.jsx";
 import Invoices from "../pages/invoice/Invoices.jsx";
 import InvoiceForm from "../pages/invoice/InvoiceForm.jsx";
 import InvoiceDetail from "../pages/invoice/InvoiceDetail.jsx";
+import InvoiceProducts from "../pages/invoice/InvoiceProducts.jsx";
 import TermOfServices from "../pages/invoice/TermOfServices.jsx";
 
 const router = createBrowserRouter(
@@ -80,6 +81,7 @@ const router = createBrowserRouter(
         <Route path="/expense/edit/:id" element={<ExpenseEdit />} />
         <Route path="/finance/export" element={<FinanceExport />} />
         <Route path="/invoice" element={<Invoices />} />
+        <Route path="/invoice-products" element={<InvoiceProducts />} />
         <Route path="/invoice/new" element={<InvoiceForm />} />
         <Route
           path="/invoice/print/:invoiceNumber"

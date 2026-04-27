@@ -44,6 +44,11 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       path: "/invoice",
     },
     {
+      title: "Product Invoice",
+      icon: "📦",
+      path: "/invoice-products",
+    },
+    {
       title: "Term of Services",
       icon: "📄",
       path: "/tos",

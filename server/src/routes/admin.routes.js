@@ -69,6 +69,7 @@ import reportsRoutes from "./reports.routes.js";
 import expenseRoutes from "./expense.routes.js";
 import financeExportRoutes from "./financeExport.routes.js";
 import invoiceRoutes from "./invoice.routes.js";
+import invoiceProductRoutes from "./invoiceProduct.routes.js";
 import tosRoutes from "./tos.routes.js";
 import {
   getAccountsByType,
@@ -171,6 +172,7 @@ router.use("/sales-tax", verifyToken, salesTaxRoutes);
 router.use("/reports", verifyToken, reportsRoutes);
 router.use("/expenses", verifyToken, expenseRoutes);
 router.use("/finance/export", verifyToken, financeExportRoutes);
+router.use("/invoice-products", verifyToken, invoiceProductRoutes);
 router.use("/invoices", verifyToken, invoiceRoutes);
 router.use("/tos", verifyToken, tosRoutes);
 
