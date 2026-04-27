@@ -48,6 +48,12 @@ export const addInvoicePayment = async (invoiceNumber, payload) => {
   const response = await api.post(
     `/api/admin/invoices/${encodeURIComponent(invoiceNumber)}/payments`,
     payload,
+    {
+      headers:
+        payload instanceof FormData
+          ? { "Content-Type": "multipart/form-data" }
+          : {},
+    },
   );
   return response.data;
 };

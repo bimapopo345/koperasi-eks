@@ -103,6 +103,44 @@ const invoicePaymentSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    accountId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "CoaAccount",
+      default: null,
+    },
+    categoryId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
+    categoryType: {
+      type: String,
+      enum: ["master", "submenu", "account", null],
+      default: null,
+    },
+    isSplit: {
+      type: Boolean,
+      default: false,
+    },
+    senderName: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    attachment: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    attachmentOriginalName: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    transactionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "AccountingTransaction",
+      default: null,
+    },
   },
   { _id: true },
 );
