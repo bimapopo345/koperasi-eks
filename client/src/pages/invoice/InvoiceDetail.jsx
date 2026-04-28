@@ -7,6 +7,7 @@ import {
   deleteInvoice,
   deleteInvoicePayment,
   getInvoice,
+  getPublicInvoice,
 } from "../../api/invoiceApi.jsx";
 import {
   getAllCategories,
@@ -223,6 +224,7 @@ function PaymentSearchSelect({
 
 export default function InvoiceDetail({
   printOnly = false,
+  publicView = false,
   initialPrintVariant = "standard",
   initialDetailTab = "invoice",
 }) {
@@ -259,7 +261,9 @@ export default function InvoiceDetail({
     setLoading(true);
     setError("");
     try {
-      const res = await getInvoice(invoiceNumber);
+      const res = publicView
+        ? await getPublicInvoice(invoiceNumber)
+        : await getInvoice(invoiceNumber);
       if (!res?.success)
         throw new Error(res?.message || "Failed to load invoice");
       setInvoice(res.data);
@@ -274,7 +278,7 @@ export default function InvoiceDetail({
 
   useEffect(() => {
     loadInvoice();
-  }, [invoiceNumber]);
+  }, [invoiceNumber, publicView]);
 
   useEffect(() => {
     if (!printOnly) setActiveDetailTab(initialDetailTab);
@@ -283,15 +287,25 @@ export default function InvoiceDetail({
   useEffect(() => {
     if (
       !printOnly &&
+      !publicView &&
       invoice?.status === "draft" &&
       activeDetailTab === "payment"
     ) {
       setActiveDetailTab("invoice");
       navigate(`/invoice/${invoiceNumber}`, { replace: true });
     }
-  }, [activeDetailTab, invoice?.status, invoiceNumber, navigate, printOnly]);
+  }, [
+    activeDetailTab,
+    invoice?.status,
+    invoiceNumber,
+    navigate,
+    printOnly,
+    publicView,
+  ]);
 
   useEffect(() => {
+    if (publicView) return;
+
     const loadAccountingOptions = async () => {
       try {
         const [accountsRes, categoriesRes] = await Promise.all([
@@ -309,7 +323,7 @@ export default function InvoiceDetail({
     };
 
     loadAccountingOptions();
-  }, []);
+  }, [publicView]);
 
   useEffect(() => {
     if (!printOnly || !invoice || autoPrintRef.current) return;
@@ -422,6 +436,8 @@ export default function InvoiceDetail({
 
     const sectionRef =
       tabName === "payment" ? paymentSectionRef : invoiceSectionRef;
+    if (publicView) return;
+
     const detailPath =
       tabName === "payment"
         ? `/payment/${invoiceNumber}`
@@ -563,7 +579,7 @@ export default function InvoiceDetail({
   };
 
   const getInvoiceUrl = () =>
-    `${window.location.origin}/invoice/${invoiceNumber}`;
+    `${window.location.origin}/public/invoice/${invoiceNumber}`;
 
   const sendInvoiceViaWhatsApp = () => {
     const phone = normalizeWhatsAppPhone(invoice?.customerSnapshot?.phone);
@@ -1005,155 +1021,182 @@ export default function InvoiceDetail({
   );
 
   return (
-    <div className="inv-page inv-invoice-page">
-      <div className="inv-samit-hero inv-no-print">
-        <div>
-          <h1>
-            <button
-              type="button"
-              className="inv-back-icon"
-              onClick={() => navigate("/invoice")}
-              aria-label="Back to invoice list"
-            >
-              ‹
-            </button>
-            Invoice {invoiceNumber}
-            <span className={`inv-status ${invoice?.status || "draft"}`}>
-              {statusLabel[invoice?.status] || invoice?.status || "Draft"}
-            </span>
-          </h1>
-          <div className="inv-breadcrumb">
-            <button type="button" onClick={() => navigate("/dashboard")}>
-              Dashboard
-            </button>
-            <span>/</span>
-            <button type="button" onClick={() => navigate("/invoice")}>
-              Invoice
-            </button>
-            <span>/</span>
+    <div
+      className={`inv-page inv-invoice-page ${
+        publicView ? "inv-public-page" : ""
+      }`}
+    >
+      {publicView ? (
+        <div className="inv-public-toolbar inv-no-print">
+          <div>
+            <span>Public Invoice</span>
             <strong>{invoiceNumber}</strong>
           </div>
-        </div>
-        <div className="inv-hero-blob" aria-hidden="true" />
-      </div>
-
-      <div className="inv-samit-toolbar inv-no-print">
-        <div className="inv-samit-tabs">
-          <button
-            type="button"
-            className={`inv-samit-tab ${
-              activeDetailTab === "invoice" ? "active" : ""
-            }`}
-            onClick={() => switchDetailTab("invoice")}
-          >
-            Invoice
-          </button>
-          <button
-            type="button"
-            className={`inv-samit-tab ${
-              activeDetailTab === "payment" ? "active" : ""
-            } ${invoiceIsDraft ? "disabled" : ""}`}
-            onClick={() => switchDetailTab("payment")}
-            disabled={invoiceIsDraft}
-            title={
-              invoiceIsDraft ? "Approve draft dulu untuk membuka Payment" : ""
-            }
-          >
-            Payment
-          </button>
-        </div>
-        <div className="inv-samit-toolbar-actions">
-          <button
-            type="button"
-            className="inv-btn-success"
-            onClick={sendInvoiceViaWhatsApp}
-          >
-            WhatsApp
-          </button>
-          <button
-            type="button"
-            className="inv-btn-info"
-            onClick={sendInvoiceViaEmail}
-          >
-            Email
-          </button>
-          <div className="inv-action-menu">
-            <button
-              type="button"
-              className="inv-option-trigger"
-              onClick={() => setShowActionMenu((prev) => !prev)}
-              aria-label="More invoice actions"
-            >
-              ▾
+          <div className="inv-public-actions">
+            <button type="button" onClick={() => handlePrint("standard")}>
+              Print / Save PDF
             </button>
-            {showActionMenu ? (
-              <ul className="inv-option-section">
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowActionMenu(false);
-                      navigate(`/invoice/${invoiceNumber}/edit`);
-                    }}
-                  >
-                    Edit
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowActionMenu(false);
-                      removeInvoice();
-                    }}
-                  >
-                    Delete
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowActionMenu(false);
-                      handlePrint("standard");
-                    }}
-                  >
-                    Print
-                  </button>
-                </li>
-                <li>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowActionMenu(false);
-                      handlePrint("japan");
-                    }}
-                  >
-                    Print (Japan)
-                  </button>
-                </li>
-              </ul>
-            ) : null}
+            <button type="button" onClick={() => handlePrint("japan")}>
+              Print Japan
+            </button>
           </div>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="inv-samit-hero inv-no-print">
+            <div>
+              <h1>
+                <button
+                  type="button"
+                  className="inv-back-icon"
+                  onClick={() => navigate("/invoice")}
+                  aria-label="Back to invoice list"
+                >
+                  ‹
+                </button>
+                Invoice {invoiceNumber}
+                <span className={`inv-status ${invoice?.status || "draft"}`}>
+                  {statusLabel[invoice?.status] || invoice?.status || "Draft"}
+                </span>
+              </h1>
+              <div className="inv-breadcrumb">
+                <button type="button" onClick={() => navigate("/dashboard")}>
+                  Dashboard
+                </button>
+                <span>/</span>
+                <button type="button" onClick={() => navigate("/invoice")}>
+                  Invoice
+                </button>
+                <span>/</span>
+                <strong>{invoiceNumber}</strong>
+              </div>
+            </div>
+            <div className="inv-hero-blob" aria-hidden="true" />
+          </div>
 
-      {!loading && invoiceIsDraft ? (
-        <div className="inv-draft-bar inv-no-print">
-          <p>
-            <strong>Draft invoice</strong>
-            <span>Invoice masih draft dan belum bisa menerima payment.</span>
-          </p>
-          <button
-            type="button"
-            className="inv-btn"
-            onClick={approveDraft}
-            disabled={approvingDraft}
-          >
-            {approvingDraft ? "Approving..." : "Approve Draft"}
-          </button>
-        </div>
-      ) : null}
+          <div className="inv-samit-toolbar inv-no-print">
+            <div className="inv-samit-tabs">
+              <button
+                type="button"
+                className={`inv-samit-tab ${
+                  activeDetailTab === "invoice" ? "active" : ""
+                }`}
+                onClick={() => switchDetailTab("invoice")}
+              >
+                Invoice
+              </button>
+              <button
+                type="button"
+                className={`inv-samit-tab ${
+                  activeDetailTab === "payment" ? "active" : ""
+                } ${invoiceIsDraft ? "disabled" : ""}`}
+                onClick={() => switchDetailTab("payment")}
+                disabled={invoiceIsDraft}
+                title={
+                  invoiceIsDraft
+                    ? "Approve draft dulu untuk membuka Payment"
+                    : ""
+                }
+              >
+                Payment
+              </button>
+            </div>
+            <div className="inv-samit-toolbar-actions">
+              <button
+                type="button"
+                className="inv-btn-success"
+                onClick={sendInvoiceViaWhatsApp}
+              >
+                WhatsApp
+              </button>
+              <button
+                type="button"
+                className="inv-btn-info"
+                onClick={sendInvoiceViaEmail}
+              >
+                Email
+              </button>
+              <div className="inv-action-menu">
+                <button
+                  type="button"
+                  className="inv-option-trigger"
+                  onClick={() => setShowActionMenu((prev) => !prev)}
+                  aria-label="More invoice actions"
+                >
+                  ▾
+                </button>
+                {showActionMenu ? (
+                  <ul className="inv-option-section">
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowActionMenu(false);
+                          navigate(`/invoice/${invoiceNumber}/edit`);
+                        }}
+                      >
+                        Edit
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowActionMenu(false);
+                          removeInvoice();
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowActionMenu(false);
+                          handlePrint("standard");
+                        }}
+                      >
+                        Print
+                      </button>
+                    </li>
+                    <li>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowActionMenu(false);
+                          handlePrint("japan");
+                        }}
+                      >
+                        Print (Japan)
+                      </button>
+                    </li>
+                  </ul>
+                ) : null}
+              </div>
+            </div>
+          </div>
+
+          {!loading && invoiceIsDraft ? (
+            <div className="inv-draft-bar inv-no-print">
+              <p>
+                <strong>Draft invoice</strong>
+                <span>
+                  Invoice masih draft dan belum bisa menerima payment.
+                </span>
+              </p>
+              <button
+                type="button"
+                className="inv-btn"
+                onClick={approveDraft}
+                disabled={approvingDraft}
+              >
+                {approvingDraft ? "Approving..." : "Approve Draft"}
+              </button>
+            </div>
+          ) : null}
+        </>
+      )}
 
       {error ? <div className="inv-error inv-no-print">{error}</div> : null}
       {loading ? (
@@ -1319,34 +1362,40 @@ export default function InvoiceDetail({
                   <HtmlBlock html={invoice.terms} />
                 </div>
 
-                <div className="inv-personal-note inv-no-print">
-                  <h3>Personal Note</h3>
-                  <HtmlBlock html={invoice.notes} empty="-" />
-                </div>
+                {!publicView ? (
+                  <>
+                    <div className="inv-personal-note inv-no-print">
+                      <h3>Personal Note</h3>
+                      <HtmlBlock html={invoice.notes} empty="-" />
+                    </div>
 
-                <div className="inv-detail-footer-actions inv-no-print">
-                  <button
-                    type="button"
-                    className="inv-detail-action danger"
-                    onClick={removeInvoice}
-                  >
-                    Delete
-                  </button>
-                  <button
-                    type="button"
-                    className="inv-detail-action edit"
-                    onClick={() => navigate(`/invoice/${invoiceNumber}/edit`)}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="inv-detail-action print"
-                    onClick={() => handlePrint("standard")}
-                  >
-                    Print
-                  </button>
-                </div>
+                    <div className="inv-detail-footer-actions inv-no-print">
+                      <button
+                        type="button"
+                        className="inv-detail-action danger"
+                        onClick={removeInvoice}
+                      >
+                        Delete
+                      </button>
+                      <button
+                        type="button"
+                        className="inv-detail-action edit"
+                        onClick={() =>
+                          navigate(`/invoice/${invoiceNumber}/edit`)
+                        }
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="inv-detail-action print"
+                        onClick={() => handlePrint("standard")}
+                      >
+                        Print
+                      </button>
+                    </div>
+                  </>
+                ) : null}
               </section>
 
               <section
@@ -1503,347 +1552,358 @@ export default function InvoiceDetail({
                 </div>
               </section>
             </div>
-            <PaymentOverviewTables />
+            {!publicView ? <PaymentOverviewTables /> : null}
           </div>
 
-          <section
-            className={`inv-payment-section inv-no-print inv-tab-panel ${
-              activeDetailTab === "payment" ? "" : "is-hidden"
-            }`}
-            id="payment"
-            ref={paymentSectionRef}
-          >
-            <div className="inv-payment-section-head">
-              <div>
-                <div className="inv-section-title" style={{ marginBottom: 4 }}>
-                  Payment
-                </div>
-                <div className="inv-sub">
-                  Record pembayaran yang sudah diterima untuk invoice ini.
-                </div>
-              </div>
-              <div className="inv-payment-head-summary">
-                <small>amount due</small>
-                <strong>
-                  {formatMoney(invoice.amountDue, invoice.currency)}
-                </strong>
-                <span>{formatMoney(invoice.totalPaid, invoice.currency)}</span>
-              </div>
-              <button
-                type="button"
-                className="inv-btn-secondary"
-                onClick={() => startPayment()}
-              >
-                New Payment
-              </button>
-            </div>
-
-            {addingPayment ? (
-              <div className="inv-payment-modal-backdrop">
-                <div
-                  className="inv-payment-modal"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-labelledby="invoice-payment-modal-title"
-                >
-                  <div className="inv-payment-modal-head">
-                    <h2 id="invoice-payment-modal-title">Record Payment</h2>
-                    <button
-                      type="button"
-                      className="inv-payment-modal-close"
-                      onClick={() => setAddingPayment(false)}
-                      aria-label="Close payment form"
-                    >
-                      ×
-                    </button>
+          {!publicView ? (
+            <section
+              className={`inv-payment-section inv-no-print inv-tab-panel ${
+                activeDetailTab === "payment" ? "" : "is-hidden"
+              }`}
+              id="payment"
+              ref={paymentSectionRef}
+            >
+              <div className="inv-payment-section-head">
+                <div>
+                  <div
+                    className="inv-section-title"
+                    style={{ marginBottom: 4 }}
+                  >
+                    Payment
                   </div>
+                  <div className="inv-sub">
+                    Record pembayaran yang sudah diterima untuk invoice ini.
+                  </div>
+                </div>
+                <div className="inv-payment-head-summary">
+                  <small>amount due</small>
+                  <strong>
+                    {formatMoney(invoice.amountDue, invoice.currency)}
+                  </strong>
+                  <span>
+                    {formatMoney(invoice.totalPaid, invoice.currency)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="inv-btn-secondary"
+                  onClick={() => startPayment()}
+                >
+                  New Payment
+                </button>
+              </div>
 
-                  <div className="inv-payment-modal-body">
-                    <div className="inv-grid">
-                      <div className="inv-grid-6">
-                        <label className="inv-label">Payment date</label>
-                        <input
-                          className="inv-input"
-                          type="date"
-                          value={paymentForm.paymentDate}
-                          onChange={(event) =>
-                            setPaymentForm((prev) => ({
-                              ...prev,
-                              paymentDate: event.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="inv-grid-6">
-                        <label className="inv-label">
-                          Amount ({invoice.currency || "IDR"})
-                        </label>
-                        <input
-                          className="inv-input"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          value={paymentForm.amount}
-                          onChange={(event) =>
-                            setPaymentForm((prev) => ({
-                              ...prev,
-                              amount: event.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="inv-grid-12">
-                        <label className="inv-label">
-                          Record Account <span className="inv-required">*</span>
-                        </label>
-                        <PaymentSearchSelect
-                          value={paymentForm.accountId}
-                          options={accountOptions}
-                          placeholder="Search account..."
-                          emptyText="Account tidak ditemukan."
-                          onChange={(accountId) =>
-                            setPaymentForm((prev) => ({
-                              ...prev,
-                              accountId,
-                            }))
-                          }
-                        />
-                      </div>
-                      {!paymentSplitMode ? (
+              {addingPayment ? (
+                <div className="inv-payment-modal-backdrop">
+                  <div
+                    className="inv-payment-modal"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="invoice-payment-modal-title"
+                  >
+                    <div className="inv-payment-modal-head">
+                      <h2 id="invoice-payment-modal-title">Record Payment</h2>
+                      <button
+                        type="button"
+                        className="inv-payment-modal-close"
+                        onClick={() => setAddingPayment(false)}
+                        aria-label="Close payment form"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    <div className="inv-payment-modal-body">
+                      <div className="inv-grid">
+                        <div className="inv-grid-6">
+                          <label className="inv-label">Payment date</label>
+                          <input
+                            className="inv-input"
+                            type="date"
+                            value={paymentForm.paymentDate}
+                            onChange={(event) =>
+                              setPaymentForm((prev) => ({
+                                ...prev,
+                                paymentDate: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
+                        <div className="inv-grid-6">
+                          <label className="inv-label">
+                            Amount ({invoice.currency || "IDR"})
+                          </label>
+                          <input
+                            className="inv-input"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={paymentForm.amount}
+                            onChange={(event) =>
+                              setPaymentForm((prev) => ({
+                                ...prev,
+                                amount: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
                         <div className="inv-grid-12">
                           <label className="inv-label">
-                            Category <span className="inv-required">*</span>
+                            Record Account{" "}
+                            <span className="inv-required">*</span>
                           </label>
                           <PaymentSearchSelect
-                            value={
-                              paymentForm.categoryId
-                                ? `${paymentForm.categoryType}|${paymentForm.categoryId}`
-                                : ""
+                            value={paymentForm.accountId}
+                            options={accountOptions}
+                            placeholder="Search account..."
+                            emptyText="Account tidak ditemukan."
+                            onChange={(accountId) =>
+                              setPaymentForm((prev) => ({
+                                ...prev,
+                                accountId,
+                              }))
                             }
-                            options={categoryOptions}
-                            placeholder="Search category..."
-                            emptyText="Category tidak ditemukan."
-                            onChange={selectPaymentCategory}
                           />
                         </div>
-                      ) : null}
-                      <div className="inv-grid-12">
                         {!paymentSplitMode ? (
-                          <button
-                            type="button"
-                            className="inv-split-btn"
-                            onClick={initPaymentSplit}
-                          >
-                            Split transaction
-                          </button>
-                        ) : (
-                          <div className="inv-split-box">
-                            <div className="inv-split-header">
-                              <strong>Split Transaction</strong>
-                              <div className="inv-split-summary">
-                                <span>
-                                  Total:{" "}
-                                  <strong>
-                                    {formatMoney(
-                                      splitUsedAmount,
-                                      invoice.currency,
-                                    )}
-                                  </strong>
-                                </span>
-                                <span>
-                                  Remaining:{" "}
-                                  <strong
-                                    className={
-                                      Math.abs(splitRemaining) <= 0.01
-                                        ? "balanced"
-                                        : "unbalanced"
-                                    }
-                                  >
-                                    {formatMoney(
-                                      splitRemaining,
-                                      invoice.currency,
-                                    )}
-                                  </strong>
-                                </span>
-                              </div>
-                            </div>
-                            <div className="inv-split-items">
-                              {paymentSplits.map((split, index) => (
-                                <div className="inv-split-row" key={index}>
-                                  <div>
-                                    <label className="inv-label">
-                                      Amount {index + 1}
-                                    </label>
-                                    <div className="inv-split-amount-input">
-                                      <span>{paymentCurrencyPrefix}</span>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        value={split.amount}
-                                        onChange={(event) =>
-                                          updatePaymentSplit(index, {
-                                            amount: event.target.value,
-                                          })
-                                        }
-                                        placeholder="0"
-                                      />
-                                    </div>
-                                    <small>
-                                      Max:{" "}
+                          <div className="inv-grid-12">
+                            <label className="inv-label">
+                              Category <span className="inv-required">*</span>
+                            </label>
+                            <PaymentSearchSelect
+                              value={
+                                paymentForm.categoryId
+                                  ? `${paymentForm.categoryType}|${paymentForm.categoryId}`
+                                  : ""
+                              }
+                              options={categoryOptions}
+                              placeholder="Search category..."
+                              emptyText="Category tidak ditemukan."
+                              onChange={selectPaymentCategory}
+                            />
+                          </div>
+                        ) : null}
+                        <div className="inv-grid-12">
+                          {!paymentSplitMode ? (
+                            <button
+                              type="button"
+                              className="inv-split-btn"
+                              onClick={initPaymentSplit}
+                            >
+                              Split transaction
+                            </button>
+                          ) : (
+                            <div className="inv-split-box">
+                              <div className="inv-split-header">
+                                <strong>Split Transaction</strong>
+                                <div className="inv-split-summary">
+                                  <span>
+                                    Total:{" "}
+                                    <strong>
                                       {formatMoney(
-                                        paymentAmount,
+                                        splitUsedAmount,
                                         invoice.currency,
                                       )}
-                                    </small>
-                                  </div>
-                                  <div>
-                                    <label className="inv-label">
-                                      Category
-                                    </label>
-                                    <PaymentSearchSelect
-                                      value={
-                                        split.categoryId
-                                          ? `${split.categoryType}|${split.categoryId}`
-                                          : ""
+                                    </strong>
+                                  </span>
+                                  <span>
+                                    Remaining:{" "}
+                                    <strong
+                                      className={
+                                        Math.abs(splitRemaining) <= 0.01
+                                          ? "balanced"
+                                          : "unbalanced"
                                       }
-                                      options={categoryOptions}
-                                      placeholder="Search category..."
-                                      emptyText="Category tidak ditemukan."
-                                      onChange={(value) =>
-                                        updatePaymentSplitCategory(index, value)
-                                      }
-                                    />
-                                  </div>
-                                  <button
-                                    type="button"
-                                    className="inv-split-remove"
-                                    onClick={() => removePaymentSplit(index)}
-                                    aria-label={`Remove split ${index + 1}`}
-                                  >
-                                    ×
-                                  </button>
+                                    >
+                                      {formatMoney(
+                                        splitRemaining,
+                                        invoice.currency,
+                                      )}
+                                    </strong>
+                                  </span>
                                 </div>
-                              ))}
+                              </div>
+                              <div className="inv-split-items">
+                                {paymentSplits.map((split, index) => (
+                                  <div className="inv-split-row" key={index}>
+                                    <div>
+                                      <label className="inv-label">
+                                        Amount {index + 1}
+                                      </label>
+                                      <div className="inv-split-amount-input">
+                                        <span>{paymentCurrencyPrefix}</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          value={split.amount}
+                                          onChange={(event) =>
+                                            updatePaymentSplit(index, {
+                                              amount: event.target.value,
+                                            })
+                                          }
+                                          placeholder="0"
+                                        />
+                                      </div>
+                                      <small>
+                                        Max:{" "}
+                                        {formatMoney(
+                                          paymentAmount,
+                                          invoice.currency,
+                                        )}
+                                      </small>
+                                    </div>
+                                    <div>
+                                      <label className="inv-label">
+                                        Category
+                                      </label>
+                                      <PaymentSearchSelect
+                                        value={
+                                          split.categoryId
+                                            ? `${split.categoryType}|${split.categoryId}`
+                                            : ""
+                                        }
+                                        options={categoryOptions}
+                                        placeholder="Search category..."
+                                        emptyText="Category tidak ditemukan."
+                                        onChange={(value) =>
+                                          updatePaymentSplitCategory(
+                                            index,
+                                            value,
+                                          )
+                                        }
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      className="inv-split-remove"
+                                      onClick={() => removePaymentSplit(index)}
+                                      aria-label={`Remove split ${index + 1}`}
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="inv-split-actions">
+                                <button type="button" onClick={addPaymentSplit}>
+                                  Add another split
+                                </button>
+                                <button
+                                  type="button"
+                                  className="danger"
+                                  onClick={cancelPaymentSplit}
+                                >
+                                  Cancel split
+                                </button>
+                              </div>
                             </div>
-                            <div className="inv-split-actions">
-                              <button type="button" onClick={addPaymentSplit}>
-                                Add another split
-                              </button>
-                              <button
-                                type="button"
-                                className="danger"
-                                onClick={cancelPaymentSplit}
-                              >
-                                Cancel split
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <div className="inv-grid-6">
-                        <label className="inv-label">Sender name</label>
-                        <input
-                          className="inv-input"
-                          value={paymentForm.senderName}
-                          onChange={(event) =>
-                            setPaymentForm((prev) => ({
-                              ...prev,
-                              senderName: event.target.value,
-                            }))
-                          }
-                          placeholder="Nama pengirim"
-                        />
-                      </div>
-                      <div className="inv-grid-6">
-                        <label className="inv-label">Payment method</label>
-                        <select
-                          className="inv-select"
-                          value={paymentForm.method}
-                          onChange={(event) =>
-                            setPaymentForm((prev) => ({
-                              ...prev,
-                              method: event.target.value,
-                            }))
-                          }
-                        >
-                          <option value="">select one</option>
-                          <option value="Bank">Bank payment</option>
-                          <option value="Cash">Cash</option>
-                          <option value="Transfer">Transfer</option>
-                          <option value="QRIS">QRIS</option>
-                          <option value="Check">Check</option>
-                          <option value="CC">Credit Card</option>
-                          <option value="PayPal">PayPal</option>
-                          <option value="Other">Other</option>
-                        </select>
-                      </div>
-                      <div className="inv-grid-12">
-                        <label className="inv-label">Attachment</label>
-                        <div className="inv-file-box">
-                          <input
-                            type="file"
-                            accept=".jpg,.jpeg,.png,.pdf,.heic,.tiff,.tif,.bmp,.gif"
-                            onChange={(event) =>
-                              handlePaymentAttachment(event.target.files?.[0])
-                            }
-                          />
-                          {paymentAttachment ? (
-                            <div className="inv-file-meta">
-                              <span>{paymentAttachment.name}</span>
-                              <button
-                                type="button"
-                                onClick={() => setPaymentAttachment(null)}
-                              >
-                                Remove
-                              </button>
-                            </div>
-                          ) : (
-                            <p>
-                              File maksimal 6MB: JPG, PNG, GIF, TIFF, BMP, HEIC,
-                              atau PDF.
-                            </p>
                           )}
                         </div>
-                      </div>
-                      <div className="inv-grid-12">
-                        <label className="inv-label">Notes</label>
-                        <textarea
-                          className="inv-textarea"
-                          value={paymentForm.notes}
-                          onChange={(event) =>
-                            setPaymentForm((prev) => ({
-                              ...prev,
-                              notes: event.target.value,
-                            }))
-                          }
-                        />
+                        <div className="inv-grid-6">
+                          <label className="inv-label">Sender name</label>
+                          <input
+                            className="inv-input"
+                            value={paymentForm.senderName}
+                            onChange={(event) =>
+                              setPaymentForm((prev) => ({
+                                ...prev,
+                                senderName: event.target.value,
+                              }))
+                            }
+                            placeholder="Nama pengirim"
+                          />
+                        </div>
+                        <div className="inv-grid-6">
+                          <label className="inv-label">Payment method</label>
+                          <select
+                            className="inv-select"
+                            value={paymentForm.method}
+                            onChange={(event) =>
+                              setPaymentForm((prev) => ({
+                                ...prev,
+                                method: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">select one</option>
+                            <option value="Bank">Bank payment</option>
+                            <option value="Cash">Cash</option>
+                            <option value="Transfer">Transfer</option>
+                            <option value="QRIS">QRIS</option>
+                            <option value="Check">Check</option>
+                            <option value="CC">Credit Card</option>
+                            <option value="PayPal">PayPal</option>
+                            <option value="Other">Other</option>
+                          </select>
+                        </div>
+                        <div className="inv-grid-12">
+                          <label className="inv-label">Attachment</label>
+                          <div className="inv-file-box">
+                            <input
+                              type="file"
+                              accept=".jpg,.jpeg,.png,.pdf,.heic,.tiff,.tif,.bmp,.gif"
+                              onChange={(event) =>
+                                handlePaymentAttachment(event.target.files?.[0])
+                              }
+                            />
+                            {paymentAttachment ? (
+                              <div className="inv-file-meta">
+                                <span>{paymentAttachment.name}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setPaymentAttachment(null)}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ) : (
+                              <p>
+                                File maksimal 6MB: JPG, PNG, GIF, TIFF, BMP,
+                                HEIC, atau PDF.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="inv-grid-12">
+                          <label className="inv-label">Notes</label>
+                          <textarea
+                            className="inv-textarea"
+                            value={paymentForm.notes}
+                            onChange={(event) =>
+                              setPaymentForm((prev) => ({
+                                ...prev,
+                                notes: event.target.value,
+                              }))
+                            }
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div className="inv-payment-modal-footer">
-                    <button
-                      type="button"
-                      className="inv-btn-ghost"
-                      onClick={() => setAddingPayment(false)}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      className="inv-btn"
-                      onClick={submitPayment}
-                    >
-                      Save
-                    </button>
+                    <div className="inv-payment-modal-footer">
+                      <button
+                        type="button"
+                        className="inv-btn-ghost"
+                        onClick={() => setAddingPayment(false)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        className="inv-btn"
+                        onClick={submitPayment}
+                      >
+                        Save
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : null}
+              ) : null}
 
-            <PaymentRecordList />
-          </section>
+              <PaymentRecordList />
+            </section>
+          ) : null}
         </>
       ) : null}
     </div>

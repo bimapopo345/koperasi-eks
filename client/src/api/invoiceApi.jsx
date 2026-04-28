@@ -1,4 +1,13 @@
+import axios from "axios";
 import api from "./index.jsx";
+import { API_URL } from "./config";
+
+const publicApi = axios.create({
+  baseURL: API_URL,
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
 
 export const getInvoiceMeta = async (params = {}) => {
   const response = await api.get("/api/admin/invoices/meta", { params });
@@ -20,6 +29,13 @@ export const getInvoices = async (params = {}) => {
 export const getInvoice = async (invoiceNumber) => {
   const response = await api.get(
     `/api/admin/invoices/${encodeURIComponent(invoiceNumber)}`,
+  );
+  return response.data;
+};
+
+export const getPublicInvoice = async (invoiceNumber) => {
+  const response = await publicApi.get(
+    `/api/public/invoices/${encodeURIComponent(invoiceNumber)}`,
   );
   return response.data;
 };

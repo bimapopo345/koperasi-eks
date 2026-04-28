@@ -371,6 +371,56 @@ function serializeInvoice(invoiceDoc) {
   };
 }
 
+function serializePublicInvoice(invoiceDoc) {
+  const invoice = serializeInvoice(invoiceDoc);
+
+  return {
+    invoiceNumber: invoice.invoiceNumber,
+    customerSnapshot: invoice.customerSnapshot,
+    salesCode: invoice.salesCode,
+    issuedDate: invoice.issuedDate,
+    dueDate: invoice.dueDate,
+    currency: invoice.currency,
+    exchangeRate: invoice.exchangeRate,
+    status: invoice.status,
+    items: (invoice.items || []).map((item) => ({
+      _id: item._id,
+      title: item.title,
+      description: item.description,
+      quantity: item.quantity,
+      price: item.price,
+      amount: item.amount,
+    })),
+    discounts: (invoice.discounts || []).map((discount) => ({
+      _id: discount._id,
+      label: discount.label,
+      type: discount.type,
+      value: discount.value,
+      amount: discount.amount,
+    })),
+    projections: (invoice.projections || []).map((projection) => ({
+      _id: projection._id,
+      description: projection.description,
+      estimateDate: projection.estimateDate,
+      amount: projection.amount,
+      status: projection.status,
+    })),
+    payments: (invoice.payments || []).map((payment) => ({
+      _id: payment._id,
+      paymentDate: payment.paymentDate,
+      amount: payment.amount,
+      method: payment.method,
+    })),
+    terms: invoice.terms,
+    termsTitle: invoice.termsTitle,
+    subtotal: invoice.subtotal,
+    discountTotal: invoice.discountTotal,
+    total: invoice.total,
+    totalPaid: invoice.totalPaid,
+    amountDue: invoice.amountDue,
+  };
+}
+
 async function generateNextInvoiceNumber(issuedDate, excludeInvoiceId = null) {
   const issued = ensureDate(issuedDate || new Date(), "Tanggal invoice");
   const yy = String(issued.getFullYear()).slice(-2);
@@ -803,6 +853,22 @@ export const getInvoiceByNumber = asyncHandler(async (req, res) => {
   }
 
   res.status(200).json(new ApiResponse(200, serializeInvoice(invoice)));
+});
+
+export const getPublicInvoiceByNumber = asyncHandler(async (req, res) => {
+  const invoiceNumber = String(req.params.invoiceNumber || "")
+    .trim()
+    .toUpperCase();
+  const invoice = await Invoice.findOne({
+    invoiceNumber,
+    status: { $ne: "draft" },
+  }).lean();
+
+  if (!invoice) {
+    throw new ApiError(404, "Invoice tidak ditemukan atau belum dipublish");
+  }
+
+  res.status(200).json(new ApiResponse(200, serializePublicInvoice(invoice)));
 });
 
 export const createInvoice = asyncHandler(async (req, res) => {

@@ -607,6 +607,69 @@
   color: #0a7ea4;
 }
 
+.inv-public-page {
+  min-height: 100vh;
+  background:
+    radial-gradient(
+      circle at top left,
+      rgba(14, 165, 162, 0.1),
+      transparent 34%
+    ),
+    #f8fafc;
+  padding: 24px;
+}
+
+.inv-public-toolbar {
+  display: flex;
+  width: min(100%, 1040px);
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 auto 16px;
+  border: 1px solid #dbeafe;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 14px 16px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+}
+
+.inv-public-toolbar span {
+  display: block;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.inv-public-toolbar strong {
+  display: block;
+  margin-top: 2px;
+  color: #0f172a;
+  font-size: 1.05rem;
+}
+
+.inv-public-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.inv-public-actions button {
+  border: 0;
+  border-radius: 12px;
+  background: #0f766e;
+  color: #fff;
+  padding: 10px 14px;
+  font-size: 0.84rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.inv-public-actions button:last-child {
+  background: #4f46e5;
+}
+
 .inv-hero-blob {
   min-height: 70px;
   width: 150px;
@@ -1804,6 +1867,19 @@
 }
 
 @media (max-width: 720px) {
+  .inv-public-page {
+    padding: 12px;
+  }
+
+  .inv-public-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inv-public-actions button {
+    flex: 1 1 140px;
+  }
+
   .inv-header,
   .inv-detail-head,
   .inv-pagination {

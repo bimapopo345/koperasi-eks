@@ -45,6 +45,16 @@ const router = createBrowserRouter(
         <Route path="/login" element={<Login />} />
       </Route>
 
+      {/* Public invoice preview - untuk link WhatsApp/Email customer */}
+      <Route
+        path="/public/invoice/:invoiceNumber"
+        element={<InvoiceDetail publicView initialPrintVariant="standard" />}
+      />
+      <Route
+        path="/public/invoice-japan/:invoiceNumber"
+        element={<InvoiceDetail publicView initialPrintVariant="japan" />}
+      />
+
       {/* Main Layout - untuk halaman dengan sidebar/header (Protected) */}
       <Route
         element={

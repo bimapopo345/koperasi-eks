@@ -13,6 +13,7 @@ import {
   createDonation,
   createCheckoutIntent,
 } from "../controllers/public/donation.controller.js";
+import { getPublicInvoiceByNumber } from "../controllers/admin/invoice.controller.js";
 
 const { donasi: donasiDir } = ensureUploadsSubdirs();
 
@@ -30,6 +31,8 @@ const donationUpload = multer({
   storage: donationStorage,
   limits: { fileSize: 5 * 1024 * 1024 },
 });
+
+router.get("/invoices/:invoiceNumber", getPublicInvoiceByNumber);
 
 // Public API untuk integrasi eksternal (tanpa auth)
 // GET /api/public/savings - Ambil semua data savings dengan detail lengkap
