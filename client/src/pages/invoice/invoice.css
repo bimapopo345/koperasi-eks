@@ -1185,6 +1185,19 @@
   padding: 6px 12px;
 }
 
+.inv-view-receipt-btn {
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #5b7df0, #6ea8fe);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1.2;
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+
 .inv-payment-target-hint {
   display: flex;
   flex-wrap: wrap;
@@ -2392,9 +2405,12 @@
   }
 
   .inv-payment-receipt-sheet {
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     min-height: calc(297mm - 20mm);
+    padding-right: 8mm;
+    padding-left: 8mm;
   }
 
   .inv-receipt-detail-row {

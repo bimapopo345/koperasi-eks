@@ -83,6 +83,12 @@ const truncateText = (text, maxLength = 54) => {
   return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 };
 
+const sanitizePrintFileName = (value) =>
+  String(value || "")
+    .replace(/[\\/:*?"<>|]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
 const statusLabel = {
   draft: "Draft",
   sent: "Sent",
@@ -254,6 +260,7 @@ export default function InvoiceDetail({
   const autoPrintRef = useRef(false);
   const invoiceSectionRef = useRef(null);
   const paymentSectionRef = useRef(null);
+  const previousDocumentTitleRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [invoice, setInvoice] = useState(null);
@@ -362,6 +369,10 @@ export default function InvoiceDetail({
     const resetPaymentReceiptPrint = () => {
       setPaymentReceiptTarget(null);
       setPrintVariant(initialPrintVariant || "standard");
+      if (previousDocumentTitleRef.current !== null) {
+        document.title = previousDocumentTitleRef.current;
+        previousDocumentTitleRef.current = null;
+      }
     };
 
     window.addEventListener("afterprint", resetPaymentReceiptPrint);
@@ -378,6 +389,8 @@ export default function InvoiceDetail({
 
   const handlePaymentReceiptPrint = (payment) => {
     if (!payment) return;
+    previousDocumentTitleRef.current = document.title;
+    document.title = getPaymentReceiptFileName(payment);
     setPaymentReceiptTarget(payment);
     setPrintVariant("receipt");
     window.setTimeout(() => window.print(), 80);
@@ -542,6 +555,18 @@ export default function InvoiceDetail({
   const getPaymentReceiptNumber = (payment) => {
     const id = String(payment?._id || "");
     return id ? id.slice(-8).toUpperCase() : invoiceNumber;
+  };
+  const getPaymentReceiptFileName = (payment) =>
+    sanitizePrintFileName(
+      `Payment - ${getPaymentReceiptNumber(payment)} - ${
+        invoice?.customerSnapshot?.name || "Customer"
+      }`,
+    );
+  const getProjectionReceiptPayment = (projection) => {
+    const realizations = Array.isArray(projection?.realizations)
+      ? projection.realizations.filter(Boolean)
+      : [];
+    return realizations.length ? realizations[realizations.length - 1] : null;
   };
   const paymentCurrencyPrefix =
     selectedAccount?.currency || invoice?.currency || "Rp";
@@ -1183,6 +1208,8 @@ export default function InvoiceDetail({
                   const projectionStatus = String(
                     projection.status || "Unpaid",
                   ).toLowerCase();
+                  const projectionReceiptPayment =
+                    getProjectionReceiptPayment(projection);
 
                   return realizations.map((payment, paymentIndex) => (
                     <tr
@@ -1301,8 +1328,19 @@ export default function InvoiceDetail({
                         <td rowSpan={realizations.length} className="center">
                           {invoiceIsDraft ? (
                             <span className="inv-muted-dash">-</span>
-                          ) : projectionStatus === "paid" ? (
-                            <span className="inv-status paid">Paid</span>
+                          ) : projectionStatus === "paid" &&
+                            projectionReceiptPayment ? (
+                            <button
+                              type="button"
+                              className="inv-view-receipt-btn"
+                              onClick={() =>
+                                handlePaymentReceiptPrint(
+                                  projectionReceiptPayment,
+                                )
+                              }
+                            >
+                              View Payment Receipt
+                            </button>
                           ) : (
                             <button
                               type="button"
