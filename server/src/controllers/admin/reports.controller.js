@@ -351,7 +351,7 @@ async function loadTransactionsContext(endDate) {
     transactionDate: { $lte: endDate },
   })
     .select(
-      "_id transactionDate createdAt description transactionType amount categoryId categoryType accountId customerId vendorId notes isSplit"
+      "_id transactionDate createdAt description transactionType amount categoryId categoryType accountId customerId vendorId notes isSplit invoiceNumber invoicePaymentId invoiceProjectionId invoiceProjectionIndex invoiceProjectionDescription invoiceProjectionDueDate"
     )
     .lean();
 
@@ -1427,7 +1427,7 @@ export const exportBalanceSheetCsv = async (req, res) => {
 export const checkBalanceSheetSplits = async (req, res) => {
   try {
     const splitTransactions = await AccountingTransaction.find({ isSplit: true })
-      .select("_id transactionDate description transactionType amount accountId")
+      .select("_id transactionDate description transactionType amount accountId invoiceNumber invoiceProjectionIndex invoiceProjectionDescription")
       .lean();
 
     const transactionIds = splitTransactions.map((txn) => txn._id);

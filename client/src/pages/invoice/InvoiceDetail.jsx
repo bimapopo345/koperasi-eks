@@ -62,6 +62,19 @@ const formatJapaneseDate = (value) => {
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 };
 
+const formatAgingDays = (days, fallback = "Tepat waktu") => {
+  const safeDays = Number(days || 0);
+  if (safeDays > 0) return `${safeDays} hari telat`;
+  if (safeDays < 0) return `${Math.abs(safeDays)} hari lebih awal`;
+  return fallback;
+};
+
+const truncateText = (text, maxLength = 54) => {
+  const value = String(text || "").trim();
+  if (!value) return "-";
+  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
+};
+
 const statusLabel = {
   draft: "Draft",
   sent: "Sent",
@@ -246,12 +259,15 @@ export default function InvoiceDetail({
   const [paymentSplits, setPaymentSplits] = useState([]);
   const [paymentAttachment, setPaymentAttachment] = useState(null);
   const [paymentSplitMode, setPaymentSplitMode] = useState(false);
+  const [notePreview, setNotePreview] = useState(null);
   const [paymentForm, setPaymentForm] = useState({
     paymentDate: new Date().toISOString().slice(0, 10),
     amount: "",
     accountId: "",
     categoryId: "",
     categoryType: "",
+    projectionId: "",
+    projectionIndex: "",
     method: "Bank",
     senderName: "",
     notes: "",
@@ -393,6 +409,35 @@ export default function InvoiceDetail({
     [categories],
   );
 
+  const projectionOptions = useMemo(
+    () =>
+      (invoice?.projections || [])
+        .filter((projection) => Number(projection.remainingAmount ?? projection.amount) > 0)
+        .map((projection, index) => {
+          const projectionIndex = projection.projectionIndex || index + 1;
+          return {
+            value: projection._id,
+            label: `Cicilan ${projectionIndex} - ${projection.description || "Projection"}`,
+            meta: [
+              `Due ${formatDate(projection.estimateDate)}`,
+              `Sisa ${formatMoney(
+                projection.remainingAmount ?? projection.amount,
+                invoice?.currency,
+              )}`,
+            ].join(" | "),
+            search: [
+              projectionIndex,
+              projection.description,
+              projection.status,
+              projection.amount,
+            ]
+              .filter(Boolean)
+              .join(" "),
+          };
+        }),
+    [invoice],
+  );
+
   const selectedAccount = useMemo(
     () =>
       flatAssetAccounts.find(
@@ -401,8 +446,23 @@ export default function InvoiceDetail({
     [flatAssetAccounts, paymentForm.accountId],
   );
 
+  const selectedPaymentProjection = useMemo(
+    () =>
+      (invoice?.projections || []).find(
+        (projection) => String(projection._id) === String(paymentForm.projectionId),
+      ),
+    [invoice, paymentForm.projectionId],
+  );
+
   const invoiceIsDraft = invoice?.status === "draft";
   const paymentRecords = invoice?.payments || [];
+  const legacyPaymentRecords = useMemo(
+    () =>
+      paymentRecords.filter(
+        (payment) => !payment.projectionId && !payment.projectionIndex,
+      ),
+    [paymentRecords],
+  );
   const paymentCurrencyPrefix =
     selectedAccount?.currency || invoice?.currency || "Rp";
   const paymentAmount = Number(paymentForm.amount || 0);
@@ -419,6 +479,8 @@ export default function InvoiceDetail({
       accountId: "",
       categoryId: "",
       categoryType: "",
+      projectionId: "",
+      projectionIndex: "",
       method: "Bank",
       senderName: "",
       notes: "",
@@ -456,6 +518,35 @@ export default function InvoiceDetail({
     }, 40);
   };
 
+  const buildProjectionPaymentPatch = (projection = null) => {
+    if (!projection) {
+      return {
+        projectionId: "",
+        projectionIndex: "",
+        amount: "",
+        notes: "",
+      };
+    }
+
+    const projectionIndex =
+      projection.projectionIndex ||
+      (invoice?.projections || []).findIndex(
+        (item) => String(item._id) === String(projection._id),
+      ) + 1;
+    const remainingAmount = Number(
+      projection.remainingAmount ?? projection.amount ?? 0,
+    );
+
+    return {
+      projectionId: projection._id || "",
+      projectionIndex: projectionIndex ? String(projectionIndex) : "",
+      amount: remainingAmount > 0 ? String(remainingAmount) : "",
+      notes: `Payment for: Cicilan ${projectionIndex} - ${
+        projection.description || "Invoice projection"
+      }`,
+    };
+  };
+
   const startPayment = (projection = null) => {
     if (invoiceIsDraft) {
       toast.error(
@@ -466,21 +557,40 @@ export default function InvoiceDetail({
 
     setPaymentForm({
       paymentDate: new Date().toISOString().slice(0, 10),
-      amount: projection ? String(projection.amount || "") : "",
       accountId: "",
       categoryId: "",
       categoryType: "",
+      ...buildProjectionPaymentPatch(projection),
       method: "Bank",
       senderName: "",
-      notes: projection
-        ? `Payment for: ${projection.description || "Invoice projection"}`
-        : "",
     });
     setPaymentSplits([]);
     setPaymentAttachment(null);
     setPaymentSplitMode(false);
     setAddingPayment(true);
     switchDetailTab("payment");
+  };
+
+  const selectPaymentProjection = (projectionId) => {
+    const projection = (invoice?.projections || []).find(
+      (item) => String(item._id) === String(projectionId),
+    );
+
+    setPaymentForm((prev) => ({
+      ...prev,
+      ...buildProjectionPaymentPatch(projection || null),
+    }));
+  };
+
+  const getProjectionAgingLabel = (projection) => {
+    const hasRealization = (projection.realizations || []).length > 0;
+    if (!hasRealization && String(projection.status || "").toLowerCase() === "unpaid") {
+      const dueDate = new Date(projection.estimateDate);
+      if (!Number.isNaN(dueDate.getTime()) && dueDate > new Date()) {
+        return "Belum jatuh tempo";
+      }
+    }
+    return formatAgingDays(projection.agingDays, "Tepat waktu");
   };
 
   const selectPaymentCategory = (value) => {
@@ -653,6 +763,29 @@ export default function InvoiceDetail({
       toast.error("Amount tidak valid");
       return;
     }
+    if ((invoice?.projections || []).length && !paymentForm.projectionId) {
+      toast.error("Pilih cicilan/proyeksi pembayaran");
+      return;
+    }
+    if (
+      selectedPaymentProjection &&
+      amount >
+        Number(
+          selectedPaymentProjection.remainingAmount ??
+            selectedPaymentProjection.amount ??
+            0,
+        ) +
+          0.01
+    ) {
+      toast.error(
+        `Amount melebihi sisa cicilan. Sisa: ${formatMoney(
+          selectedPaymentProjection.remainingAmount ??
+            selectedPaymentProjection.amount,
+          invoice.currency,
+        )}`,
+      );
+      return;
+    }
     if (!paymentForm.accountId) {
       toast.error("Record Account wajib dipilih");
       return;
@@ -695,6 +828,10 @@ export default function InvoiceDetail({
       payload.append("method", paymentForm.method || "Bank");
       payload.append("senderName", paymentForm.senderName || "");
       payload.append("notes", paymentForm.notes || "");
+      if (paymentForm.projectionId) {
+        payload.append("projectionId", paymentForm.projectionId);
+        payload.append("projectionIndex", paymentForm.projectionIndex || "");
+      }
 
       if (paymentSplitMode) {
         payload.append(
@@ -794,39 +931,155 @@ export default function InvoiceDetail({
 
   const PaymentOverviewTables = () => (
     <div className="inv-payment-overview inv-no-print">
-      <div className="inv-grid">
-        <div className="inv-grid-6">
-          <div className="inv-projection-card">
-            <div className="inv-projection-head blue">Payment Projection</div>
-            <div className="inv-table-wrap">
-              <table className="inv-table inv-samit-projection-table">
-                <thead>
-                  <tr>
-                    <th>Description</th>
-                    <th>Due Date</th>
-                    <th className="right">Amount</th>
-                    <th className="center">Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(invoice.projections || []).length ? (
-                    (invoice.projections || []).map((projection, index) => (
-                      <tr key={projection._id}>
-                        <td>
-                          <span className="inv-row-badge blue">
-                            {index + 1}
-                          </span>
-                          {projection.description}
-                        </td>
-                        <td>{formatDate(projection.estimateDate)}</td>
-                        <td className="right">
-                          {formatMoney(projection.amount, invoice.currency)}
-                        </td>
-                        <td className="center">
+      <div className="inv-projection-card">
+        <div className="inv-projection-head linked">
+          <span>Payment Projection</span>
+          <span>Realization</span>
+        </div>
+        <div className="inv-table-wrap">
+          <table className="inv-table inv-linked-payment-table">
+            <thead>
+              <tr>
+                <th>Aging</th>
+                <th>Projection</th>
+                <th>Due Date</th>
+                <th className="right">Projected</th>
+                <th>Payment</th>
+                <th className="right">Amount</th>
+                <th>Keterangan</th>
+                <th className="center">Attc</th>
+                <th className="center">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(invoice.projections || []).length ? (
+                (invoice.projections || []).map((projection, index) => {
+                  const projectionIndex = projection.projectionIndex || index + 1;
+                  const realizations = (projection.realizations || []).length
+                    ? projection.realizations
+                    : [null];
+                  const projectionStatus = String(
+                    projection.status || "Unpaid",
+                  ).toLowerCase();
+
+                  return realizations.map((payment, paymentIndex) => (
+                    <tr
+                      key={`${projection._id}-${payment?._id || "empty"}`}
+                      className={
+                        paymentIndex === 0 ? "inv-projection-row-start" : ""
+                      }
+                    >
+                      {paymentIndex === 0 ? (
+                        <>
+                          <td rowSpan={realizations.length}>
+                            <span
+                              className={`inv-aging-pill ${
+                                Number(projection.agingDays || 0) > 0
+                                  ? "late"
+                                  : "ok"
+                              }`}
+                            >
+                              {getProjectionAgingLabel(projection)}
+                            </span>
+                          </td>
+                          <td rowSpan={realizations.length}>
+                            <span className="inv-row-badge blue">
+                              {projectionIndex}
+                            </span>
+                            <strong>{projection.description}</strong>
+                            <div className="inv-projection-mini">
+                              Paid{" "}
+                              {formatMoney(
+                                projection.paidAmount || 0,
+                                invoice.currency,
+                              )}{" "}
+                              / Remaining{" "}
+                              {formatMoney(
+                                projection.remainingAmount ?? projection.amount,
+                                invoice.currency,
+                              )}
+                            </div>
+                          </td>
+                          <td rowSpan={realizations.length}>
+                            {formatDate(projection.estimateDate)}
+                          </td>
+                          <td rowSpan={realizations.length} className="right">
+                            {formatMoney(projection.amount, invoice.currency)}
+                            <div>
+                              <span
+                                className={`inv-status ${projectionStatus}`}
+                              >
+                                {statusLabel[projection.status] ||
+                                  projection.status ||
+                                  "Unpaid"}
+                              </span>
+                            </div>
+                          </td>
+                        </>
+                      ) : null}
+                      <td>
+                        {payment ? (
+                          <>
+                            <span className="inv-row-badge pink">
+                              {projectionIndex}.{paymentIndex + 1}
+                            </span>
+                            <strong>{formatDate(payment.paymentDate)}</strong>
+                            <div className="inv-payment-method">
+                              {payment.method || "Bank"}
+                            </div>
+                          </>
+                        ) : (
+                          <span className="inv-muted">No realization</span>
+                        )}
+                      </td>
+                      <td className="right">
+                        {payment ? (
+                          <strong>
+                            {formatMoney(payment.amount, invoice.currency)}
+                          </strong>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td>
+                        {payment?.notes ? (
+                          <button
+                            type="button"
+                            className="inv-note-preview-btn"
+                            onClick={() =>
+                              setNotePreview({
+                                title: `Cicilan ${projectionIndex}`,
+                                body: payment.notes,
+                              })
+                            }
+                          >
+                            {truncateText(payment.notes)}
+                          </button>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      <td className="center">
+                        {payment?.attachment ? (
+                          <a
+                            className="inv-file-link"
+                            href={`${API_URL}/uploads/transactions/${encodeURIComponent(
+                              payment.attachment,
+                            )}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            View
+                          </a>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                      {paymentIndex === 0 ? (
+                        <td rowSpan={realizations.length} className="center">
                           {invoiceIsDraft ? (
                             <span className="inv-muted-dash">-</span>
-                          ) : String(projection.status || "").toLowerCase() ===
-                            "paid" ? (
+                          ) : projectionStatus === "paid" ? (
                             <span className="inv-status paid">Paid</span>
                           ) : (
                             <button
@@ -838,114 +1091,106 @@ export default function InvoiceDetail({
                             </button>
                           )}
                         </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="4" className="center">
-                        No payment projection
-                      </td>
+                      ) : null}
                     </tr>
-                  )}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan="2">Total Projection</td>
-                    <td className="right">
-                      {formatMoney(projectionTotal, invoice.currency)}
-                    </td>
-                    <td />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        <div className="inv-grid-6">
-          <div className="inv-projection-card">
-            <div className="inv-projection-head pink">Realization</div>
-            <div className="inv-table-wrap">
-              <table className="inv-table inv-samit-realization-table">
-                <thead>
-                  <tr>
-                    <th>Payment Date</th>
-                    <th className="right">Amount</th>
-                    <th className="center">File</th>
-                    <th className="center">Print</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paymentRecords.length ? (
-                    paymentRecords.map((payment, index) => (
-                      <tr key={payment._id}>
-                        <td>
-                          <span className="inv-row-badge pink">
-                            {index + 1}
-                          </span>
-                          <strong>{formatDate(payment.paymentDate)}</strong>
-                          <br />
-                          <small>{payment.method || "Bank"}</small>
-                          {payment.notes ? (
-                            <div className="inv-payment-note">
-                              {payment.notes}
-                            </div>
-                          ) : null}
-                        </td>
-                        <td className="right">
-                          <strong>
-                            {formatMoney(payment.amount, invoice.currency)}
-                          </strong>
-                        </td>
-                        <td className="center">
-                          {payment.attachment ? (
-                            <a
-                              className="inv-file-link"
-                              href={`${API_URL}/uploads/transactions/${encodeURIComponent(
-                                payment.attachment,
-                              )}`}
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {payment.attachmentOriginalName || "File"}
-                            </a>
-                          ) : (
-                            "-"
-                          )}
-                        </td>
-                        <td className="center">
-                          <button
-                            type="button"
-                            className="inv-mini-print"
-                            onClick={() => handlePrint("standard")}
-                          >
-                            Print
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="4" className="center">
-                        No payment recorded
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td>Total Received</td>
-                    <td className="right">
-                      {formatMoney(invoice.totalPaid, invoice.currency)}
-                    </td>
-                    <td colSpan="2" />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          </div>
+                  ));
+                })
+              ) : (
+                <tr>
+                  <td colSpan="9" className="center">
+                    No payment projection
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan="3">Total Projection</td>
+                <td className="right">
+                  {formatMoney(projectionTotal, invoice.currency)}
+                </td>
+                <td>Total Received</td>
+                <td className="right">
+                  {formatMoney(invoice.totalPaid, invoice.currency)}
+                </td>
+                <td colSpan="3" />
+              </tr>
+            </tfoot>
+          </table>
         </div>
       </div>
+
+      {legacyPaymentRecords.length ? (
+        <div className="inv-projection-card inv-legacy-payment-card">
+          <div className="inv-projection-head legacy">
+            Unassigned / Legacy Realization
+          </div>
+          <div className="inv-table-wrap">
+            <table className="inv-table inv-samit-realization-table">
+              <thead>
+                <tr>
+                  <th>Payment</th>
+                  <th className="right">Amount</th>
+                  <th>Keterangan</th>
+                  <th className="center">Attc</th>
+                </tr>
+              </thead>
+              <tbody>
+                {legacyPaymentRecords.map((payment, index) => (
+                  <tr key={payment._id}>
+                    <td>
+                      <span className="inv-row-badge pink">{index + 1}</span>
+                      <strong>{formatDate(payment.paymentDate)}</strong>
+                      <div className="inv-payment-method">
+                        {payment.method || "Bank"}
+                      </div>
+                    </td>
+                    <td className="right">
+                      <strong>
+                        {formatMoney(payment.amount, invoice.currency)}
+                      </strong>
+                    </td>
+                    <td>
+                      {payment.notes ? (
+                        <button
+                          type="button"
+                          className="inv-note-preview-btn"
+                          onClick={() =>
+                            setNotePreview({
+                              title: "Unassigned / Legacy Payment",
+                              body: payment.notes,
+                            })
+                          }
+                        >
+                          {truncateText(payment.notes)}
+                        </button>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                    <td className="center">
+                      {payment.attachment ? (
+                        <a
+                          className="inv-file-link"
+                          href={`${API_URL}/uploads/transactions/${encodeURIComponent(
+                            payment.attachment,
+                          )}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          View
+                        </a>
+                      ) : (
+                        "-"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       <div className="inv-payment-summary-card">
         <div className="inv-payment-summary-item blue">
@@ -981,6 +1226,18 @@ export default function InvoiceDetail({
                 <div>
                   <span>Payment received</span>
                   <strong>{formatDate(payment.paymentDate)}</strong>
+                  {payment.projectionIndex ? (
+                    <em className="inv-payment-record-marker">
+                      Cicilan {payment.projectionIndex}
+                      {payment.projectionDescription
+                        ? ` - ${payment.projectionDescription}`
+                        : ""}
+                    </em>
+                  ) : (
+                    <em className="inv-payment-record-marker legacy">
+                      Unassigned / Legacy
+                    </em>
+                  )}
                   <small>
                     {payment.notes || "-"} - <b>{payment.method || "Bank"}</b>
                   </small>
@@ -1615,6 +1872,44 @@ export default function InvoiceDetail({
 
                     <div className="inv-payment-modal-body">
                       <div className="inv-grid">
+                        {(invoice.projections || []).length ? (
+                          <div className="inv-grid-12">
+                            <label className="inv-label">
+                              Untuk Cicilan/Proyeksi{" "}
+                              <span className="inv-required">*</span>
+                            </label>
+                            <PaymentSearchSelect
+                              value={paymentForm.projectionId}
+                              options={projectionOptions}
+                              placeholder="Search cicilan/proyeksi..."
+                              emptyText="Tidak ada cicilan yang masih punya sisa."
+                              onChange={selectPaymentProjection}
+                            />
+                            {selectedPaymentProjection ? (
+                              <div className="inv-payment-target-hint">
+                                <strong>
+                                  Cicilan{" "}
+                                  {selectedPaymentProjection.projectionIndex ||
+                                    paymentForm.projectionIndex}
+                                </strong>
+                                <span>
+                                  Sisa{" "}
+                                  {formatMoney(
+                                    selectedPaymentProjection.remainingAmount ??
+                                      selectedPaymentProjection.amount,
+                                    invoice.currency,
+                                  )}
+                                </span>
+                                <span>
+                                  Due{" "}
+                                  {formatDate(
+                                    selectedPaymentProjection.estimateDate,
+                                  )}
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : null}
                         <div className="inv-grid-6">
                           <label className="inv-label">Payment date</label>
                           <input
@@ -1905,6 +2200,28 @@ export default function InvoiceDetail({
             </section>
           ) : null}
         </>
+      ) : null}
+      {notePreview ? (
+        <div className="inv-note-modal-backdrop inv-no-print">
+          <div
+            className="inv-note-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="invoice-note-preview-title"
+          >
+            <div className="inv-note-modal-head">
+              <h2 id="invoice-note-preview-title">{notePreview.title}</h2>
+              <button
+                type="button"
+                onClick={() => setNotePreview(null)}
+                aria-label="Close note preview"
+              >
+                ×
+              </button>
+            </div>
+            <div className="inv-note-modal-body">{notePreview.body}</div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

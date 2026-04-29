@@ -944,6 +944,59 @@
   padding: 14px 18px;
 }
 
+.inv-note-modal-backdrop {
+  position: fixed;
+  z-index: 140;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(15, 23, 42, 0.42);
+  padding: 18px;
+}
+
+.inv-note-modal {
+  width: min(100%, 520px);
+  overflow: hidden;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.34);
+}
+
+.inv-note-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 16px 18px;
+}
+
+.inv-note-modal-head h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.inv-note-modal-head button {
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 1.55rem;
+  line-height: 1;
+}
+
+.inv-note-modal-body {
+  max-height: 52vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  color: #334155;
+  font-size: 0.92rem;
+  line-height: 1.55;
+  padding: 18px;
+}
+
 .inv-samit-projection-table thead tr {
   background: #e3f2fd;
 }
@@ -959,6 +1012,91 @@
 .inv-samit-realization-table th {
   color: #c2185b;
   font-size: 0.78rem;
+}
+
+.inv-projection-head.linked {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  background: linear-gradient(135deg, #42a5f5 0%, #ec407a 100%);
+}
+
+.inv-projection-head.legacy {
+  background: linear-gradient(135deg, #64748b 0%, #94a3b8 100%);
+}
+
+.inv-linked-payment-table thead tr {
+  background: linear-gradient(90deg, #e3f2fd 0%, #fce4ec 100%);
+}
+
+.inv-linked-payment-table th:first-child,
+.inv-linked-payment-table th:nth-child(2),
+.inv-linked-payment-table th:nth-child(3),
+.inv-linked-payment-table th:nth-child(4) {
+  color: #1565c0;
+}
+
+.inv-linked-payment-table th:nth-child(n + 5) {
+  color: #c2185b;
+}
+
+.inv-linked-payment-table td {
+  vertical-align: top;
+}
+
+.inv-projection-row-start td {
+  border-top: 2px solid #dbeafe;
+}
+
+.inv-projection-mini,
+.inv-payment-method {
+  margin-top: 5px;
+  color: #64748b;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.inv-aging-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 0.74rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.inv-aging-pill.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.inv-aging-pill.late {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.inv-note-preview-btn {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  padding: 0;
+  text-align: left;
+}
+
+.inv-note-preview-btn:hover {
+  color: #0f766e;
+  text-decoration: underline;
+}
+
+.inv-legacy-payment-card {
+  margin-top: 18px;
+  border-color: #cbd5e1;
+  background: #f8fafc;
 }
 
 .inv-projection-card:has(.inv-projection-head.blue) .inv-table tfoot td {
@@ -980,6 +1118,22 @@
   font-size: 0.78rem;
   font-weight: 800;
   padding: 6px 12px;
+}
+
+.inv-payment-target-hint {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  color: #475569;
+  font-size: 0.78rem;
+}
+
+.inv-payment-target-hint strong,
+.inv-payment-target-hint span {
+  border-radius: 999px;
+  background: #f1f5f9;
+  padding: 5px 9px;
 }
 
 .inv-split-btn {
@@ -1250,6 +1404,19 @@
 
 .inv-payment-record-top small {
   color: #64748b;
+}
+
+.inv-payment-record-marker {
+  display: block;
+  margin: 4px 0;
+  color: #1565c0;
+  font-size: 0.76rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.inv-payment-record-marker.legacy {
+  color: #b45309;
 }
 
 .inv-payment-record-amount {

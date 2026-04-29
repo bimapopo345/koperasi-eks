@@ -61,6 +61,11 @@ function normalizeObjectId(value) {
     : null;
 }
 
+function sameObjectId(left, right) {
+  if (!left || !right) return false;
+  return String(left) === String(right);
+}
+
 function parseFlexibleArray(value) {
   if (Array.isArray(value)) return value;
   if (!value) return [];
@@ -245,7 +250,7 @@ function normalizeDiscounts(rawDiscounts, subtotal) {
     .filter(Boolean);
 }
 
-function normalizeProjections(rawProjections) {
+function normalizeProjections(rawProjections, currentProjections = []) {
   return parseFlexibleArray(rawProjections)
     .map((projection, index) => {
       const estimateDate = ensureDate(
@@ -255,12 +260,26 @@ function normalizeProjections(rawProjections) {
       const amount = clampMoney(projection?.amount);
       if (amount <= 0) return null;
 
-      return {
+      const normalizedProjection = {
         description:
           normalizeString(projection?.description) || `Cicilan ${index + 1}`,
         estimateDate,
         amount,
       };
+
+      if (
+        projection?._id &&
+        mongoose.Types.ObjectId.isValid(String(projection._id))
+      ) {
+        normalizedProjection._id = projection._id;
+      } else if (
+        currentProjections[index]?._id &&
+        mongoose.Types.ObjectId.isValid(String(currentProjections[index]._id))
+      ) {
+        normalizedProjection._id = currentProjections[index]._id;
+      }
+
+      return normalizedProjection;
     })
     .filter(Boolean)
     .sort((a, b) => new Date(a.estimateDate) - new Date(b.estimateDate));
@@ -285,6 +304,18 @@ function normalizePayments(rawPayments) {
         accountId: normalizeObjectId(payment?.accountId),
         categoryId: isSplit ? null : normalizeObjectId(payment?.categoryId),
         categoryType: isSplit ? null : categoryType,
+        projectionId: normalizeObjectId(payment?.projectionId),
+        projectionIndex:
+          Number.isFinite(Number(payment?.projectionIndex)) &&
+          Number(payment?.projectionIndex) > 0
+            ? Number(payment.projectionIndex)
+            : null,
+        projectionDescription: normalizeString(
+          payment?.projectionDescription,
+        ),
+        projectionDueDate: payment?.projectionDueDate
+          ? ensureDate(payment.projectionDueDate, "Tanggal jatuh tempo proyeksi")
+          : null,
         isSplit,
         senderName: normalizeString(payment?.senderName),
         attachment: normalizeString(payment?.attachment),
@@ -330,27 +361,72 @@ function computeInvoiceStatus(statusInput, dueDate, total, totalPaid) {
   return "sent";
 }
 
-function enrichProjections(projections, payments) {
-  const totalPaid = payments.reduce(
-    (sum, payment) => sum + clampMoney(payment.amount),
-    0,
-  );
-  let runningProjection = 0;
+function dateDiffInDays(left, right) {
+  const leftDate = startOfDay(left);
+  const rightDate = startOfDay(right);
+  if (
+    Number.isNaN(leftDate.getTime()) ||
+    Number.isNaN(rightDate.getTime())
+  ) {
+    return 0;
+  }
+  return Math.round((leftDate - rightDate) / (24 * 60 * 60 * 1000));
+}
 
-  return projections.map((projection) => {
-    const previousRunning = runningProjection;
-    runningProjection += clampMoney(projection.amount);
+function paymentMatchesProjection(payment, projection, projectionIndex) {
+  if (!payment || !projection) return false;
+  if (payment.projectionId && sameObjectId(payment.projectionId, projection._id)) {
+    return true;
+  }
+  return (
+    Number(payment.projectionIndex || 0) > 0 &&
+    Number(payment.projectionIndex) === Number(projectionIndex)
+  );
+}
+
+function enrichProjections(projections, payments) {
+  const safePayments = payments || [];
+  const today = new Date();
+
+  return (projections || []).map((projection, index) => {
+    const projectionIndex = index + 1;
+    const realizations = safePayments
+      .filter((payment) =>
+        paymentMatchesProjection(payment, projection, projectionIndex),
+      )
+      .map((payment) => ({
+        ...payment,
+        agingDays: payment.paymentDate
+          ? dateDiffInDays(payment.paymentDate, projection.estimateDate)
+          : 0,
+      }));
+    const paidAmount = clampMoney(
+      realizations.reduce((sum, payment) => sum + clampMoney(payment.amount), 0),
+    );
+    const projectionAmount = clampMoney(projection.amount);
+    const remainingAmount = clampMoney(Math.max(projectionAmount - paidAmount, 0));
 
     let status = "Unpaid";
-    if (totalPaid >= runningProjection) {
+    if (paidAmount >= projectionAmount && projectionAmount > 0) {
       status = "Paid";
-    } else if (totalPaid > previousRunning) {
+    } else if (paidAmount > 0) {
       status = "Partial";
     }
 
+    const agingDays = realizations.length
+      ? Math.max(...realizations.map((payment) => payment.agingDays || 0))
+      : new Date(projection.estimateDate) < startOfDay(today)
+        ? dateDiffInDays(today, projection.estimateDate)
+        : 0;
+
     return {
       ...projection,
+      projectionIndex,
+      paidAmount,
+      remainingAmount,
       status,
+      agingDays,
+      realizations,
     };
   });
 }
@@ -403,7 +479,10 @@ function serializePublicInvoice(invoiceDoc) {
       description: projection.description,
       estimateDate: projection.estimateDate,
       amount: projection.amount,
+      paidAmount: projection.paidAmount,
+      remainingAmount: projection.remainingAmount,
       status: projection.status,
+      agingDays: projection.agingDays,
     })),
     payments: (invoice.payments || []).map((payment) => ({
       _id: payment._id,
@@ -480,6 +559,7 @@ async function buildInvoicePayload(payload, options = {}) {
   const total = Math.max(clampMoney(subtotal - discountTotal), 0);
   const projections = normalizeProjections(
     payload?.projections || currentInvoice?.projections || [],
+    currentInvoice?.projections || [],
   );
   const payments = normalizePayments(
     payload?.payments || currentInvoice?.payments || [],
@@ -574,7 +654,72 @@ function getPaymentBodyValue(body, keys) {
   return undefined;
 }
 
-async function normalizeInvoicePaymentInput(req) {
+function resolveInvoiceProjectionForPayment(invoice, body, amount) {
+  const projections = invoice?.projections || [];
+  if (!projections.length) return null;
+
+  const projectionId = normalizeObjectId(
+    getPaymentBodyValue(body, ["projectionId", "projection_id"]),
+  );
+  const projectionIndexInput = normalizeNumber(
+    getPaymentBodyValue(body, [
+      "projectionIndex",
+      "projection_index",
+      "installment",
+      "installmentIndex",
+    ]),
+    0,
+  );
+  const projectionIndex =
+    projectionIndexInput > 0 ? Math.floor(projectionIndexInput) : null;
+
+  if (!projectionId && !projectionIndex) {
+    throw new ApiError(400, "Pilih cicilan/proyeksi pembayaran");
+  }
+
+  const projectionWithIndex = projections
+    .map((projection, index) => ({ projection, projectionIndex: index + 1 }))
+    .find(({ projection, projectionIndex: currentIndex }) => {
+      if (projectionId && sameObjectId(projection._id, projectionId)) {
+        return true;
+      }
+      return projectionIndex && projectionIndex === currentIndex;
+    });
+
+  if (!projectionWithIndex) {
+    throw new ApiError(404, "Cicilan/proyeksi pembayaran tidak ditemukan");
+  }
+
+  const { projection, projectionIndex: resolvedIndex } = projectionWithIndex;
+  const paidAmount = clampMoney(
+    (invoice.payments || [])
+      .filter((payment) =>
+        paymentMatchesProjection(payment, projection, resolvedIndex),
+      )
+      .reduce((sum, payment) => sum + clampMoney(payment.amount), 0),
+  );
+  const remainingAmount = clampMoney(
+    Math.max(clampMoney(projection.amount) - paidAmount, 0),
+  );
+
+  if (amount > remainingAmount + 0.01) {
+    throw new ApiError(
+      400,
+      `Nominal pembayaran melebihi sisa cicilan ${resolvedIndex}. Sisa: ${remainingAmount}`,
+    );
+  }
+
+  return {
+    projectionId: projection._id,
+    projectionIndex: resolvedIndex,
+    projectionDescription:
+      normalizeString(projection.description) || `Cicilan ${resolvedIndex}`,
+    projectionDueDate: projection.estimateDate,
+    remainingAmount,
+  };
+}
+
+async function normalizeInvoicePaymentInput(req, invoice) {
   const body = req.body || {};
   const amount = clampMoney(
     getPaymentBodyValue(body, ["amount", "paymentAmount", "payment-amount"]),
@@ -615,6 +760,11 @@ async function normalizeInvoicePaymentInput(req) {
   if (amount <= 0) {
     throw new ApiError(400, "Nominal pembayaran tidak valid");
   }
+  const projectionMarker = resolveInvoiceProjectionForPayment(
+    invoice,
+    body,
+    amount,
+  );
   if (!accountId) {
     throw new ApiError(400, "Record Account wajib dipilih");
   }
@@ -652,6 +802,10 @@ async function normalizeInvoicePaymentInput(req) {
       accountId,
       categoryId,
       categoryType,
+      projectionId: projectionMarker?.projectionId || null,
+      projectionIndex: projectionMarker?.projectionIndex || null,
+      projectionDescription: projectionMarker?.projectionDescription || "",
+      projectionDueDate: projectionMarker?.projectionDueDate || null,
       isSplit,
       senderName,
       attachment: uploadedAttachment?.filename || "",
@@ -668,7 +822,15 @@ async function createAccountingTransactionFromPayment(
   splitRows,
 ) {
   const customerName = invoice.customerSnapshot?.name || "Customer";
-  const description = [customerName, invoice.invoiceNumber, payment.senderName]
+  const projectionLabel = payment.projectionIndex
+    ? `Cicilan ${payment.projectionIndex}`
+    : "";
+  const description = [
+    invoice.invoiceNumber,
+    projectionLabel,
+    customerName,
+    payment.senderName,
+  ]
     .filter(Boolean)
     .join(" - ");
 
@@ -680,6 +842,12 @@ async function createAccountingTransactionFromPayment(
     amount: payment.amount,
     categoryId: payment.isSplit ? null : payment.categoryId,
     categoryType: payment.isSplit ? null : payment.categoryType,
+    invoiceNumber: invoice.invoiceNumber,
+    invoicePaymentId: payment._id || null,
+    invoiceProjectionId: payment.projectionId || null,
+    invoiceProjectionIndex: payment.projectionIndex || null,
+    invoiceProjectionDescription: payment.projectionDescription || "",
+    invoiceProjectionDueDate: payment.projectionDueDate || null,
     customerId: invoice.memberId,
     notes: payment.notes,
     receiptFile: payment.attachment || null,
@@ -1026,8 +1194,9 @@ export const addInvoicePayment = asyncHandler(async (req, res) => {
   let createdTransaction = null;
   let payment = null;
   try {
-    const normalized = await normalizeInvoicePaymentInput(req);
+    const normalized = await normalizeInvoicePaymentInput(req, invoice);
     payment = normalized.payment;
+    payment._id = payment._id || new mongoose.Types.ObjectId();
 
     createdTransaction = await createAccountingTransactionFromPayment(
       invoice,

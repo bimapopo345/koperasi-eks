@@ -117,6 +117,24 @@ const invoicePaymentSchema = new mongoose.Schema(
       enum: ["master", "submenu", "account", null],
       default: null,
     },
+    projectionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
+    projectionIndex: {
+      type: Number,
+      default: null,
+      min: 1,
+    },
+    projectionDescription: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    projectionDueDate: {
+      type: Date,
+      default: null,
+    },
     isSplit: {
       type: Boolean,
       default: false,

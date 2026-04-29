@@ -472,6 +472,7 @@ export default function InvoiceForm() {
           setProjections(
             (invoice.projections || []).length
               ? invoice.projections.map((projection) => ({
+                  _id: projection._id || "",
                   description: projection.description || "",
                   estimateDate: toDateInput(projection.estimateDate),
                   amount: projection.amount || 0,
@@ -702,6 +703,7 @@ export default function InvoiceForm() {
       .filter((discount) => discount.value > 0),
     projections: projections
       .map((projection, index) => ({
+        _id: projection._id || undefined,
         description: projection.description || `Cicilan ${index + 1}`,
         estimateDate: projection.estimateDate,
         amount: normalizeMoney(projection.amount),
@@ -1197,7 +1199,7 @@ export default function InvoiceForm() {
                   </thead>
                   <tbody>
                     {projections.map((projection, index) => (
-                      <tr key={`projection-${index}`}>
+                      <tr key={projection._id || `projection-${index}`}>
                         <td>
                           <select
                             className="inv-select"

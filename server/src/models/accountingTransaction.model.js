@@ -40,6 +40,34 @@ const accountingTransactionSchema = new mongoose.Schema(
       enum: ["master", "submenu", "account", null],
       default: null,
     },
+    invoiceNumber: {
+      type: String,
+      trim: true,
+      uppercase: true,
+      default: null,
+    },
+    invoicePaymentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
+    invoiceProjectionId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
+    invoiceProjectionIndex: {
+      type: Number,
+      default: null,
+      min: 1,
+    },
+    invoiceProjectionDescription: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    invoiceProjectionDueDate: {
+      type: Date,
+      default: null,
+    },
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Member",
@@ -92,6 +120,8 @@ accountingTransactionSchema.index({ accountId: 1, transactionDate: -1 });
 accountingTransactionSchema.index({ transactionDate: -1 });
 accountingTransactionSchema.index({ reviewed: 1 });
 accountingTransactionSchema.index({ expenseId: 1 }, { sparse: true });
+accountingTransactionSchema.index({ invoiceNumber: 1 }, { sparse: true });
+accountingTransactionSchema.index({ invoiceProjectionId: 1 }, { sparse: true });
 
 const AccountingTransaction = mongoose.model(
   "AccountingTransaction",
