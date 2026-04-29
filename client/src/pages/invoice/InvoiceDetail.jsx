@@ -268,6 +268,7 @@ export default function InvoiceDetail({
   const [paymentSplits, setPaymentSplits] = useState([]);
   const [paymentAttachment, setPaymentAttachment] = useState(null);
   const [paymentSplitMode, setPaymentSplitMode] = useState(false);
+  const [paymentReceiptTarget, setPaymentReceiptTarget] = useState(null);
   const [notePreview, setNotePreview] = useState(null);
   const [paymentForm, setPaymentForm] = useState({
     paymentDate: new Date().toISOString().slice(0, 10),
@@ -357,9 +358,28 @@ export default function InvoiceDetail({
     return () => window.clearTimeout(timer);
   }, [invoice, printOnly]);
 
+  useEffect(() => {
+    const resetPaymentReceiptPrint = () => {
+      setPaymentReceiptTarget(null);
+      setPrintVariant(initialPrintVariant || "standard");
+    };
+
+    window.addEventListener("afterprint", resetPaymentReceiptPrint);
+    return () =>
+      window.removeEventListener("afterprint", resetPaymentReceiptPrint);
+  }, [initialPrintVariant]);
+
   const handlePrint = (variant = "standard") => {
+    setPaymentReceiptTarget(null);
     setActiveDetailTab("invoice");
     setPrintVariant(variant);
+    window.setTimeout(() => window.print(), 80);
+  };
+
+  const handlePaymentReceiptPrint = (payment) => {
+    if (!payment) return;
+    setPaymentReceiptTarget(payment);
+    setPrintVariant("receipt");
     window.setTimeout(() => window.print(), 80);
   };
 
@@ -510,6 +530,19 @@ export default function InvoiceDetail({
       ),
     [paymentRecords],
   );
+  const getPaymentProjectionLabel = (payment) => {
+    if (!payment?.projectionIndex) return "Unassigned / Legacy";
+    return [
+      `Cicilan ${payment.projectionIndex}`,
+      payment.projectionDescription,
+    ]
+      .filter(Boolean)
+      .join(" - ");
+  };
+  const getPaymentReceiptNumber = (payment) => {
+    const id = String(payment?._id || "");
+    return id ? id.slice(-8).toUpperCase() : invoiceNumber;
+  };
   const paymentCurrencyPrefix =
     selectedAccount?.currency || invoice?.currency || "Rp";
   const paymentAmount = Number(paymentForm.amount || 0);
@@ -1382,6 +1415,13 @@ export default function InvoiceDetail({
                       >
                         Edit
                       </button>
+                      <button
+                        type="button"
+                        className="inv-mini-print"
+                        onClick={() => handlePaymentReceiptPrint(payment)}
+                      >
+                        Print
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -1449,7 +1489,10 @@ export default function InvoiceDetail({
                 <button type="button" onClick={() => startEditPayment(payment)}>
                   Edit
                 </button>
-                <button type="button" onClick={() => handlePrint("standard")}>
+                <button
+                  type="button"
+                  onClick={() => handlePaymentReceiptPrint(payment)}
+                >
                   Print
                 </button>
                 {payment.attachment ? (
@@ -2009,6 +2052,93 @@ export default function InvoiceDetail({
                   <h3>備考・条件</h3>
                   <HtmlBlock html={invoice.terms} />
                 </div>
+              </section>
+
+              <section
+                className={`inv-print-sheet inv-payment-receipt-sheet ${
+                  printVariant === "receipt" && paymentReceiptTarget
+                    ? ""
+                    : "is-hidden"
+                }`}
+              >
+                {paymentReceiptTarget ? (
+                  <>
+                    <InvoiceLetterhead title="PAYMENT RECEIPT" />
+
+                    <hr className="inv-print-divider" />
+
+                    <div className="inv-receipt-title-row">
+                      <div>
+                        <h2>RECEIPT</h2>
+                        <strong>
+                          #{getPaymentReceiptNumber(paymentReceiptTarget)}
+                        </strong>
+                      </div>
+                      <div>
+                        <span>Invoice</span>
+                        <strong>{invoice.invoiceNumber}</strong>
+                      </div>
+                    </div>
+
+                    <div className="inv-receipt-grid">
+                      <div className="inv-receipt-field">
+                        <span>To</span>
+                        <strong>{invoice.customerSnapshot?.name || "-"}</strong>
+                        <small>{invoice.customerSnapshot?.phone || "-"}</small>
+                        <small>{invoice.customerSnapshot?.email || "-"}</small>
+                      </div>
+                      <div className="inv-receipt-field">
+                        <span>Paid On</span>
+                        <strong>
+                          {formatPaymentDate(paymentReceiptTarget.paymentDate)}
+                        </strong>
+                        <small>
+                          Method: {paymentReceiptTarget.method || "Bank"}
+                        </small>
+                        <small>
+                          Sender: {paymentReceiptTarget.senderName || "-"}
+                        </small>
+                      </div>
+                      <div className="inv-receipt-field">
+                        <span>Payment For</span>
+                        <strong>
+                          {getPaymentProjectionLabel(paymentReceiptTarget)}
+                        </strong>
+                        <small>
+                          Due Date:{" "}
+                          {formatDate(paymentReceiptTarget.projectionDueDate)}
+                        </small>
+                      </div>
+                      <div className="inv-receipt-amount-box">
+                        <span>Payment Amount</span>
+                        <strong>
+                          {formatMoney(
+                            paymentReceiptTarget.amount,
+                            invoice.currency,
+                          )}
+                        </strong>
+                      </div>
+                    </div>
+
+                    <div className="inv-receipt-description">
+                      <span>Description</span>
+                      <p>{paymentReceiptTarget.notes || "-"}</p>
+                    </div>
+
+                    {paymentReceiptTarget.attachment ? (
+                      <div className="inv-receipt-attachment">
+                        Attachment:{" "}
+                        {paymentReceiptTarget.attachmentOriginalName ||
+                          paymentReceiptTarget.attachment}
+                      </div>
+                    ) : null}
+
+                    <p className="inv-receipt-footer">
+                      Copyright © {new Date().getFullYear()} -{" "}
+                      {companyProfile.website}
+                    </p>
+                  </>
+                ) : null}
               </section>
             </div>
             {!publicView ? <PaymentOverviewTables /> : null}

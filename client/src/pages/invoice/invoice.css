@@ -1900,6 +1900,120 @@
   margin-top: 28px;
 }
 
+.inv-payment-receipt-sheet {
+  min-height: 820px;
+  position: relative;
+}
+
+.inv-receipt-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.inv-receipt-title-row h2 {
+  margin: 0 0 4px;
+  color: #0f172a;
+  font-size: 1.75rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.inv-receipt-title-row strong {
+  display: block;
+  color: #0f172a;
+}
+
+.inv-receipt-title-row > div:last-child {
+  text-align: right;
+}
+
+.inv-receipt-title-row span,
+.inv-receipt-field span,
+.inv-receipt-amount-box span,
+.inv-receipt-description span {
+  display: block;
+  margin-bottom: 6px;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.inv-receipt-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 28px;
+}
+
+.inv-receipt-field,
+.inv-receipt-amount-box,
+.inv-receipt-description,
+.inv-receipt-attachment {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+  padding: 16px;
+}
+
+.inv-receipt-field strong,
+.inv-receipt-amount-box strong {
+  display: block;
+  color: #0f172a;
+  font-size: 1rem;
+}
+
+.inv-receipt-field small {
+  display: block;
+  margin-top: 5px;
+  color: #475569;
+}
+
+.inv-receipt-amount-box {
+  background: #eff6ff;
+  text-align: right;
+}
+
+.inv-receipt-amount-box strong {
+  color: #0f766e;
+  font-size: 1.45rem;
+}
+
+.inv-receipt-description {
+  margin-top: 24px;
+}
+
+.inv-receipt-description p {
+  margin: 0;
+  min-height: 90px;
+  color: #334155;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+
+.inv-receipt-attachment {
+  margin-top: 16px;
+  color: #475569;
+  font-size: 0.88rem;
+}
+
+.inv-receipt-footer {
+  position: absolute;
+  right: 24px;
+  bottom: 20px;
+  left: 24px;
+  margin: 0;
+  border-top: 1px solid #cbd5e1;
+  padding-top: 12px;
+  color: #64748b;
+  font-size: 0.76rem;
+  text-align: center;
+  text-transform: uppercase;
+}
+
 .inv-personal-note {
   margin-top: 22px;
   border-top: 1px solid #e2e8f0;
