@@ -10,6 +10,7 @@ import {
   getAccountTransactionsReport,
   filterAccountTransactionsReport,
   exportAccountTransactionsCsv,
+  getAgedReceivables,
 } from "../controllers/admin/reports.controller.js";
 
 const router = express.Router();
@@ -29,5 +30,8 @@ router.get("/balance-sheet/check-splits", checkBalanceSheetSplits);
 router.get("/account-transactions", getAccountTransactionsReport);
 router.post("/account-transactions/filter", filterAccountTransactionsReport);
 router.get("/account-transactions/export-csv", exportAccountTransactionsCsv);
+
+// Aged Receivables
+router.get("/aged-receivables", getAgedReceivables);
 
 export default router;

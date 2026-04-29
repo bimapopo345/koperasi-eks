@@ -25,6 +25,7 @@ import SalesTaxes from "../pages/accounting/SalesTaxes.jsx";
 import ProfitLoss from "../pages/accounting/reports/ProfitLoss.jsx";
 import BalanceSheet from "../pages/accounting/reports/BalanceSheet.jsx";
 import AccountTransactions from "../pages/accounting/reports/AccountTransactions.jsx";
+import AgedReceivables from "../pages/accounting/reports/AgedReceivables.jsx";
 import ExpenseAdmin from "../pages/expense/ExpenseAdmin.jsx";
 import ExpenseCreate from "../pages/expense/ExpenseCreate.jsx";
 import ExpenseReport from "../pages/expense/ExpenseReport.jsx";
@@ -80,6 +81,7 @@ const router = createBrowserRouter(
         <Route path="/transactions/upload" element={<Transactions />} />
         <Route path="/reports/profit-loss" element={<ProfitLoss />} />
         <Route path="/reports/balance-sheet" element={<BalanceSheet />} />
+        <Route path="/reports/aged-receivables" element={<AgedReceivables />} />
         <Route
           path="/reports/account-transactions"
           element={<AccountTransactions />}

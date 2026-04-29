@@ -4,6 +4,7 @@ import { CoaMaster } from "../../models/coaMaster.model.js";
 import { CoaSubmenu } from "../../models/coaSubmenu.model.js";
 import { CoaAccount } from "../../models/coaAccount.model.js";
 import { Member } from "../../models/member.model.js";
+import { Invoice } from "../../models/invoice.model.js";
 
 const DEBIT_NORMAL_MASTERS = new Set(["Assets", "Expenses"]);
 const COGS_SUBMENUS = new Set(["Cost of Goods Sold", "COGS", "Direct Costs", "Cost of Sales"]);
@@ -15,6 +16,51 @@ const LIABILITY_LONG_TERM_SUBMENUS = new Set([
   "Loans Payable",
   "Other Long-Term Liability",
 ]);
+const AGED_RECEIVABLE_BUCKETS = [
+  {
+    key: "notYetDue",
+    label: "Belum Jatuh Tempo",
+    shortLabel: "Not Yet Due",
+    from: null,
+    to: 0,
+  },
+  {
+    key: "days1to5",
+    label: "1 - 5 Hari",
+    shortLabel: "1-5",
+    from: 1,
+    to: 5,
+  },
+  {
+    key: "days6to89",
+    label: "6 - 89 Hari",
+    shortLabel: "6-89",
+    from: 6,
+    to: 89,
+  },
+  {
+    key: "days90to119",
+    label: "90 - 119 Hari",
+    shortLabel: "90-119",
+    from: 90,
+    to: 119,
+  },
+  {
+    key: "days120to179",
+    label: "120 - 179 Hari",
+    shortLabel: "120-179",
+    from: 120,
+    to: 179,
+  },
+  {
+    key: "days180plus",
+    label: "180+ Hari (Red Debt)",
+    shortLabel: "180+",
+    from: 180,
+    to: null,
+    danger: true,
+  },
+];
 
 function toIdString(value) {
   if (!value) return "";
@@ -71,6 +117,291 @@ function sendCsv(res, filename, rows) {
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
   res.status(200).send(csvContent);
+}
+
+function roundMoney(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function dateDiffDays(left, right) {
+  const leftDate = startOfDay(left);
+  const rightDate = startOfDay(right);
+  if (Number.isNaN(leftDate.getTime()) || Number.isNaN(rightDate.getTime())) {
+    return 0;
+  }
+  return Math.round((leftDate - rightDate) / (24 * 60 * 60 * 1000));
+}
+
+function isSameObjectId(left, right) {
+  const leftId = toIdString(left);
+  const rightId = toIdString(right);
+  return Boolean(leftId && rightId && leftId === rightId);
+}
+
+function paymentMatchesProjection(payment, projection, projectionIndex) {
+  if (!payment || !projection) return false;
+  if (payment.projectionId && isSameObjectId(payment.projectionId, projection._id)) {
+    return true;
+  }
+  return (
+    Number(payment.projectionIndex || 0) > 0 &&
+    Number(payment.projectionIndex) === Number(projectionIndex)
+  );
+}
+
+function getAgedReceivableBucket(daysOverdue) {
+  if (daysOverdue <= 0) return AGED_RECEIVABLE_BUCKETS[0];
+  return (
+    AGED_RECEIVABLE_BUCKETS.find((bucket) => {
+      if (bucket.key === "notYetDue") return false;
+      const afterStart = bucket.from === null || daysOverdue >= bucket.from;
+      const beforeEnd = bucket.to === null || daysOverdue <= bucket.to;
+      return afterStart && beforeEnd;
+    }) || AGED_RECEIVABLE_BUCKETS[AGED_RECEIVABLE_BUCKETS.length - 1]
+  );
+}
+
+function createEmptyAgedBucket() {
+  return {
+    amount: 0,
+    invoiceCount: 0,
+    projectionCount: 0,
+    details: [],
+    invoiceNumbers: new Set(),
+  };
+}
+
+function createAgedBucketMap() {
+  return AGED_RECEIVABLE_BUCKETS.reduce((acc, bucket) => {
+    acc[bucket.key] = createEmptyAgedBucket();
+    return acc;
+  }, {});
+}
+
+function serializeAgedBucket(bucket) {
+  return {
+    amount: roundMoney(bucket.amount),
+    invoiceCount: bucket.invoiceNumbers.size,
+    projectionCount: bucket.projectionCount,
+    details: bucket.details,
+  };
+}
+
+function createAgedReceivableCustomerRow(invoice) {
+  const customerSnapshot = invoice.customerSnapshot || {};
+  const memberId = toIdString(invoice.memberId);
+  return {
+    customerId: memberId || customerSnapshot.uuid || customerSnapshot.name || "unknown",
+    customerName: customerSnapshot.name || "-",
+    customerCode: customerSnapshot.uuid || "",
+    customerEmail: customerSnapshot.email || "",
+    customerPhone: customerSnapshot.phone || "",
+    buckets: createAgedBucketMap(),
+    invoiceNumbers: new Set(),
+    projectionCount: 0,
+    totalUnpaid: 0,
+  };
+}
+
+function addAgedReceivableDetail(row, bucketKey, detail) {
+  const bucket = row.buckets[bucketKey];
+  bucket.amount += detail.remainingAmount;
+  bucket.projectionCount += 1;
+  bucket.invoiceNumbers.add(detail.invoiceNumber);
+  bucket.details.push(detail);
+
+  row.invoiceNumbers.add(detail.invoiceNumber);
+  row.projectionCount += 1;
+  row.totalUnpaid += detail.remainingAmount;
+}
+
+function buildProjectionReceivableDetails(invoice, asOfDate) {
+  const payments = invoice.payments || [];
+  const paymentsUntilAsOf = payments.filter((payment) => {
+    const paymentDate = new Date(payment.paymentDate);
+    return !Number.isNaN(paymentDate.getTime()) && paymentDate <= asOfDate;
+  });
+  const projections = (invoice.projections || []).length
+    ? invoice.projections
+    : [
+        {
+          _id: `invoice-${invoice._id}`,
+          description: "Invoice Due",
+          estimateDate: invoice.dueDate,
+          amount: invoice.total || invoice.amountDue || 0,
+          synthetic: true,
+        },
+      ];
+
+  return projections
+    .map((projection, index) => {
+      const projectionIndex = index + 1;
+      const dueDate = projection.estimateDate || invoice.dueDate;
+      const due = new Date(dueDate);
+      const projectionAmount = roundMoney(projection.amount);
+      if (Number.isNaN(due.getTime()) || projectionAmount <= 0) return null;
+
+      const paidAmount = roundMoney(
+        paymentsUntilAsOf
+          .filter((payment) =>
+            projection.synthetic
+              ? !payment.projectionId && !payment.projectionIndex
+              : paymentMatchesProjection(payment, projection, projectionIndex),
+          )
+          .reduce((sum, payment) => sum + roundMoney(payment.amount), 0),
+      );
+      const remainingAmount = roundMoney(Math.max(projectionAmount - paidAmount, 0));
+      if (remainingAmount <= 0.009) return null;
+
+      const daysOverdue = dateDiffDays(asOfDate, due);
+      const bucket = getAgedReceivableBucket(daysOverdue);
+
+      return {
+        invoiceId: toIdString(invoice._id),
+        invoiceNumber: invoice.invoiceNumber,
+        projectionId: toIdString(projection._id),
+        projectionIndex,
+        projectionDescription: projection.description || `Cicilan ${projectionIndex}`,
+        dueDate: formatYmd(due),
+        daysOverdue,
+        bucketKey: bucket.key,
+        bucketLabel: bucket.label,
+        amount: projectionAmount,
+        paidAmount,
+        remainingAmount,
+        currency: invoice.currency || "IDR",
+        customerName: invoice.customerSnapshot?.name || "-",
+        customerCode: invoice.customerSnapshot?.uuid || "",
+        status: daysOverdue > 0 ? "Overdue" : "Not Yet Due",
+      };
+    })
+    .filter(Boolean);
+}
+
+function countUnassignedPaymentsUntilAsOf(invoice, asOfDate) {
+  if (!(invoice.projections || []).length) return 0;
+  return (invoice.payments || [])
+    .filter((payment) => {
+      if (payment.projectionId || payment.projectionIndex) return false;
+      const paymentDate = new Date(payment.paymentDate);
+      return !Number.isNaN(paymentDate.getTime()) && paymentDate <= asOfDate;
+    })
+    .reduce((sum, payment) => sum + roundMoney(payment.amount), 0);
+}
+
+async function buildAgedReceivablesPayload(options = {}) {
+  const todayText = formatYmd(new Date());
+  const asOfText = options.asOf || options.as_of || todayText;
+  const asOfDate = endOfDay(parseDateInput(asOfText, todayText));
+  const rowsByCustomer = new Map();
+  let legacyUnassignedPaid = 0;
+
+  const invoices = await Invoice.find({
+    status: { $ne: "draft" },
+  })
+    .select("invoiceNumber memberId customerSnapshot issuedDate dueDate currency status total amountDue projections payments")
+    .sort({ "customerSnapshot.name": 1, invoiceNumber: 1 })
+    .lean();
+
+  for (const invoice of invoices) {
+    legacyUnassignedPaid += countUnassignedPaymentsUntilAsOf(invoice, asOfDate);
+    const details = buildProjectionReceivableDetails(invoice, asOfDate);
+    if (!details.length) continue;
+
+    const rowKey =
+      toIdString(invoice.memberId) ||
+      invoice.customerSnapshot?.uuid ||
+      invoice.customerSnapshot?.name ||
+      invoice.invoiceNumber;
+    if (!rowsByCustomer.has(rowKey)) {
+      rowsByCustomer.set(rowKey, createAgedReceivableCustomerRow(invoice));
+    }
+
+    const row = rowsByCustomer.get(rowKey);
+    for (const detail of details) {
+      addAgedReceivableDetail(row, detail.bucketKey, detail);
+    }
+  }
+
+  const totals = {
+    totalUnpaid: 0,
+    invoiceCount: 0,
+    projectionCount: 0,
+    buckets: createAgedBucketMap(),
+    legacyUnassignedPaid: roundMoney(legacyUnassignedPaid),
+  };
+
+  const rows = Array.from(rowsByCustomer.values())
+    .map((row) => {
+      const buckets = {};
+      for (const bucketConfig of AGED_RECEIVABLE_BUCKETS) {
+        const sourceBucket = row.buckets[bucketConfig.key];
+        buckets[bucketConfig.key] = serializeAgedBucket(sourceBucket);
+
+        totals.buckets[bucketConfig.key].amount += sourceBucket.amount;
+        totals.buckets[bucketConfig.key].projectionCount += sourceBucket.projectionCount;
+        for (const invoiceNumber of sourceBucket.invoiceNumbers) {
+          totals.buckets[bucketConfig.key].invoiceNumbers.add(invoiceNumber);
+        }
+      }
+
+      totals.totalUnpaid += row.totalUnpaid;
+      totals.projectionCount += row.projectionCount;
+
+      return {
+        customerId: row.customerId,
+        customerName: row.customerName,
+        customerCode: row.customerCode,
+        customerEmail: row.customerEmail,
+        customerPhone: row.customerPhone,
+        buckets,
+        invoiceCount: row.invoiceNumbers.size,
+        projectionCount: row.projectionCount,
+        totalUnpaid: roundMoney(row.totalUnpaid),
+        overdueAmount: roundMoney(
+          AGED_RECEIVABLE_BUCKETS
+            .filter((bucket) => bucket.key !== "notYetDue")
+            .reduce((sum, bucket) => sum + (row.buckets[bucket.key]?.amount || 0), 0),
+        ),
+      };
+    })
+    .sort((a, b) => {
+      const delta = b.totalUnpaid - a.totalUnpaid;
+      if (Math.abs(delta) > 0.01) return delta;
+      return a.customerName.localeCompare(b.customerName);
+    });
+
+  const invoiceNumbers = new Set();
+  for (const row of rows) {
+    for (const bucketConfig of AGED_RECEIVABLE_BUCKETS) {
+      for (const detail of row.buckets[bucketConfig.key].details) {
+        invoiceNumbers.add(detail.invoiceNumber);
+      }
+    }
+  }
+  totals.invoiceCount = invoiceNumbers.size;
+
+  const serializedTotals = {
+    totalUnpaid: roundMoney(totals.totalUnpaid),
+    invoiceCount: totals.invoiceCount,
+    projectionCount: totals.projectionCount,
+    legacyUnassignedPaid: totals.legacyUnassignedPaid,
+    buckets: {},
+  };
+  for (const bucketConfig of AGED_RECEIVABLE_BUCKETS) {
+    serializedTotals.buckets[bucketConfig.key] = serializeAgedBucket(
+      totals.buckets[bucketConfig.key],
+    );
+  }
+
+  return {
+    title: "Aged Receivables",
+    asOf: formatYmd(asOfDate),
+    generatedAt: new Date().toISOString(),
+    buckets: AGED_RECEIVABLE_BUCKETS,
+    rows,
+    totals: serializedTotals,
+  };
 }
 
 function computeBalanceSigned(masterName, transactionType, amount) {
@@ -1391,6 +1722,15 @@ export const exportAccountTransactionsCsv = async (req, res) => {
     const payload = await buildAccountTransactionsPayload(req.query || {});
     const filename = `account_transactions_${formatYmd(new Date())}.csv`;
     sendCsv(res, filename, buildAccountTransactionsCsvRows(payload));
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getAgedReceivables = async (req, res) => {
+  try {
+    const payload = await buildAgedReceivablesPayload(req.query || {});
+    res.status(200).json({ success: true, data: payload });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

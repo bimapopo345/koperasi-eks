@@ -106,6 +106,10 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
           path: "/reports/balance-sheet",
         },
         {
+          title: "Ages Receivable",
+          path: "/reports/aged-receivables",
+        },
+        {
           title: "Account Transactions",
           path: "/reports/account-transactions",
         },

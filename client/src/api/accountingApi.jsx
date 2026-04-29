@@ -177,6 +177,11 @@ export const exportAccountTransactionsCsv = async (params = {}) => {
   return res;
 };
 
+export const getAgedReceivablesReport = async (params = {}) => {
+  const res = await api.get("/reports/aged-receivables", { params });
+  return res.data;
+};
+
 // ========================
 // Expenses
 // ========================
