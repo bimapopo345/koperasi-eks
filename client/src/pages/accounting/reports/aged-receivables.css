@@ -1,6 +1,6 @@
 .ar-page {
   min-height: 100%;
-  padding: 32px;
+  padding: 20px 24px 28px;
   color: #111827;
   background:
     radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 34rem),
@@ -11,14 +11,14 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 24px;
-  margin-bottom: 28px;
+  gap: 18px;
+  margin-bottom: 18px;
 }
 
 .ar-eyebrow {
-  margin: 0 0 6px;
+  margin: 0 0 4px;
   color: #2563eb;
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -27,18 +27,18 @@
 .ar-header h1 {
   margin: 0;
   color: #111827;
-  font-size: clamp(36px, 5vw, 64px);
+  font-size: clamp(30px, 3.2vw, 42px);
   font-weight: 900;
   letter-spacing: -0.05em;
   line-height: 0.95;
 }
 
 .ar-subtitle {
-  max-width: 760px;
-  margin: 16px 0 0;
+  max-width: 720px;
+  margin: 10px 0 0;
   color: #475569;
-  font-size: 16px;
-  line-height: 1.6;
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .ar-export-wrap {
@@ -49,15 +49,15 @@
 .ar-export-button {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
-  min-width: 190px;
+  gap: 8px;
+  min-width: 132px;
   justify-content: center;
   border: 2px solid #244cff;
   border-radius: 999px;
-  padding: 16px 26px;
+  padding: 10px 18px;
   background: #ffffff;
   color: #244cff;
-  font-size: 24px;
+  font-size: 16px;
   font-weight: 900;
   cursor: pointer;
   transition: transform 160ms ease, box-shadow 160ms ease;
@@ -75,13 +75,13 @@
 
 .ar-export-menu {
   position: absolute;
-  top: calc(100% + 10px);
+  top: calc(100% + 8px);
   right: 0;
   z-index: 10;
-  width: 190px;
+  width: 160px;
   overflow: hidden;
   border: 1px solid #dbeafe;
-  border-radius: 18px;
+  border-radius: 11px;
   background: #ffffff;
   box-shadow: 0 20px 45px rgba(15, 23, 42, 0.16);
 }
@@ -90,10 +90,10 @@
   display: block;
   width: 100%;
   border: 0;
-  padding: 14px 18px;
+  padding: 11px 14px;
   background: transparent;
   color: #1e293b;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 800;
   text-align: left;
   cursor: pointer;
@@ -106,30 +106,30 @@
 
 .ar-filter-card {
   display: grid;
-  grid-template-columns: auto minmax(180px, 300px) 1fr;
+  grid-template-columns: auto minmax(160px, 230px) 1fr;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 30px;
-  border-radius: 16px;
-  padding: 36px 32px;
+  gap: 12px;
+  margin-bottom: 18px;
+  border-radius: 14px;
+  padding: 18px 20px;
   background: #edf1f5;
 }
 
 .ar-filter-card label {
   color: #1f2937;
-  font-size: 28px;
-  font-weight: 500;
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .ar-filter-card input {
-  height: 56px;
+  height: 42px;
   border: 2px solid #bfdbfe;
-  border-radius: 14px;
-  padding: 0 18px;
+  border-radius: 11px;
+  padding: 0 12px;
   background: #ffffff;
   color: #1f2937;
-  font-size: 26px;
-  font-weight: 500;
+  font-size: 17px;
+  font-weight: 700;
   outline: none;
 }
 
@@ -142,13 +142,13 @@
   justify-self: end;
   border: 0;
   border-radius: 999px;
-  padding: 18px 34px;
+  padding: 12px 22px;
   background: #244cff;
   color: #ffffff;
-  font-size: 26px;
+  font-size: 16px;
   font-weight: 900;
   cursor: pointer;
-  box-shadow: 0 18px 40px rgba(36, 76, 255, 0.18);
+  box-shadow: 0 12px 26px rgba(36, 76, 255, 0.16);
 }
 
 .ar-filter-card button:disabled {
@@ -157,34 +157,35 @@
 }
 
 .ar-warning {
-  margin: -8px 0 24px;
+  margin: 0 0 14px;
   border: 1px solid #fed7aa;
-  border-radius: 16px;
-  padding: 14px 18px;
+  border-radius: 12px;
+  padding: 10px 14px;
   background: #fff7ed;
   color: #9a3412;
+  font-size: 13px;
   font-weight: 700;
 }
 
 .ar-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 26px;
+  gap: 10px;
+  margin-bottom: 18px;
 }
 
 .ar-summary-card {
   border: 1px solid #e2e8f0;
-  border-radius: 20px;
-  padding: 20px;
+  border-radius: 14px;
+  padding: 14px 16px;
   background: rgba(255, 255, 255, 0.86);
-  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+  box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
 }
 
 .ar-summary-card span {
   display: block;
   color: #64748b;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -192,9 +193,9 @@
 
 .ar-summary-card strong {
   display: block;
-  margin-top: 8px;
+  margin-top: 6px;
   color: #0f172a;
-  font-size: 24px;
+  font-size: 18px;
   font-weight: 900;
 }
 
@@ -208,53 +209,53 @@
 }
 
 .ar-table-card {
-  border-radius: 22px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.92);
-  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
 }
 
 .ar-table-caption {
-  padding: 28px 32px 8px;
+  padding: 20px 24px 6px;
   color: #111827;
-  font-size: 28px;
+  font-size: 20px;
   font-weight: 900;
   text-align: center;
 }
 
 .ar-table-scroll {
   overflow-x: auto;
-  padding: 0 0 18px;
+  padding: 0 0 12px;
 }
 
 .ar-table {
   width: 100%;
-  min-width: 1160px;
+  min-width: 1060px;
   border-collapse: collapse;
 }
 
 .ar-table th,
 .ar-table td {
   border-bottom: 1px solid #d7dee7;
-  padding: 24px 18px;
+  padding: 14px 14px;
   vertical-align: middle;
 }
 
 .ar-table th {
   color: #111827;
-  font-size: 19px;
+  font-size: 14px;
   font-weight: 900;
   text-align: right;
 }
 
 .ar-table td {
   color: #1f2937;
-  font-size: 16px;
+  font-size: 13px;
   text-align: right;
 }
 
 .ar-table .ar-customer-head,
 .ar-table .ar-customer-cell {
-  width: 260px;
+  width: 210px;
   text-align: left;
 }
 
@@ -286,7 +287,7 @@
 .ar-total-row strong {
   display: block;
   color: #111827;
-  font-size: 18px;
+  font-size: 14px;
   font-weight: 900;
 }
 
@@ -296,9 +297,9 @@
 .ar-total-cell span,
 .ar-total-row span {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   color: #64748b;
-  font-size: 14px;
+  font-size: 11px;
   font-weight: 700;
 }
 
@@ -308,7 +309,7 @@
 }
 
 .ar-total-cell {
-  min-width: 180px;
+  min-width: 150px;
 }
 
 .ar-total-row td {
@@ -319,34 +320,34 @@
 }
 
 .ar-state-cell {
-  padding: 42px !important;
+  padding: 28px !important;
   color: #64748b !important;
   font-weight: 800;
   text-align: center !important;
 }
 
 .ar-detail-panel {
-  margin-top: 24px;
+  margin-top: 18px;
   border: 1px solid #dbeafe;
-  border-radius: 22px;
+  border-radius: 16px;
   background: #ffffff;
-  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.06);
 }
 
 .ar-detail-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
   border-bottom: 1px solid #e2e8f0;
-  padding: 20px 24px;
+  padding: 14px 18px;
 }
 
 .ar-detail-header span,
 .ar-detail-item span {
   display: block;
   color: #64748b;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 900;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -357,14 +358,14 @@
   display: block;
   margin-top: 5px;
   color: #111827;
-  font-size: 16px;
+  font-size: 13px;
   font-weight: 900;
 }
 
 .ar-detail-header button {
   border: 0;
   border-radius: 999px;
-  padding: 10px 18px;
+  padding: 8px 14px;
   background: #eff6ff;
   color: #1d4ed8;
   font-weight: 900;
@@ -373,18 +374,18 @@
 
 .ar-detail-list {
   display: grid;
-  gap: 10px;
-  padding: 18px;
+  gap: 8px;
+  padding: 14px;
 }
 
 .ar-detail-item {
   display: grid;
   grid-template-columns: 1.5fr repeat(3, minmax(120px, 0.7fr));
-  gap: 18px;
+  gap: 12px;
   align-items: center;
   border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 16px;
+  border-radius: 12px;
+  padding: 12px;
   background: #f8fafc;
 }
 
