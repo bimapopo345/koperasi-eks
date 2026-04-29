@@ -19,11 +19,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
       path: "/simpanan",
     },
     {
-      title: "Pinjaman",
-      icon: "💳",
-      path: "/pinjaman",
-    },
-    {
       title: "Donasi",
       icon: "🎁",
       path: "/donasi",
@@ -41,17 +36,24 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
     {
       title: "Invoice",
       icon: "🧾",
-      path: "/invoice",
-    },
-    {
-      title: "Product Invoice",
-      icon: "📦",
-      path: "/invoice-products",
-    },
-    {
-      title: "Term of Services",
-      icon: "📄",
-      path: "/tos",
+      children: [
+        {
+          title: "Pinjaman",
+          path: "/pinjaman",
+        },
+        {
+          title: "Invoice",
+          path: "/invoice",
+        },
+        {
+          title: "Invoice Product",
+          path: "/invoice-products",
+        },
+        {
+          title: "Tos",
+          path: "/tos",
+        },
+      ],
     },
     {
       title: "Master Data",
@@ -68,6 +70,28 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
         {
           title: "Produk Pinjaman",
           path: "/master/loan-products",
+        },
+      ],
+    },
+    {
+      title: "Expenses",
+      icon: "💸",
+      children: [
+        {
+          title: "Expenses Management",
+          path: "/expense/admin",
+        },
+        {
+          title: "Create Expenses",
+          path: "/expense/new",
+        },
+        {
+          title: "Report",
+          path: "/expense/report",
+        },
+        {
+          title: "Export Transactions",
+          path: "/finance/export",
         },
       ],
     },
@@ -112,28 +136,6 @@ const Sidebar = ({ sidebarOpen, setSidebarOpen }) => {
         {
           title: "Account Transactions",
           path: "/reports/account-transactions",
-        },
-      ],
-    },
-    {
-      title: "Expenses",
-      icon: "💸",
-      children: [
-        {
-          title: "Expenses Management",
-          path: "/expense/admin",
-        },
-        {
-          title: "Create Expenses",
-          path: "/expense/new",
-        },
-        {
-          title: "Report",
-          path: "/expense/report",
-        },
-        {
-          title: "Export Transactions",
-          path: "/finance/export",
         },
       ],
     },
