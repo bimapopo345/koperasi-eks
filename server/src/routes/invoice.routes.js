@@ -10,6 +10,7 @@ import {
   getAllInvoices,
   getInvoiceByNumber,
   getInvoiceMeta,
+  updateInvoicePayment,
   updateInvoice,
   validateInvoiceNumber,
 } from "../controllers/admin/invoice.controller.js";
@@ -63,6 +64,11 @@ router.post(
   "/:invoiceNumber/payments",
   uploadPaymentAttachment,
   addInvoicePayment,
+);
+router.put(
+  "/:invoiceNumber/payments/:paymentId",
+  uploadPaymentAttachment,
+  updateInvoicePayment,
 );
 router.delete("/:invoiceNumber/payments/:paymentId", deleteInvoicePayment);
 

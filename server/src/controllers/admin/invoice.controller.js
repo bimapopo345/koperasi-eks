@@ -654,7 +654,12 @@ function getPaymentBodyValue(body, keys) {
   return undefined;
 }
 
-function resolveInvoiceProjectionForPayment(invoice, body, amount) {
+function resolveInvoiceProjectionForPayment(
+  invoice,
+  body,
+  amount,
+  excludePaymentId = null,
+) {
   const projections = invoice?.projections || [];
   if (!projections.length) return null;
 
@@ -693,6 +698,10 @@ function resolveInvoiceProjectionForPayment(invoice, body, amount) {
   const { projection, projectionIndex: resolvedIndex } = projectionWithIndex;
   const paidAmount = clampMoney(
     (invoice.payments || [])
+      .filter(
+        (payment) =>
+          !excludePaymentId || String(payment._id) !== String(excludePaymentId),
+      )
       .filter((payment) =>
         paymentMatchesProjection(payment, projection, resolvedIndex),
       )
@@ -719,7 +728,8 @@ function resolveInvoiceProjectionForPayment(invoice, body, amount) {
   };
 }
 
-async function normalizeInvoicePaymentInput(req, invoice) {
+async function normalizeInvoicePaymentInput(req, invoice, options = {}) {
+  const { existingPayment = null, excludePaymentId = null } = options;
   const body = req.body || {};
   const amount = clampMoney(
     getPaymentBodyValue(body, ["amount", "paymentAmount", "payment-amount"]),
@@ -741,10 +751,13 @@ async function normalizeInvoicePaymentInput(req, invoice) {
   const accountId = normalizeObjectId(
     getPaymentBodyValue(body, ["accountId", "account_id"]),
   );
-  const splitRows = normalizeSplitRows(
-    getPaymentBodyValue(body, ["splits", "split_data"]),
-  );
-  const isSplit = splitRows.length > 0;
+  const rawSplitRows = getPaymentBodyValue(body, ["splits", "split_data"]);
+  const hasSplitInput =
+    rawSplitRows !== undefined && rawSplitRows !== null && rawSplitRows !== "";
+  const splitRows = normalizeSplitRows(rawSplitRows);
+  const preserveExistingSplits =
+    !hasSplitInput && normalizeBooleanish(existingPayment?.isSplit, false);
+  const isSplit = hasSplitInput ? splitRows.length > 0 : preserveExistingSplits;
   const categoryId = isSplit
     ? null
     : normalizeObjectId(
@@ -764,6 +777,7 @@ async function normalizeInvoicePaymentInput(req, invoice) {
     invoice,
     body,
     amount,
+    excludePaymentId,
   );
   if (!accountId) {
     throw new ApiError(400, "Record Account wajib dipilih");
@@ -778,7 +792,7 @@ async function normalizeInvoicePaymentInput(req, invoice) {
     throw new ApiError(400, "Category wajib dipilih");
   }
 
-  if (isSplit) {
+  if (isSplit && !preserveExistingSplits) {
     if (splitRows.length < 2) {
       throw new ApiError(400, "Split transaction minimal 2 baris");
     }
@@ -808,19 +822,19 @@ async function normalizeInvoicePaymentInput(req, invoice) {
       projectionDueDate: projectionMarker?.projectionDueDate || null,
       isSplit,
       senderName,
-      attachment: uploadedAttachment?.filename || "",
-      attachmentOriginalName: uploadedAttachment?.originalname || "",
+      attachment: uploadedAttachment?.filename || existingPayment?.attachment || "",
+      attachmentOriginalName:
+        uploadedAttachment?.originalname ||
+        existingPayment?.attachmentOriginalName ||
+        "",
     },
     splitRows,
+    preserveExistingSplits,
     uploadedAttachment,
   };
 }
 
-async function createAccountingTransactionFromPayment(
-  invoice,
-  payment,
-  splitRows,
-) {
+function buildAccountingTransactionPayload(invoice, payment) {
   const customerName = invoice.customerSnapshot?.name || "Customer";
   const projectionLabel = payment.projectionIndex
     ? `Cicilan ${payment.projectionIndex}`
@@ -834,7 +848,7 @@ async function createAccountingTransactionFromPayment(
     .filter(Boolean)
     .join(" - ");
 
-  const transaction = await AccountingTransaction.create({
+  return {
     transactionDate: payment.paymentDate,
     description,
     accountId: payment.accountId,
@@ -853,6 +867,16 @@ async function createAccountingTransactionFromPayment(
     receiptFile: payment.attachment || null,
     isSplit: payment.isSplit,
     senderName: payment.senderName,
+  };
+}
+
+async function createAccountingTransactionFromPayment(
+  invoice,
+  payment,
+  splitRows,
+) {
+  const transaction = await AccountingTransaction.create({
+    ...buildAccountingTransactionPayload(invoice, payment),
   });
 
   if (payment.isSplit) {
@@ -868,6 +892,61 @@ async function createAccountingTransactionFromPayment(
   }
 
   await updateAccountBalance(payment.accountId, payment.amount, "Deposit");
+  return transaction;
+}
+
+async function updateAccountingTransactionFromPayment(
+  transactionId,
+  invoice,
+  previousPayment,
+  nextPayment,
+  splitRows,
+) {
+  const normalizedTransactionId = normalizeObjectId(transactionId);
+  if (!normalizedTransactionId) {
+    return createAccountingTransactionFromPayment(invoice, nextPayment, splitRows);
+  }
+
+  const transaction = await AccountingTransaction.findById(
+    normalizedTransactionId,
+  );
+  if (!transaction) {
+    return createAccountingTransactionFromPayment(invoice, nextPayment, splitRows);
+  }
+
+  await BankReconciliationItem.deleteMany({ transactionId: transaction._id });
+  await updateAccountBalance(
+    transaction.accountId,
+    transaction.amount,
+    transaction.transactionType,
+    true,
+  );
+
+  Object.assign(transaction, buildAccountingTransactionPayload(invoice, nextPayment));
+  await transaction.save();
+
+  await TransactionSplit.deleteMany({ transactionId: transaction._id });
+  if (nextPayment.isSplit) {
+    await TransactionSplit.insertMany(
+      splitRows.map((split) => ({
+        transactionId: transaction._id,
+        amount: split.amount,
+        categoryId: split.categoryId,
+        categoryType: split.categoryType,
+        description: split.description,
+      })),
+    );
+  }
+
+  if (
+    nextPayment.attachment &&
+    previousPayment?.attachment &&
+    nextPayment.attachment !== previousPayment.attachment
+  ) {
+    removeTransactionReceiptFile(previousPayment.attachment);
+  }
+
+  await updateAccountBalance(nextPayment.accountId, nextPayment.amount, "Deposit");
   return transaction;
 }
 
@@ -1234,6 +1313,121 @@ export const addInvoicePayment = asyncHandler(async (req, res) => {
         200,
         serializeInvoice(invoice),
         "Pembayaran berhasil ditambahkan",
+      ),
+    );
+});
+
+export const updateInvoicePayment = asyncHandler(async (req, res) => {
+  const invoiceNumber = String(req.params.invoiceNumber || "")
+    .trim()
+    .toUpperCase();
+  const paymentId = String(req.params.paymentId || "").trim();
+  const invoice = await Invoice.findOne({ invoiceNumber });
+
+  if (!invoice) {
+    throw new ApiError(404, "Invoice tidak ditemukan");
+  }
+
+  if (invoice.status === "draft") {
+    throw new ApiError(
+      400,
+      "Approve draft invoice dulu sebelum edit payment",
+    );
+  }
+
+  const existingPaymentDoc = (invoice.payments || []).find(
+    (payment) => String(payment._id) === paymentId,
+  );
+  if (!existingPaymentDoc) {
+    throw new ApiError(404, "Pembayaran tidak ditemukan");
+  }
+
+  const existingPayment =
+    typeof existingPaymentDoc.toObject === "function"
+      ? existingPaymentDoc.toObject()
+      : existingPaymentDoc;
+
+  let uploadedAttachment = null;
+  let accountingTransactionUpdated = false;
+  try {
+    const normalized = await normalizeInvoicePaymentInput(req, invoice, {
+      existingPayment,
+      excludePaymentId: paymentId,
+    });
+    uploadedAttachment = normalized.uploadedAttachment;
+
+    let splitRows = normalized.splitRows;
+    if (normalized.preserveExistingSplits) {
+      const existingSplits = existingPayment.transactionId
+        ? await TransactionSplit.find({
+            transactionId: existingPayment.transactionId,
+          }).lean()
+        : [];
+      splitRows = existingSplits.map((split) => ({
+        amount: clampMoney(split.amount),
+        categoryId: split.categoryId,
+        categoryType: split.categoryType,
+        description: split.description,
+      }));
+
+      const totalSplit = clampMoney(
+        splitRows.reduce((sum, split) => sum + clampMoney(split.amount), 0),
+      );
+      if (splitRows.length < 2 || Math.abs(totalSplit - normalized.payment.amount) > 0.01) {
+        throw new ApiError(
+          400,
+          "Payment split lama tidak balance. Edit ulang split transaction dari transaksi terkait.",
+        );
+      }
+    }
+
+    const payment = {
+      ...normalized.payment,
+      _id: existingPayment._id,
+      transactionId: existingPayment.transactionId || null,
+    };
+
+    const updatedTransaction = await updateAccountingTransactionFromPayment(
+      existingPayment.transactionId,
+      invoice,
+      existingPayment,
+      payment,
+      splitRows,
+    );
+    accountingTransactionUpdated = true;
+    payment.transactionId = updatedTransaction?._id || null;
+
+    const nextPayments = (invoice.payments || []).map((item) =>
+      String(item._id) === paymentId ? payment : item,
+    );
+    const rebuilt = await buildInvoicePayload(
+      {
+        ...invoice.toObject(),
+        payments: nextPayments,
+      },
+      { currentInvoice: invoice },
+    );
+
+    Object.assign(invoice, {
+      ...rebuilt,
+      payments: normalizePayments(nextPayments),
+      updatedBy: req.user?.userId || null,
+    });
+    await invoice.save();
+  } catch (error) {
+    if (uploadedAttachment?.filename && !accountingTransactionUpdated) {
+      removeTransactionReceiptFile(uploadedAttachment.filename);
+    }
+    throw error;
+  }
+
+  res
+    .status(200)
+    .json(
+      new ApiResponse(
+        200,
+        serializeInvoice(invoice),
+        "Pembayaran berhasil diperbarui",
       ),
     );
 });

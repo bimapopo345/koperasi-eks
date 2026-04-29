@@ -8,6 +8,7 @@ import {
   deleteInvoicePayment,
   getInvoice,
   getPublicInvoice,
+  updateInvoicePayment,
 } from "../../api/invoiceApi.jsx";
 import {
   getAllCategories,
@@ -53,6 +54,13 @@ const formatPaymentDate = (value) => {
     day: "2-digit",
     year: "numeric",
   });
+};
+
+const toDateInputValue = (value) => {
+  if (!value) return new Date().toISOString().slice(0, 10);
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return new Date().toISOString().slice(0, 10);
+  return date.toISOString().slice(0, 10);
 };
 
 const formatJapaneseDate = (value) => {
@@ -253,6 +261,7 @@ export default function InvoiceDetail({
   const [activeDetailTab, setActiveDetailTab] = useState(initialDetailTab);
   const [showActionMenu, setShowActionMenu] = useState(false);
   const [addingPayment, setAddingPayment] = useState(false);
+  const [editingPaymentId, setEditingPaymentId] = useState("");
   const [approvingDraft, setApprovingDraft] = useState(false);
   const [assetsAccounts, setAssetsAccounts] = useState({});
   const [categories, setCategories] = useState([]);
@@ -409,33 +418,64 @@ export default function InvoiceDetail({
     [categories],
   );
 
+  const outstandingProjections = useMemo(
+    () =>
+      (invoice?.projections || []).filter(
+        (projection) =>
+          Number(projection.remainingAmount ?? projection.amount) > 0,
+      ),
+    [invoice],
+  );
+
+  const suggestedPaymentProjection = useMemo(() => {
+    if (!outstandingProjections.length) return null;
+
+    return [...outstandingProjections].sort((a, b) => {
+      const aPartial = String(a.status || "").toLowerCase() === "partial";
+      const bPartial = String(b.status || "").toLowerCase() === "partial";
+      if (aPartial !== bPartial) return aPartial ? -1 : 1;
+
+      const agingDiff = Number(b.agingDays || 0) - Number(a.agingDays || 0);
+      if (agingDiff !== 0) return agingDiff;
+
+      return new Date(a.estimateDate) - new Date(b.estimateDate);
+    })[0];
+  }, [outstandingProjections]);
+
   const projectionOptions = useMemo(
     () =>
-      (invoice?.projections || [])
-        .filter((projection) => Number(projection.remainingAmount ?? projection.amount) > 0)
-        .map((projection, index) => {
-          const projectionIndex = projection.projectionIndex || index + 1;
-          return {
-            value: projection._id,
-            label: `Cicilan ${projectionIndex} - ${projection.description || "Projection"}`,
-            meta: [
-              `Due ${formatDate(projection.estimateDate)}`,
-              `Sisa ${formatMoney(
-                projection.remainingAmount ?? projection.amount,
-                invoice?.currency,
-              )}`,
-            ].join(" | "),
-            search: [
-              projectionIndex,
-              projection.description,
-              projection.status,
-              projection.amount,
-            ]
-              .filter(Boolean)
-              .join(" "),
-          };
-        }),
-    [invoice],
+      outstandingProjections.map((projection, index) => {
+        const projectionIndex = projection.projectionIndex || index + 1;
+        const isSuggested =
+          suggestedPaymentProjection &&
+          String(suggestedPaymentProjection._id) === String(projection._id);
+        return {
+          value: projection._id,
+          label: `${isSuggested ? "Suggested - " : ""}Cicilan ${projectionIndex} - ${
+            projection.description || "Projection"
+          }`,
+          meta: [
+            isSuggested ? "Rekomendasi pembayaran berikutnya" : "",
+            `Due ${formatDate(projection.estimateDate)}`,
+            `Sisa ${formatMoney(
+              projection.remainingAmount ?? projection.amount,
+              invoice?.currency,
+            )}`,
+          ]
+            .filter(Boolean)
+            .join(" | "),
+          search: [
+            isSuggested ? "suggested rekomendasi" : "",
+            projectionIndex,
+            projection.description,
+            projection.status,
+            projection.amount,
+          ]
+            .filter(Boolean)
+            .join(" "),
+        };
+      }),
+    [invoice, outstandingProjections, suggestedPaymentProjection],
   );
 
   const selectedAccount = useMemo(
@@ -456,6 +496,13 @@ export default function InvoiceDetail({
 
   const invoiceIsDraft = invoice?.status === "draft";
   const paymentRecords = invoice?.payments || [];
+  const currentEditingPayment = useMemo(
+    () =>
+      paymentRecords.find(
+        (payment) => String(payment._id) === String(editingPaymentId),
+      ),
+    [editingPaymentId, paymentRecords],
+  );
   const legacyPaymentRecords = useMemo(
     () =>
       paymentRecords.filter(
@@ -466,6 +513,35 @@ export default function InvoiceDetail({
   const paymentCurrencyPrefix =
     selectedAccount?.currency || invoice?.currency || "Rp";
   const paymentAmount = Number(paymentForm.amount || 0);
+  const selectedProjectionEditableRemaining = useMemo(() => {
+    if (!selectedPaymentProjection) return 0;
+    let remaining = Number(
+      selectedPaymentProjection.remainingAmount ??
+        selectedPaymentProjection.amount ??
+        0,
+    );
+    const editingMatchesProjection =
+      currentEditingPayment &&
+      (String(currentEditingPayment.projectionId || "") ===
+        String(selectedPaymentProjection._id || "") ||
+        (Number(currentEditingPayment.projectionIndex || 0) > 0 &&
+          Number(currentEditingPayment.projectionIndex) ===
+            Number(
+              selectedPaymentProjection.projectionIndex ||
+                (invoice?.projections || []).findIndex(
+                  (projection) =>
+                    String(projection._id) ===
+                    String(selectedPaymentProjection._id),
+                ) +
+                  1,
+            )));
+
+    if (editingMatchesProjection) {
+      remaining += Number(currentEditingPayment.amount || 0);
+    }
+
+    return remaining;
+  }, [currentEditingPayment, invoice, selectedPaymentProjection]);
   const splitUsedAmount = paymentSplits.reduce(
     (sum, split) => sum + Number(split.amount || 0),
     0,
@@ -488,6 +564,7 @@ export default function InvoiceDetail({
     setPaymentSplits([]);
     setPaymentAttachment(null);
     setPaymentSplitMode(false);
+    setEditingPaymentId("");
   };
 
   const switchDetailTab = (tabName) => {
@@ -555,18 +632,49 @@ export default function InvoiceDetail({
       return;
     }
 
+    const targetProjection = projection || suggestedPaymentProjection;
+
     setPaymentForm({
       paymentDate: new Date().toISOString().slice(0, 10),
       accountId: "",
       categoryId: "",
       categoryType: "",
-      ...buildProjectionPaymentPatch(projection),
+      ...buildProjectionPaymentPatch(targetProjection),
       method: "Bank",
       senderName: "",
     });
     setPaymentSplits([]);
     setPaymentAttachment(null);
     setPaymentSplitMode(false);
+    setEditingPaymentId("");
+    setAddingPayment(true);
+    switchDetailTab("payment");
+  };
+
+  const startEditPayment = (payment) => {
+    if (invoiceIsDraft) {
+      toast.error("Invoice masih draft. Approve draft dulu sebelum edit payment");
+      return;
+    }
+
+    setPaymentForm({
+      paymentDate: toDateInputValue(payment.paymentDate),
+      amount: String(payment.amount || ""),
+      accountId: payment.accountId || "",
+      categoryId: payment.categoryId || "",
+      categoryType: payment.categoryType || "",
+      projectionId: payment.projectionId || "",
+      projectionIndex: payment.projectionIndex
+        ? String(payment.projectionIndex)
+        : "",
+      method: payment.method || "Bank",
+      senderName: payment.senderName || "",
+      notes: payment.notes || "",
+    });
+    setPaymentSplits([]);
+    setPaymentAttachment(null);
+    setPaymentSplitMode(false);
+    setEditingPaymentId(payment._id || "");
     setAddingPayment(true);
     switchDetailTab("payment");
   };
@@ -576,10 +684,21 @@ export default function InvoiceDetail({
       (item) => String(item._id) === String(projectionId),
     );
 
-    setPaymentForm((prev) => ({
-      ...prev,
-      ...buildProjectionPaymentPatch(projection || null),
-    }));
+    setPaymentForm((prev) => {
+      const patch = buildProjectionPaymentPatch(projection || null);
+      if (editingPaymentId) {
+        return {
+          ...prev,
+          projectionId: patch.projectionId,
+          projectionIndex: patch.projectionIndex,
+          notes: prev.notes || patch.notes,
+        };
+      }
+      return {
+        ...prev,
+        ...patch,
+      };
+    });
   };
 
   const getProjectionAgingLabel = (projection) => {
@@ -591,6 +710,17 @@ export default function InvoiceDetail({
       }
     }
     return formatAgingDays(projection.agingDays, "Tepat waktu");
+  };
+
+  const getProjectionSuggestionReason = (projection) => {
+    if (!projection) return "";
+    if (String(projection.status || "").toLowerCase() === "partial") {
+      return "Lanjutkan cicilan partial yang masih ada sisa";
+    }
+    if (Number(projection.agingDays || 0) > 0) {
+      return "Prioritas karena sudah lewat jatuh tempo";
+    }
+    return "Cicilan terdekat yang masih belum lunas";
   };
 
   const selectPaymentCategory = (value) => {
@@ -769,18 +899,11 @@ export default function InvoiceDetail({
     }
     if (
       selectedPaymentProjection &&
-      amount >
-        Number(
-          selectedPaymentProjection.remainingAmount ??
-            selectedPaymentProjection.amount ??
-            0,
-        ) +
-          0.01
+      amount > selectedProjectionEditableRemaining + 0.01
     ) {
       toast.error(
         `Amount melebihi sisa cicilan. Sisa: ${formatMoney(
-          selectedPaymentProjection.remainingAmount ??
-            selectedPaymentProjection.amount,
+          selectedProjectionEditableRemaining,
           invoice.currency,
         )}`,
       );
@@ -815,7 +938,10 @@ export default function InvoiceDetail({
         );
         return;
       }
-    } else if (!paymentForm.categoryId || !paymentForm.categoryType) {
+    } else if (
+      !(editingPaymentId && currentEditingPayment?.isSplit) &&
+      (!paymentForm.categoryId || !paymentForm.categoryType)
+    ) {
       toast.error("Category wajib dipilih");
       return;
     }
@@ -844,7 +970,7 @@ export default function InvoiceDetail({
             })),
           ),
         );
-      } else {
+      } else if (!(editingPaymentId && currentEditingPayment?.isSplit)) {
         payload.append("categoryId", paymentForm.categoryId);
         payload.append("categoryType", paymentForm.categoryType);
       }
@@ -853,10 +979,12 @@ export default function InvoiceDetail({
         payload.append("proofAttachment", paymentAttachment);
       }
 
-      const res = await addInvoicePayment(invoiceNumber, payload);
+      const res = editingPaymentId
+        ? await updateInvoicePayment(invoiceNumber, editingPaymentId, payload)
+        : await addInvoicePayment(invoiceNumber, payload);
       if (!res?.success)
-        throw new Error(res?.message || "Failed to add payment");
-      toast.success("Payment added");
+        throw new Error(res?.message || "Failed to save payment");
+      toast.success(editingPaymentId ? "Payment updated" : "Payment added");
       setInvoice(res.data);
       resetPaymentState();
       setAddingPayment(false);
@@ -931,6 +1059,41 @@ export default function InvoiceDetail({
 
   const PaymentOverviewTables = () => (
     <div className="inv-payment-overview inv-no-print">
+      {suggestedPaymentProjection && !invoiceIsDraft ? (
+        <div className="inv-payment-suggestion-card">
+          <div>
+            <span>Suggested next payment</span>
+            <strong>
+              Cicilan{" "}
+              {suggestedPaymentProjection.projectionIndex ||
+                (invoice.projections || []).findIndex(
+                  (item) =>
+                    String(item._id) ===
+                    String(suggestedPaymentProjection._id),
+                ) + 1}{" "}
+              - {suggestedPaymentProjection.description || "Projection"}
+            </strong>
+            <small>{getProjectionSuggestionReason(suggestedPaymentProjection)}</small>
+          </div>
+          <div className="inv-payment-suggestion-side">
+            <span>
+              Sisa{" "}
+              {formatMoney(
+                suggestedPaymentProjection.remainingAmount ??
+                  suggestedPaymentProjection.amount,
+                invoice.currency,
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={() => startPayment(suggestedPaymentProjection)}
+            >
+              Pay Suggested
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       <div className="inv-projection-card">
         <div className="inv-projection-head linked">
           <span>Payment Projection</span>
@@ -1133,6 +1296,7 @@ export default function InvoiceDetail({
                   <th className="right">Amount</th>
                   <th>Keterangan</th>
                   <th className="center">Attc</th>
+                  <th className="center">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -1183,6 +1347,15 @@ export default function InvoiceDetail({
                       ) : (
                         "-"
                       )}
+                    </td>
+                    <td className="center">
+                      <button
+                        type="button"
+                        className="inv-mini-print"
+                        onClick={() => startEditPayment(payment)}
+                      >
+                        Edit
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -1247,6 +1420,9 @@ export default function InvoiceDetail({
                 </strong>
               </div>
               <div className="inv-payment-record-actions">
+                <button type="button" onClick={() => startEditPayment(payment)}>
+                  Edit
+                </button>
                 <button type="button" onClick={() => handlePrint("standard")}>
                   Print
                 </button>
@@ -1859,11 +2035,16 @@ export default function InvoiceDetail({
                     aria-labelledby="invoice-payment-modal-title"
                   >
                     <div className="inv-payment-modal-head">
-                      <h2 id="invoice-payment-modal-title">Record Payment</h2>
+                      <h2 id="invoice-payment-modal-title">
+                        {editingPaymentId ? "Edit Payment" : "Record Payment"}
+                      </h2>
                       <button
                         type="button"
                         className="inv-payment-modal-close"
-                        onClick={() => setAddingPayment(false)}
+                        onClick={() => {
+                          setAddingPayment(false);
+                          resetPaymentState();
+                        }}
                         aria-label="Close payment form"
                       >
                         ×
@@ -1877,6 +2058,14 @@ export default function InvoiceDetail({
                             <label className="inv-label">
                               Untuk Cicilan/Proyeksi{" "}
                               <span className="inv-required">*</span>
+                              {selectedPaymentProjection &&
+                              suggestedPaymentProjection &&
+                              String(selectedPaymentProjection._id) ===
+                                String(suggestedPaymentProjection._id) ? (
+                                <span className="inv-suggested-label">
+                                  Suggested
+                                </span>
+                              ) : null}
                             </label>
                             <PaymentSearchSelect
                               value={paymentForm.projectionId}
@@ -1906,8 +2095,27 @@ export default function InvoiceDetail({
                                     selectedPaymentProjection.estimateDate,
                                   )}
                                 </span>
+                                {selectedPaymentProjection &&
+                                suggestedPaymentProjection &&
+                                String(selectedPaymentProjection._id) ===
+                                  String(suggestedPaymentProjection._id) ? (
+                                  <span>
+                                    {getProjectionSuggestionReason(
+                                      selectedPaymentProjection,
+                                    )}
+                                  </span>
+                                ) : null}
                               </div>
                             ) : null}
+                          </div>
+                        ) : null}
+                        {editingPaymentId && currentEditingPayment?.isSplit ? (
+                          <div className="inv-grid-12">
+                            <div className="inv-payment-edit-alert">
+                              Payment ini split transaction. Detail split lama
+                              dipertahankan saat edit ini; kalau amount diubah
+                              sampai split tidak balance, backend akan menolak.
+                            </div>
                           </div>
                         ) : null}
                         <div className="inv-grid-6">
@@ -1960,7 +2168,8 @@ export default function InvoiceDetail({
                             }
                           />
                         </div>
-                        {!paymentSplitMode ? (
+                        {!paymentSplitMode &&
+                        !(editingPaymentId && currentEditingPayment?.isSplit) ? (
                           <div className="inv-grid-12">
                             <label className="inv-label">
                               Category <span className="inv-required">*</span>
@@ -1980,13 +2189,15 @@ export default function InvoiceDetail({
                         ) : null}
                         <div className="inv-grid-12">
                           {!paymentSplitMode ? (
-                            <button
-                              type="button"
-                              className="inv-split-btn"
-                              onClick={initPaymentSplit}
-                            >
-                              Split transaction
-                            </button>
+                            editingPaymentId && currentEditingPayment?.isSplit ? null : (
+                              <button
+                                type="button"
+                                className="inv-split-btn"
+                                onClick={initPaymentSplit}
+                              >
+                                Split transaction
+                              </button>
+                            )
                           ) : (
                             <div className="inv-split-box">
                               <div className="inv-split-header">
@@ -2180,7 +2391,10 @@ export default function InvoiceDetail({
                       <button
                         type="button"
                         className="inv-btn-ghost"
-                        onClick={() => setAddingPayment(false)}
+                        onClick={() => {
+                          setAddingPayment(false);
+                          resetPaymentState();
+                        }}
                       >
                         Cancel
                       </button>

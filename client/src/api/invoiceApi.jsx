@@ -81,6 +81,20 @@ export const addInvoicePayment = async (invoiceNumber, payload) => {
   return response.data;
 };
 
+export const updateInvoicePayment = async (invoiceNumber, paymentId, payload) => {
+  const response = await api.put(
+    `/api/admin/invoices/${encodeURIComponent(invoiceNumber)}/payments/${encodeURIComponent(paymentId)}`,
+    payload,
+    {
+      headers:
+        payload instanceof FormData
+          ? { "Content-Type": "multipart/form-data" }
+          : {},
+    },
+  );
+  return response.data;
+};
+
 export const deleteInvoicePayment = async (invoiceNumber, paymentId) => {
   const response = await api.delete(
     `/api/admin/invoices/${encodeURIComponent(invoiceNumber)}/payments/${encodeURIComponent(paymentId)}`,
