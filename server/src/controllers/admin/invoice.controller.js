@@ -1179,6 +1179,79 @@ export const getPublicInvoiceByNumber = asyncHandler(async (req, res) => {
   res.status(200).json(new ApiResponse(200, serializePublicInvoice(invoice)));
 });
 
+export const getPublicMemberInvoicesByUuid = asyncHandler(async (req, res) => {
+  const uuid = normalizeString(req.params.uuid);
+
+  if (!uuid) {
+    throw new ApiError(400, "UUID anggota wajib diisi");
+  }
+
+  const member = await Member.findOne({ uuid })
+    .populate("productId", "title depositAmount returnProfit termDuration")
+    .lean();
+
+  if (!member) {
+    res.status(200).json(
+      new ApiResponse(200, {
+        status: "not_registered",
+        member: null,
+        invoices: [],
+        summary: {
+          totalInvoices: 0,
+          totalPaid: 0,
+          totalOutstanding: 0,
+          totalValue: 0,
+        },
+      }),
+    );
+    return;
+  }
+
+  const rawInvoices = await Invoice.find({
+    memberId: member._id,
+  })
+    .sort({ issuedDate: -1, createdAt: -1 })
+    .lean();
+  const invoices = rawInvoices.map((invoice) => serializePublicInvoice(invoice));
+
+  res.status(200).json(
+    new ApiResponse(200, {
+      status: member.isVerified ? "verified" : "pending_verification",
+      member: {
+        id: member._id,
+        uuid: member.uuid,
+        name: member.name,
+        email: member.email || "",
+        phone: member.phone || "",
+        isVerified: Boolean(member.isVerified),
+        registeredAt: member.createdAt,
+        product: member.productId
+          ? {
+              title: member.productId.title,
+              depositAmount: member.productId.depositAmount,
+              returnProfit: member.productId.returnProfit,
+              termDuration: member.productId.termDuration,
+            }
+          : null,
+      },
+      invoices,
+      summary: {
+        totalInvoices: invoices.length,
+        totalPaid: invoices.filter((invoice) => invoice.status === "paid").length,
+        totalOutstanding: clampMoney(
+          invoices.reduce(
+            (sum, invoice) => sum + Math.max(invoice.amountDue || 0, 0),
+            0,
+          ),
+        ),
+        totalValue: clampMoney(
+          invoices.reduce((sum, invoice) => sum + (invoice.total || 0), 0),
+        ),
+      },
+    }),
+  );
+});
+
 export const createInvoice = asyncHandler(async (req, res) => {
   const payload = await buildInvoicePayload(req.body);
 
