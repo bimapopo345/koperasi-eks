@@ -447,6 +447,67 @@ function serializeInvoice(invoiceDoc) {
   };
 }
 
+async function attachSplitRowsToSerializedInvoice(invoice) {
+  const transactionIds = new Set();
+  const collect = (payment) => {
+    if (payment?.isSplit && payment?.transactionId) {
+      transactionIds.add(String(payment.transactionId));
+    }
+  };
+
+  (invoice.payments || []).forEach(collect);
+  (invoice.projections || []).forEach((projection) => {
+    (projection.realizations || []).forEach(collect);
+  });
+
+  if (!transactionIds.size) {
+    return invoice;
+  }
+
+  const splits = await TransactionSplit.find({
+    transactionId: { $in: Array.from(transactionIds) },
+  })
+    .sort({ createdAt: 1, _id: 1 })
+    .lean();
+  const splitsByTransactionId = new Map();
+
+  splits.forEach((split) => {
+    const transactionId = String(split.transactionId);
+    if (!splitsByTransactionId.has(transactionId)) {
+      splitsByTransactionId.set(transactionId, []);
+    }
+    splitsByTransactionId.get(transactionId).push({
+      _id: split._id,
+      amount: split.amount,
+      categoryId: split.categoryId,
+      categoryType: split.categoryType || "account",
+      description: split.description || "",
+    });
+  });
+
+  const hydrate = (payment) => {
+    if (!payment) return payment;
+    return {
+      ...payment,
+      splits: payment.isSplit
+        ? splitsByTransactionId.get(String(payment.transactionId)) || []
+        : [],
+    };
+  };
+
+  invoice.payments = (invoice.payments || []).map(hydrate);
+  invoice.projections = (invoice.projections || []).map((projection) => ({
+    ...projection,
+    realizations: (projection.realizations || []).map(hydrate),
+  }));
+
+  return invoice;
+}
+
+async function serializeInvoiceWithSplits(invoiceDoc) {
+  return attachSplitRowsToSerializedInvoice(serializeInvoice(invoiceDoc));
+}
+
 function serializePublicInvoice(invoiceDoc) {
   const invoice = serializeInvoice(invoiceDoc);
 
@@ -1099,7 +1160,7 @@ export const getInvoiceByNumber = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Invoice tidak ditemukan");
   }
 
-  res.status(200).json(new ApiResponse(200, serializeInvoice(invoice)));
+  res.status(200).json(new ApiResponse(200, await serializeInvoiceWithSplits(invoice)));
 });
 
 export const getPublicInvoiceByNumber = asyncHandler(async (req, res) => {
@@ -1139,7 +1200,7 @@ export const createInvoice = asyncHandler(async (req, res) => {
     .json(
       new ApiResponse(
         201,
-        serializeInvoice(invoice),
+        await serializeInvoiceWithSplits(invoice),
         "Invoice berhasil dibuat",
       ),
     );
@@ -1186,7 +1247,7 @@ export const updateInvoice = asyncHandler(async (req, res) => {
     .json(
       new ApiResponse(
         200,
-        serializeInvoice(currentInvoice),
+        await serializeInvoiceWithSplits(currentInvoice),
         "Invoice berhasil diperbarui",
       ),
     );
@@ -1227,7 +1288,7 @@ export const approveInvoiceDraft = asyncHandler(async (req, res) => {
     .json(
       new ApiResponse(
         200,
-        serializeInvoice(invoice),
+        await serializeInvoiceWithSplits(invoice),
         "Draft invoice berhasil di-approve",
       ),
     );
@@ -1311,7 +1372,7 @@ export const addInvoicePayment = asyncHandler(async (req, res) => {
     .json(
       new ApiResponse(
         200,
-        serializeInvoice(invoice),
+        await serializeInvoiceWithSplits(invoice),
         "Pembayaran berhasil ditambahkan",
       ),
     );
@@ -1426,7 +1487,7 @@ export const updateInvoicePayment = asyncHandler(async (req, res) => {
     .json(
       new ApiResponse(
         200,
-        serializeInvoice(invoice),
+        await serializeInvoiceWithSplits(invoice),
         "Pembayaran berhasil diperbarui",
       ),
     );
@@ -1478,7 +1539,7 @@ export const deleteInvoicePayment = asyncHandler(async (req, res) => {
     .json(
       new ApiResponse(
         200,
-        serializeInvoice(invoice),
+        await serializeInvoiceWithSplits(invoice),
         "Pembayaran berhasil dihapus",
       ),
     );

@@ -656,6 +656,12 @@ export default function InvoiceDetail({
       toast.error("Invoice masih draft. Approve draft dulu sebelum edit payment");
       return;
     }
+    const existingSplitRows = (payment.splits || []).map((split) => ({
+      amount: String(split.amount || ""),
+      categoryId: split.categoryId || "",
+      categoryType: split.categoryType || "account",
+      description: split.description || "",
+    }));
 
     setPaymentForm({
       paymentDate: toDateInputValue(payment.paymentDate),
@@ -671,9 +677,16 @@ export default function InvoiceDetail({
       senderName: payment.senderName || "",
       notes: payment.notes || "",
     });
-    setPaymentSplits([]);
+    setPaymentSplits(
+      existingSplitRows.length || !payment.isSplit
+        ? existingSplitRows
+        : [
+            { amount: "", categoryId: "", categoryType: "account" },
+            { amount: "", categoryId: "", categoryType: "account" },
+          ],
+    );
     setPaymentAttachment(null);
-    setPaymentSplitMode(false);
+    setPaymentSplitMode(Boolean(payment.isSplit));
     setEditingPaymentId(payment._id || "");
     setAddingPayment(true);
     switchDetailTab("payment");
@@ -738,6 +751,18 @@ export default function InvoiceDetail({
       return;
     }
     setPaymentSplitMode(true);
+    const existingSplitRows = (currentEditingPayment?.splits || []).map(
+      (split) => ({
+        amount: String(split.amount || ""),
+        categoryId: split.categoryId || "",
+        categoryType: split.categoryType || "account",
+        description: split.description || "",
+      }),
+    );
+    if (paymentSplits.length < 2 && existingSplitRows.length >= 2) {
+      setPaymentSplits(existingSplitRows);
+      return;
+    }
     if (paymentSplits.length < 2) {
       setPaymentSplits([
         { amount: "", categoryId: "", categoryType: "account" },
@@ -967,6 +992,7 @@ export default function InvoiceDetail({
               amount: Number(split.amount || 0),
               categoryId: split.categoryId,
               categoryType: split.categoryType || "account",
+              description: split.description || "",
             })),
           ),
         );
@@ -2112,9 +2138,9 @@ export default function InvoiceDetail({
                         {editingPaymentId && currentEditingPayment?.isSplit ? (
                           <div className="inv-grid-12">
                             <div className="inv-payment-edit-alert">
-                              Payment ini split transaction. Detail split lama
-                              dipertahankan saat edit ini; kalau amount diubah
-                              sampai split tidak balance, backend akan menolak.
+                              Payment ini split transaction. Baris split di
+                              bawah bisa diedit, dan total split harus tetap
+                              sama dengan amount payment.
                             </div>
                           </div>
                         ) : null}
@@ -2189,15 +2215,15 @@ export default function InvoiceDetail({
                         ) : null}
                         <div className="inv-grid-12">
                           {!paymentSplitMode ? (
-                            editingPaymentId && currentEditingPayment?.isSplit ? null : (
-                              <button
-                                type="button"
-                                className="inv-split-btn"
-                                onClick={initPaymentSplit}
-                              >
-                                Split transaction
-                              </button>
-                            )
+                            <button
+                              type="button"
+                              className="inv-split-btn"
+                              onClick={initPaymentSplit}
+                            >
+                              {editingPaymentId && currentEditingPayment?.isSplit
+                                ? "Edit split transaction"
+                                : "Split transaction"}
+                            </button>
                           ) : (
                             <div className="inv-split-box">
                               <div className="inv-split-header">
