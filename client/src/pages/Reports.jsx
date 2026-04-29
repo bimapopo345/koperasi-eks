@@ -143,6 +143,16 @@ const getResolvedProduct = (member, productLookup) => {
   return productLookup.get(productId) || null;
 };
 
+const getMemberSavingsCollection = (member, savingsByMember) =>
+  savingsByMember.get(String(member?._id)) || savingsByMember.get(member?.uuid) || [];
+
+const getMemberProductSavings = (member, savingsByMember) => {
+  const currentProductId = normalizeId(member?.product?._id || member?.productId);
+  return getMemberSavingsCollection(member, savingsByMember).filter(
+    (saving) => !currentProductId || normalizeId(saving.productId) === currentProductId
+  );
+};
+
 const getRequiredAmountForPeriod = (member, fallbackProduct, installmentPeriod) => {
   const baseProduct = member?.product || fallbackProduct || {};
   const upgradeInfo = member?.currentUpgradeId;
@@ -165,10 +175,36 @@ const getRequiredAmountForPeriod = (member, fallbackProduct, installmentPeriod) 
   return requiredAmount;
 };
 
-const getMemberPeriodDate = (member, installmentPeriod) => {
-  const baseDate = member?.savingsStartDate
-    ? new Date(member.savingsStartDate)
-    : new Date(member?.createdAt || Date.now());
+const getSavingActivityDate = (saving) =>
+  saving?.savingsDate || saving?.paymentDate || saving?.createdAt || null;
+
+const getMemberSavingsStartDate = (member, memberSavings = []) => {
+  if (member?.savingsStartDate) {
+    return new Date(member.savingsStartDate);
+  }
+
+  const inferredStarts = memberSavings
+    .filter((saving) => saving.type === "Setoran" && Number(saving.installmentPeriod) > 0)
+    .map((saving) => {
+      const activityDate = new Date(getSavingActivityDate(saving));
+      if (Number.isNaN(activityDate.getTime())) return null;
+
+      activityDate.setHours(0, 0, 0, 0);
+      activityDate.setDate(1);
+      activityDate.setMonth(activityDate.getMonth() - (Number(saving.installmentPeriod) - 1));
+      return activityDate;
+    })
+    .filter(Boolean);
+
+  if (inferredStarts.length) {
+    return new Date(Math.min(...inferredStarts.map((date) => date.getTime())));
+  }
+
+  return new Date(member?.createdAt || Date.now());
+};
+
+const getMemberPeriodDate = (member, installmentPeriod, memberSavings = []) => {
+  const baseDate = getMemberSavingsStartDate(member, memberSavings);
 
   const dueDate = new Date(baseDate);
   dueDate.setHours(0, 0, 0, 0);
@@ -191,9 +227,6 @@ const getMemberPaymentStatus = (member, memberSavings, fallbackProduct = null) =
   }
 
   const totalPeriods = Number(product.termDuration) || 0;
-  const startDate = member?.savingsStartDate
-    ? new Date(member.savingsStartDate)
-    : new Date(member?.createdAt || Date.now());
   const today = new Date();
   const currentMonth = today.getMonth();
   const currentYear = today.getFullYear();
@@ -212,8 +245,7 @@ const getMemberPaymentStatus = (member, memberSavings, fallbackProduct = null) =
     );
     const paid = periodSavings.reduce((sum, saving) => sum + (Number(saving.amount) || 0), 0);
     const required = getRequiredAmountForPeriod(member, product, period);
-    const dueDate = new Date(startDate);
-    dueDate.setMonth(dueDate.getMonth() + period - 1);
+    const dueDate = getMemberPeriodDate(member, period, memberSavings);
 
     const isPastMonth =
       dueDate.getFullYear() < currentYear ||
@@ -720,8 +752,7 @@ const Reports = () => {
         ...rawMember,
         product: getResolvedProduct(rawMember, productLookup),
       };
-      const memberSavings =
-        savingsByMember.get(String(member._id)) || savingsByMember.get(member.uuid) || [];
+      const memberSavings = getMemberProductSavings(member, savingsByMember);
       const paymentStatus = getMemberPaymentStatus(member, memberSavings, member.product);
 
       if (paymentStatus.overduePeriods > 0) membersWithOverdue += 1;
@@ -797,10 +828,9 @@ const Reports = () => {
         return;
       }
 
-      const memberSavings =
-        (savingsByMember.get(String(member._id)) || savingsByMember.get(member.uuid) || []).filter(
-          (saving) => saving.type === "Setoran"
-        );
+      const memberSavings = getMemberProductSavings(member, savingsByMember).filter(
+        (saving) => saving.type === "Setoran"
+      );
 
       if (!member.product) {
         rows.push({
@@ -826,14 +856,11 @@ const Reports = () => {
       }
 
       const totalPeriods = Number(member.product.termDuration) || 0;
-      let memberHasRowInRange = false;
 
       for (let period = 1; period <= totalPeriods; period += 1) {
-        const periodDate = getMemberPeriodDate(member, period);
+        const periodDate = getMemberPeriodDate(member, period, memberSavings);
 
         if (periodDate < start || periodDate > end) continue;
-
-        memberHasRowInRange = true;
 
         const attempts = memberSavings
           .filter((saving) => Number(saving.installmentPeriod) === period)
@@ -914,32 +941,6 @@ const Reports = () => {
           description,
         });
       }
-
-      // penting: kalau member lolos filter tapi tidak punya row pada range ini,
-      // tetap paksa tampil 1 row supaya jumlah transaksi simpanan = status anggota
-      if (!memberHasRowInRange) {
-        const fallbackProjection = Number(member.product?.depositAmount) || 0;
-
-        rows.push({
-          id: `${member._id}-fallback-${dateFrom}-${dateTo}`,
-          memberId: String(member._id),
-          invoiceNumber: `SAV-${member.uuid || "NA"}-NO-ACTIVITY`,
-          transactionDate: null,
-          sortDate: new Date(start),
-          activityDateLabel: formatMonthYear(start),
-          activityDateLabelLong: formatMonthYear(start),
-          customerName: member.name || "-",
-          customerCode: member.uuid || "-",
-          productTitle: member.product?.title || "-",
-          installmentPeriod: "-",
-          projectionAmount: fallbackProjection,
-          realizedAmount: 0,
-          differenceAmount: fallbackProjection,
-          statusKey: "unpaid",
-          statusLabel: STATUS_META.unpaid.label,
-          description: "Belum ada periode/transaksi yang cocok pada rentang tanggal ini",
-        });
-      }
     });
 
     return rows.sort((first, second) => second.sortDate - first.sortDate);
@@ -995,8 +996,7 @@ const Reports = () => {
         product: getResolvedProduct(rawMember, productLookup),
       };
 
-      const memberSavings =
-        savingsByMember.get(String(member._id)) || savingsByMember.get(member.uuid) || [];
+      const memberSavings = getMemberProductSavings(member, savingsByMember);
       const paymentStatus = getMemberPaymentStatus(member, memberSavings, member.product);
       const product = member.product || {};
       const progressPercent = Number(paymentStatus.progress || 0);
@@ -1770,12 +1770,12 @@ const Reports = () => {
             <h3 className="text-base font-semibold text-sky-900">Logic Laporan</h3>
             <p className="text-sm leading-6 text-slate-600">
               Laporan tetap <strong>per periode / per bulan</strong>. Jadi sekarang yang tampil bukan
-              cuma transaksi yang sudah ada, tapi juga <strong>periode yang belum ada pembayaran</strong>.
+              cuma transaksi yang sudah ada, tapi juga <strong>periode jatuh tempo yang belum ada pembayaran</strong>.
             </p>
             <p className="text-sm leading-6 text-slate-600">
               Untuk status <strong>Belum Bayar</strong>, tanggal aktivitas ditampilkan sebagai
-              <strong> bulan dan tahun periode</strong>. Sedangkan kalau ada transaksi, tetap pakai
-              tanggal aktivitas transaksi seperti biasa.
+              <strong> bulan dan tahun periode</strong>. Member yang periode pertamanya di luar range
+              tanggal tidak dipaksa masuk sebagai belum bayar.
             </p>
           </div>
         </div>

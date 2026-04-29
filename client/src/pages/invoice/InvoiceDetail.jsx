@@ -2067,74 +2067,88 @@ export default function InvoiceDetail({
 
                     <hr className="inv-print-divider" />
 
-                    <div className="inv-receipt-title-row">
-                      <div>
-                        <h2>RECEIPT</h2>
-                        <strong>
-                          #{getPaymentReceiptNumber(paymentReceiptTarget)}
-                        </strong>
+                    <div className="inv-receipt-body">
+                      <div className="inv-receipt-title-row">
+                        <div>
+                          <h2>RECEIPT</h2>
+                          <strong>
+                            #{getPaymentReceiptNumber(paymentReceiptTarget)}
+                          </strong>
+                        </div>
+                        <div className="inv-receipt-invoice-ref">
+                          <span>Invoice</span>
+                          <strong>{invoice.invoiceNumber}</strong>
+                        </div>
                       </div>
-                      <div>
-                        <span>Invoice</span>
-                        <strong>{invoice.invoiceNumber}</strong>
-                      </div>
-                    </div>
 
-                    <div className="inv-receipt-grid">
-                      <div className="inv-receipt-field">
-                        <span>To</span>
-                        <strong>{invoice.customerSnapshot?.name || "-"}</strong>
-                        <small>{invoice.customerSnapshot?.phone || "-"}</small>
-                        <small>{invoice.customerSnapshot?.email || "-"}</small>
-                      </div>
-                      <div className="inv-receipt-field">
-                        <span>Paid On</span>
-                        <strong>
-                          {formatPaymentDate(paymentReceiptTarget.paymentDate)}
-                        </strong>
-                        <small>
-                          Method: {paymentReceiptTarget.method || "Bank"}
-                        </small>
-                        <small>
-                          Sender: {paymentReceiptTarget.senderName || "-"}
-                        </small>
-                      </div>
-                      <div className="inv-receipt-field">
-                        <span>Payment For</span>
-                        <strong>
-                          {getPaymentProjectionLabel(paymentReceiptTarget)}
-                        </strong>
-                        <small>
-                          Due Date:{" "}
-                          {formatDate(paymentReceiptTarget.projectionDueDate)}
-                        </small>
-                      </div>
-                      <div className="inv-receipt-amount-box">
-                        <span>Payment Amount</span>
-                        <strong>
-                          {formatMoney(
-                            paymentReceiptTarget.amount,
-                            invoice.currency,
-                          )}
-                        </strong>
-                      </div>
-                    </div>
+                      <div className="inv-receipt-party-row">
+                        <div className="inv-receipt-party-left">
+                          <div>
+                            <strong>To,</strong>
+                            <span>{invoice.customerSnapshot?.name || "-"}</span>
+                            <small>
+                              {invoice.customerSnapshot?.phone || "-"}
+                              {invoice.customerSnapshot?.email
+                                ? ` | ${invoice.customerSnapshot.email}`
+                                : ""}
+                            </small>
+                          </div>
+                          <div>
+                            <strong>Paid On,</strong>
+                            <span>
+                              {formatPaymentDate(
+                                paymentReceiptTarget.paymentDate,
+                              )}
+                            </span>
+                          </div>
+                        </div>
 
-                    <div className="inv-receipt-description">
-                      <span>Description</span>
-                      <p>{paymentReceiptTarget.notes || "-"}</p>
-                    </div>
-
-                    {paymentReceiptTarget.attachment ? (
-                      <div className="inv-receipt-attachment">
-                        Attachment:{" "}
-                        {paymentReceiptTarget.attachmentOriginalName ||
-                          paymentReceiptTarget.attachment}
+                        <div className="inv-receipt-method">
+                          <strong>Payment Method</strong>
+                          <p>{paymentReceiptTarget.method || "Bank"}</p>
+                        </div>
                       </div>
-                    ) : null}
+
+                      <div className="inv-receipt-detail-row">
+                        <div className="inv-receipt-description">
+                          <strong>Description</strong>
+                          <p>{paymentReceiptTarget.notes || "-"}</p>
+                          <small>
+                            {getPaymentProjectionLabel(paymentReceiptTarget)}
+                            {paymentReceiptTarget.projectionDueDate
+                              ? ` | Due ${formatDate(
+                                  paymentReceiptTarget.projectionDueDate,
+                                )}`
+                              : ""}
+                            {paymentReceiptTarget.senderName
+                              ? ` | Sender ${paymentReceiptTarget.senderName}`
+                              : ""}
+                          </small>
+                        </div>
+
+                        <div className="inv-receipt-amount-box">
+                          <strong>Payment Amount</strong>
+                          <p>
+                            {formatMoney(
+                              paymentReceiptTarget.amount,
+                              invoice.currency,
+                            )}
+                          </p>
+                        </div>
+                      </div>
+
+                      {paymentReceiptTarget.attachment ? (
+                        <div className="inv-receipt-attachment">
+                          Attachment:{" "}
+                          {paymentReceiptTarget.attachmentOriginalName ||
+                            paymentReceiptTarget.attachment}
+                        </div>
+                      ) : null}
+                    </div>
 
                     <p className="inv-receipt-footer">
-                      Copyright © {new Date().getFullYear()} -{" "}
+                      Copyright © {new Date().getFullYear()}
+                      <br />
                       {companyProfile.website}
                     </p>
                   </>

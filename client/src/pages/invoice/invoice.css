@@ -1901,8 +1901,14 @@
 }
 
 .inv-payment-receipt-sheet {
-  min-height: 820px;
+  display: flex;
+  flex-direction: column;
+  min-height: 260mm;
   position: relative;
+}
+
+.inv-receipt-body {
+  flex: 1 0 auto;
 }
 
 .inv-receipt-title-row {
@@ -1915,9 +1921,9 @@
 .inv-receipt-title-row h2 {
   margin: 0 0 4px;
   color: #0f172a;
-  font-size: 1.75rem;
+  font-size: 1.9rem;
   font-weight: 900;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
 }
 
 .inv-receipt-title-row strong {
@@ -1925,14 +1931,11 @@
   color: #0f172a;
 }
 
-.inv-receipt-title-row > div:last-child {
+.inv-receipt-invoice-ref {
   text-align: right;
 }
 
-.inv-receipt-title-row span,
-.inv-receipt-field span,
-.inv-receipt-amount-box span,
-.inv-receipt-description span {
+.inv-receipt-invoice-ref span {
   display: block;
   margin-bottom: 6px;
   color: #64748b;
@@ -1942,74 +1945,97 @@
   text-transform: uppercase;
 }
 
-.inv-receipt-grid {
+.inv-receipt-party-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
-  margin-top: 28px;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 0.42fr);
+  gap: 24px;
+  margin-top: 34px;
 }
 
-.inv-receipt-field,
-.inv-receipt-amount-box,
-.inv-receipt-description,
-.inv-receipt-attachment {
-  border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  background: #f8fafc;
-  padding: 16px;
+.inv-receipt-party-left {
+  display: grid;
+  gap: 20px;
 }
 
-.inv-receipt-field strong,
+.inv-receipt-party-left strong,
+.inv-receipt-method strong,
+.inv-receipt-description strong,
 .inv-receipt-amount-box strong {
   display: block;
   color: #0f172a;
   font-size: 1rem;
+  font-weight: 800;
 }
 
-.inv-receipt-field small {
+.inv-receipt-party-left span {
   display: block;
-  margin-top: 5px;
-  color: #475569;
+  margin-top: 4px;
+  color: #0f172a;
+  font-size: 1.05rem;
+  font-weight: 700;
 }
 
-.inv-receipt-amount-box {
-  background: #eff6ff;
+.inv-receipt-party-left small {
+  display: block;
+  margin-top: 4px;
+  color: #64748b;
+}
+
+.inv-receipt-method {
   text-align: right;
 }
 
-.inv-receipt-amount-box strong {
-  color: #0f766e;
-  font-size: 1.45rem;
+.inv-receipt-method p {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 1.1rem;
+  font-weight: 700;
 }
 
-.inv-receipt-description {
-  margin-top: 24px;
+.inv-receipt-detail-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 0.42fr);
+  gap: 24px;
+  margin-top: 72px;
+  border-bottom: 1px solid #94a3b8;
+  padding-bottom: 22px;
 }
 
 .inv-receipt-description p {
-  margin: 0;
-  min-height: 90px;
-  color: #334155;
-  line-height: 1.55;
+  margin: 8px 0 0;
+  color: #64748b;
+  line-height: 1.5;
   white-space: pre-line;
+}
+
+.inv-receipt-description small {
+  display: block;
+  margin-top: 10px;
+  color: #64748b;
+}
+
+.inv-receipt-amount-box {
+  text-align: right;
+}
+
+.inv-receipt-amount-box p {
+  margin: 8px 0 0;
+  color: #0f172a;
+  font-size: 1.25rem;
+  font-weight: 900;
 }
 
 .inv-receipt-attachment {
   margin-top: 16px;
-  color: #475569;
-  font-size: 0.88rem;
+  color: #64748b;
+  font-size: 0.85rem;
 }
 
 .inv-receipt-footer {
-  position: absolute;
-  right: 24px;
-  bottom: 20px;
-  left: 24px;
-  margin: 0;
-  border-top: 1px solid #cbd5e1;
-  padding-top: 12px;
+  margin: auto 0 0;
+  padding-top: 24px;
   color: #64748b;
-  font-size: 0.76rem;
+  font-size: 0.7rem;
   text-align: center;
   text-transform: uppercase;
 }
@@ -2281,6 +2307,17 @@
     flex-direction: column;
   }
 
+  .inv-receipt-party-row,
+  .inv-receipt-detail-row {
+    grid-template-columns: 1fr;
+  }
+
+  .inv-receipt-method,
+  .inv-receipt-amount-box,
+  .inv-receipt-invoice-ref {
+    text-align: left;
+  }
+
   .inv-detail-action {
     flex: 1 1 110px;
   }
@@ -2350,6 +2387,17 @@
   }
 
   .inv-print-projection {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .inv-payment-receipt-sheet {
+    display: flex;
+    flex-direction: column;
+    min-height: calc(297mm - 20mm);
+  }
+
+  .inv-receipt-detail-row {
     break-inside: avoid;
     page-break-inside: avoid;
   }
