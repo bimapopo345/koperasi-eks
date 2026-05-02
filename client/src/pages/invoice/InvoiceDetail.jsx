@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import {
@@ -131,6 +131,59 @@ function InvoiceLetterhead({ title = "INVOICE" }) {
       </address>
       <h2 className="inv-print-document-title">{title}</h2>
     </header>
+  );
+}
+
+function PrintProjectionTable({
+  projections = [],
+  currency = "IDR",
+  labels = {},
+}) {
+  if (!projections.length) return null;
+
+  return (
+    <div className="inv-print-projection">
+      <h3>{labels.title || "Payment Projection"}</h3>
+      <div className="inv-table-wrap inv-print-projection-wrap">
+        <table className="inv-print-table compact inv-print-projection-table">
+          <thead>
+            <tr>
+              <th className="center">{labels.no || "No"}</th>
+              <th>{labels.description || "Description"}</th>
+              <th>{labels.dueDate || "Due Date"}</th>
+              <th className="right">{labels.amount || "Amount"}</th>
+              <th>{labels.status || "Status"}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {projections.map((projection, index) => {
+              const normalizedStatus = String(
+                projection.status || "Unpaid",
+              ).toLowerCase();
+
+              return (
+                <tr key={projection._id || `${projection.description}-${index}`}>
+                  <td className="center">{index + 1}</td>
+                  <td>{projection.description || `Cicilan ${index + 1}`}</td>
+                  <td>{formatDate(projection.dueDate)}</td>
+                  <td className="right">
+                    {formatMoney(projection.amount, currency)}
+                  </td>
+                  <td>
+                    <span className={`inv-status ${normalizedStatus}`}>
+                      {statusLabel[projection.status] ||
+                        statusLabel[normalizedStatus] ||
+                        projection.status ||
+                        "Unpaid"}
+                    </span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
 
@@ -290,6 +343,23 @@ export default function InvoiceDetail({
     notes: "",
   });
 
+  const getInvoicePrintFileName = useCallback(
+    () =>
+      sanitizePrintFileName(
+        `${invoice?.invoiceNumber || invoiceNumber || "Invoice"} - ${
+          invoice?.customerSnapshot?.name || "Customer"
+        }`,
+      ),
+    [invoice?.customerSnapshot?.name, invoice?.invoiceNumber, invoiceNumber],
+  );
+
+  const preparePrintDocumentTitle = useCallback(() => {
+    if (previousDocumentTitleRef.current === null) {
+      previousDocumentTitleRef.current = document.title;
+    }
+    document.title = getInvoicePrintFileName();
+  }, [getInvoicePrintFileName]);
+
   const loadInvoice = async () => {
     setLoading(true);
     setError("");
@@ -361,9 +431,10 @@ export default function InvoiceDetail({
   useEffect(() => {
     if (!printOnly || !invoice || autoPrintRef.current) return;
     autoPrintRef.current = true;
+    preparePrintDocumentTitle();
     const timer = window.setTimeout(() => window.print(), 350);
     return () => window.clearTimeout(timer);
-  }, [invoice, printOnly]);
+  }, [invoice, preparePrintDocumentTitle, printOnly]);
 
   useEffect(() => {
     const resetPaymentReceiptPrint = () => {
@@ -381,6 +452,7 @@ export default function InvoiceDetail({
   }, [initialPrintVariant]);
 
   const handlePrint = (variant = "standard") => {
+    preparePrintDocumentTitle();
     setPaymentReceiptTarget(null);
     setActiveDetailTab("invoice");
     setPrintVariant(variant);
@@ -389,8 +461,8 @@ export default function InvoiceDetail({
 
   const handlePaymentReceiptPrint = (payment) => {
     if (!payment) return;
-    previousDocumentTitleRef.current = document.title;
-    document.title = getPaymentReceiptFileName(payment);
+    preparePrintDocumentTitle();
+    document.title = getPaymentReceiptFileName();
     setPaymentReceiptTarget(payment);
     setPrintVariant("receipt");
     window.setTimeout(() => window.print(), 80);
@@ -556,12 +628,7 @@ export default function InvoiceDetail({
     const id = String(payment?._id || "");
     return id ? id.slice(-8).toUpperCase() : invoiceNumber;
   };
-  const getPaymentReceiptFileName = (payment) =>
-    sanitizePrintFileName(
-      `Payment - ${getPaymentReceiptNumber(payment)} - ${
-        invoice?.customerSnapshot?.name || "Customer"
-      }`,
-    );
+  const getPaymentReceiptFileName = () => getInvoicePrintFileName();
   const getProjectionReceiptPayment = (projection) => {
     const realizations = Array.isArray(projection?.realizations)
       ? projection.realizations.filter(Boolean)
@@ -1897,6 +1964,11 @@ export default function InvoiceDetail({
                   </strong>
                 </div>
 
+                <PrintProjectionTable
+                  projections={invoice.projections || []}
+                  currency={invoice.currency}
+                />
+
                 <div className="inv-print-terms inv-print-page-break">
                   <h3>Note/Term of Services</h3>
                   <HtmlBlock html={invoice.terms} />
@@ -2086,6 +2158,19 @@ export default function InvoiceDetail({
                   </strong>
                 </div>
 
+                <PrintProjectionTable
+                  projections={invoice.projections || []}
+                  currency={invoice.currency}
+                  labels={{
+                    title: "Payment Projection",
+                    no: "No",
+                    description: "内容",
+                    dueDate: "支払期限",
+                    amount: "金額",
+                    status: "Status",
+                  }}
+                />
+
                 <div className="inv-print-terms inv-print-page-break">
                   <h3>備考・条件</h3>
                   <HtmlBlock html={invoice.terms} />
@@ -2151,17 +2236,6 @@ export default function InvoiceDetail({
                         <div className="inv-receipt-description">
                           <strong>Description</strong>
                           <p>{paymentReceiptTarget.notes || "-"}</p>
-                          <small>
-                            {getPaymentProjectionLabel(paymentReceiptTarget)}
-                            {paymentReceiptTarget.projectionDueDate
-                              ? ` | Due ${formatDate(
-                                  paymentReceiptTarget.projectionDueDate,
-                                )}`
-                              : ""}
-                            {paymentReceiptTarget.senderName
-                              ? ` | Sender ${paymentReceiptTarget.senderName}`
-                              : ""}
-                          </small>
                         </div>
 
                         <div className="inv-receipt-amount-box">
