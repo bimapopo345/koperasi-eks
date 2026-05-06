@@ -2450,6 +2450,53 @@
     padding: 0 7mm 4mm;
   }
 
+  .inv-print-top {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18mm;
+    text-align: left;
+  }
+
+  .inv-print-letterhead-logo {
+    flex: 0 0 30mm;
+  }
+
+  .inv-print-letterhead-img {
+    width: 28mm;
+    max-width: 28mm;
+  }
+
+  .inv-print-letterhead-copy {
+    flex: 1 1 auto;
+    max-width: calc(100% - 38mm);
+    margin-left: auto;
+    text-align: right;
+  }
+
+  .inv-print-document-title {
+    margin: 0 0 14px;
+    font-size: 32pt;
+    letter-spacing: 0.09em;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .inv-print-company-name,
+  .inv-print-letterhead-text {
+    text-align: right;
+  }
+
+  .inv-print-letterhead-text {
+    font-size: 9pt;
+    line-height: 1.25;
+  }
+
+  .inv-payment-receipt-sheet .inv-print-document-title {
+    font-size: 24pt;
+    letter-spacing: 0.03em;
+  }
+
   .inv-table-wrap,
   .inv-print-items-wrap,
   .inv-print-projection-wrap {
