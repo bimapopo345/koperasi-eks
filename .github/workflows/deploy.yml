@@ -76,6 +76,47 @@ jobs:
               podman ps --format '{{.Names}}' | grep -qx "$1"
             }
 
+            stop_container() {
+              NAME="$1"
+              if podman container exists "$NAME"; then
+                podman stop -t 20 "$NAME" || podman kill "$NAME" || true
+                podman rm -f "$NAME" || true
+              fi
+            }
+
+            port_is_busy() {
+              PORT="$1"
+              command -v ss >/dev/null 2>&1 && ss -H -ltn "sport = :$PORT" | grep -q .
+            }
+
+            ensure_port_free() {
+              PORT="$1"
+              for _ in $(seq 1 20); do
+                if ! port_is_busy "$PORT"; then
+                  return 0
+                fi
+                sleep 1
+              done
+
+              echo "Port $PORT masih kepakai setelah stop container. Coba bersihkan rootless port forward."
+              podman network reload || true
+              if command -v fuser >/dev/null 2>&1; then
+                fuser -k "${PORT}/tcp" || true
+              fi
+              pkill -f "rootlessport.*${PORT}" || true
+
+              for _ in $(seq 1 10); do
+                if ! port_is_busy "$PORT"; then
+                  return 0
+                fi
+                sleep 1
+              done
+
+              echo "❌ Port $PORT masih busy. Listener:"
+              ss -ltnp "sport = :$PORT" || true
+              exit 1
+            }
+
             podman_build_cached() {
               IMAGE_TAG="$1"
               shift
@@ -105,8 +146,7 @@ jobs:
 
             if [ "$BUILD_API" = "1" ]; then
               podman_build_cached koperasi-api:latest
-              podman stop api || true
-              podman rm api || true
+              stop_container api
 
               # Mount uploads volume so files survive container recreation
               API_CONTAINER_ID=$(podman run -d --name api --network host \
@@ -142,8 +182,8 @@ jobs:
               podman_build_cached koperasi-web:latest \
                 --build-arg VITE_API_URL="$FRONTEND_API_URL" \
                 --build-arg VITE_SERVER_URL="$FRONTEND_API_URL"
-              podman stop web || true
-              podman rm web || true
+              stop_container web
+              ensure_port_free 3000
               podman run -d \
                 --replace \
                 --name web \

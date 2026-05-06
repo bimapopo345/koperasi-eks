@@ -1312,6 +1312,11 @@
   font-size: 0.72rem;
 }
 
+.inv-split-hint.warning {
+  color: #dc2626;
+  font-weight: 800;
+}
+
 .inv-split-amount-input {
   display: flex;
   overflow: hidden;

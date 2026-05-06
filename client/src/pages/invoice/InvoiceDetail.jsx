@@ -2538,8 +2538,24 @@ export default function InvoiceDetail({
                                 </div>
                               </div>
                               <div className="inv-split-items">
-                                {paymentSplits.map((split, index) => (
-                                  <div className="inv-split-row" key={index}>
+                                {paymentSplits.map((split, index) => {
+                                  const runningUsed = paymentSplits
+                                    .slice(0, index)
+                                    .reduce(
+                                      (sum, row) =>
+                                        sum + Number(row.amount || 0),
+                                      0,
+                                    );
+                                  const maxForThis = Math.max(
+                                    paymentAmount - runningUsed,
+                                    0,
+                                  );
+                                  const currentValue = Number(split.amount || 0);
+                                  const exceedsMax =
+                                    currentValue > maxForThis + 0.01;
+
+                                  return (
+                                    <div className="inv-split-row" key={index}>
                                     <div>
                                       <label className="inv-label">
                                         Amount {index + 1}
@@ -2559,10 +2575,16 @@ export default function InvoiceDetail({
                                           placeholder="0"
                                         />
                                       </div>
-                                      <small>
-                                        Max:{" "}
+                                      <small
+                                        className={`inv-split-hint ${
+                                          exceedsMax ? "warning" : ""
+                                        }`}
+                                      >
+                                        {exceedsMax
+                                          ? "Exceeds max! "
+                                          : "Max: "}
                                         {formatMoney(
-                                          paymentAmount,
+                                          maxForThis,
                                           invoice.currency,
                                         )}
                                       </small>
@@ -2597,7 +2619,8 @@ export default function InvoiceDetail({
                                       ×
                                     </button>
                                   </div>
-                                ))}
+                                  );
+                                })}
                               </div>
                               <div className="inv-split-actions">
                                 <button type="button" onClick={addPaymentSplit}>
