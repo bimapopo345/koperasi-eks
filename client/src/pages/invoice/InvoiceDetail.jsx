@@ -47,6 +47,24 @@ const formatDate = (value) => {
   });
 };
 
+const getProjectionDueDate = (projection) =>
+  projection?.estimateDate ||
+  projection?.dueDate ||
+  projection?.projectionDueDate ||
+  projection?.date ||
+  projection?.estimate;
+
+const getInvoiceDueDate = (invoice) => {
+  if (!invoice) return null;
+  if (invoice.dueDate) return invoice.dueDate;
+  const projectionDates = (invoice.projections || [])
+    .map(getProjectionDueDate)
+    .filter(Boolean);
+  return projectionDates.length
+    ? projectionDates[projectionDates.length - 1]
+    : null;
+};
+
 const formatPaymentDate = (value) => {
   if (!value) return "-";
   return new Date(value).toLocaleDateString("en-US", {
@@ -165,7 +183,7 @@ function PrintProjectionTable({
                 <tr key={projection._id || `${projection.description}-${index}`}>
                   <td className="center">{index + 1}</td>
                   <td>{projection.description || `Cicilan ${index + 1}`}</td>
-                  <td>{formatDate(projection.dueDate)}</td>
+                  <td>{formatDate(getProjectionDueDate(projection))}</td>
                   <td className="right">
                     {formatMoney(projection.amount, currency)}
                   </td>
@@ -1864,7 +1882,7 @@ export default function InvoiceDetail({
                       <tr>
                         <td>Payment Due</td>
                         <td>:</td>
-                        <td>{formatDate(invoice.dueDate)}</td>
+                        <td>{formatDate(getInvoiceDueDate(invoice))}</td>
                       </tr>
                       <tr>
                         <td>Amount Due</td>
@@ -2052,7 +2070,7 @@ export default function InvoiceDetail({
                       <tr>
                         <td>支払期限</td>
                         <td>:</td>
-                        <td>{formatJapaneseDate(invoice.dueDate)}</td>
+                        <td>{formatJapaneseDate(getInvoiceDueDate(invoice))}</td>
                       </tr>
                       <tr>
                         <td>請求残額</td>
