@@ -19,6 +19,7 @@ import "./invoice.css";
 
 const companyProfile = {
   name: "KOPERASI SAKURA MITRA INTERNASIONAL",
+  printName: "Koperasi Sakura Mitra Internasional",
   address: [
     "Ruko Dalton Utara No. 05, Jl. Scientia Square Selatan, Kel. Curug Sangereng, Kec. Kelapa Dua, Tangerang, Banten 15810 Indonesia",
   ],
@@ -26,7 +27,7 @@ const companyProfile = {
   website: "www.sakuramitra.com",
 };
 
-const invoiceLetterheadSrc = "/coop%20panjang.png";
+const invoiceLetterheadSrc = "/KOPERASI%20LINGKARAN2.png";
 
 const formatMoney = (amount, currency = "IDR") => {
   const locale = currency === "IDR" ? "id-ID" : "en-US";
@@ -135,19 +136,26 @@ function HtmlBlock({ html, empty = "Tidak ada catatan" }) {
 function InvoiceLetterhead({ title = "INVOICE" }) {
   return (
     <header className="inv-print-top">
-      <img
-        className="inv-print-letterhead-img"
-        src={invoiceLetterheadSrc}
-        alt={companyProfile.name}
-      />
-      <address className="inv-print-letterhead-text">
-        {companyProfile.address.map((line) => (
-          <span key={line}>{line}</span>
-        ))}
-        <span>Phone : {companyProfile.phone}</span>
-        <span>Website : {companyProfile.website}</span>
-      </address>
-      <h2 className="inv-print-document-title">{title}</h2>
+      <div className="inv-print-letterhead-logo">
+        <img
+          className="inv-print-letterhead-img"
+          src={invoiceLetterheadSrc}
+          alt={companyProfile.name}
+        />
+      </div>
+      <div className="inv-print-letterhead-copy">
+        <h2 className="inv-print-document-title">{title}</h2>
+        <strong className="inv-print-company-name">
+          {companyProfile.printName}
+        </strong>
+        <address className="inv-print-letterhead-text">
+          {companyProfile.address.map((line) => (
+            <span key={line}>{line}</span>
+          ))}
+          <span>{companyProfile.phone}</span>
+          <span>{companyProfile.website}</span>
+        </address>
+      </div>
     </header>
   );
 }
