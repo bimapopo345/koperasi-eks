@@ -370,20 +370,22 @@ export default function InvoiceDetail({
   });
 
   const getInvoicePrintFileName = useCallback(
-    () =>
+    (prefix = "INVOICE") =>
       sanitizePrintFileName(
-        `${invoice?.invoiceNumber || invoiceNumber || "Invoice"} - ${
+        `${prefix} - ${
+          invoice?.invoiceNumber || invoiceNumber || "Invoice"
+        } - ${
           invoice?.customerSnapshot?.name || "Customer"
         }`,
       ),
     [invoice?.customerSnapshot?.name, invoice?.invoiceNumber, invoiceNumber],
   );
 
-  const preparePrintDocumentTitle = useCallback(() => {
+  const preparePrintDocumentTitle = useCallback((prefix = "INVOICE") => {
     if (previousDocumentTitleRef.current === null) {
       previousDocumentTitleRef.current = document.title;
     }
-    document.title = getInvoicePrintFileName();
+    document.title = getInvoicePrintFileName(prefix);
   }, [getInvoicePrintFileName]);
 
   const loadInvoice = async () => {
@@ -478,7 +480,7 @@ export default function InvoiceDetail({
   }, [initialPrintVariant]);
 
   const handlePrint = (variant = "standard") => {
-    preparePrintDocumentTitle();
+    preparePrintDocumentTitle("INVOICE");
     setPaymentReceiptTarget(null);
     setActiveDetailTab("invoice");
     setPrintVariant(variant);
@@ -487,8 +489,7 @@ export default function InvoiceDetail({
 
   const handlePaymentReceiptPrint = (payment) => {
     if (!payment) return;
-    preparePrintDocumentTitle();
-    document.title = getPaymentReceiptFileName();
+    preparePrintDocumentTitle("PAYMENT");
     setPaymentReceiptTarget(payment);
     setPrintVariant("receipt");
     window.setTimeout(() => window.print(), 80);
@@ -650,11 +651,6 @@ export default function InvoiceDetail({
       .filter(Boolean)
       .join(" - ");
   };
-  const getPaymentReceiptNumber = (payment) => {
-    const id = String(payment?._id || "");
-    return id ? id.slice(-8).toUpperCase() : invoiceNumber;
-  };
-  const getPaymentReceiptFileName = () => getInvoicePrintFileName();
   const getProjectionReceiptPayment = (projection) => {
     const realizations = Array.isArray(projection?.realizations)
       ? projection.realizations.filter(Boolean)
@@ -2220,9 +2216,6 @@ export default function InvoiceDetail({
                       <div className="inv-receipt-title-row">
                         <div>
                           <h2>RECEIPT</h2>
-                          <strong>
-                            #{getPaymentReceiptNumber(paymentReceiptTarget)}
-                          </strong>
                         </div>
                         <div className="inv-receipt-invoice-ref">
                           <span>Invoice</span>
@@ -2274,14 +2267,6 @@ export default function InvoiceDetail({
                           </p>
                         </div>
                       </div>
-
-                      {paymentReceiptTarget.attachment ? (
-                        <div className="inv-receipt-attachment">
-                          Attachment:{" "}
-                          {paymentReceiptTarget.attachmentOriginalName ||
-                            paymentReceiptTarget.attachment}
-                        </div>
-                      ) : null}
                     </div>
 
                     <p className="inv-receipt-footer">
