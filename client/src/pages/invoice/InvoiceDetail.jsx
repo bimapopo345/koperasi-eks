@@ -160,6 +160,26 @@ function InvoiceLetterhead({ title = "INVOICE" }) {
   );
 }
 
+function PrintPageFrame({ title = "INVOICE", children }) {
+  return (
+    <table className="inv-print-page-table">
+      <thead>
+        <tr>
+          <td>
+            <InvoiceLetterhead title={title} />
+            <hr className="inv-print-divider" />
+          </td>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{children}</td>
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
 function PrintProjectionTable({
   projections = [],
   currency = "IDR",
@@ -1849,10 +1869,7 @@ export default function InvoiceDetail({
                 }`}
                 id="printableArea"
               >
-                <InvoiceLetterhead />
-
-                <hr className="inv-print-divider" />
-
+                <PrintPageFrame>
                 <div className="inv-print-bill-row">
                   <address className="inv-print-to">
                     <h6>To,</h6>
@@ -2030,6 +2047,7 @@ export default function InvoiceDetail({
                     </div>
                   </>
                 ) : null}
+                </PrintPageFrame>
               </section>
 
               <section
@@ -2037,10 +2055,7 @@ export default function InvoiceDetail({
                   printVariant === "japan" ? "" : "is-hidden"
                 }`}
               >
-                <InvoiceLetterhead title="請求書" />
-
-                <hr className="inv-print-divider" />
-
+                <PrintPageFrame title="請求書">
                 <div className="inv-print-bill-row">
                   <address className="inv-print-to">
                     <h6>ご請求先</h6>
@@ -2197,6 +2212,7 @@ export default function InvoiceDetail({
                   <h3>備考・条件</h3>
                   <HtmlBlock html={invoice.terms} />
                 </div>
+                </PrintPageFrame>
               </section>
 
               <section
@@ -2208,10 +2224,7 @@ export default function InvoiceDetail({
               >
                 {paymentReceiptTarget ? (
                   <>
-                    <InvoiceLetterhead title="PAYMENT RECEIPT" />
-
-                    <hr className="inv-print-divider" />
-
+                    <PrintPageFrame title="PAYMENT RECEIPT">
                     <div className="inv-receipt-body">
                       <div className="inv-receipt-title-row">
                         <div>
@@ -2274,6 +2287,7 @@ export default function InvoiceDetail({
                       <br />
                       {companyProfile.website}
                     </p>
+                    </PrintPageFrame>
                   </>
                 ) : null}
               </section>
