@@ -4,9 +4,54 @@ import axios from "axios";
 import { format } from "date-fns";
 import { id } from "date-fns/locale";
 import { toast } from "react-toastify";
+import jsPDF from "jspdf";
+import "jspdf-autotable";
 import { API_URL } from "../api/config";
 import Pagination from "../components/Pagination.jsx";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
+
+const downloadBlob = (blob, filename) => {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+const formatExportDate = (value) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return format(date, "dd MMM yyyy", { locale: id });
+};
+
+const buildProofUrl = (proofFile) => {
+  if (!proofFile) return "";
+  const raw = String(proofFile).trim();
+  if (!raw) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+
+  const baseUrl = String(API_URL || "").replace(/\/+$/, "");
+  if (raw.startsWith("/uploads/")) {
+    return `${baseUrl}${raw
+      .split("/")
+      .map((part, index) => (index <= 1 ? part : encodeURIComponent(part)))
+      .join("/")}`;
+  }
+
+  return `${baseUrl}/uploads/simpanan/${encodeURIComponent(raw)}`;
+};
 
 const Savings = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -645,6 +690,16 @@ const Savings = () => {
     return "Unknown";
   };
 
+  const getMemberUuid = (memberId) => {
+    if (!memberId) return "-";
+    const member = members.find(
+      (m) => m._id === memberId || m._id === memberId._id
+    );
+    if (member?.uuid) return member.uuid;
+    if (typeof memberId === "object" && memberId.uuid) return memberId.uuid;
+    return "-";
+  };
+
   // Get product name
   const getProductName = (productId) => {
     if (!productId) return "Unknown";
@@ -702,6 +757,174 @@ const Savings = () => {
     const dateB = new Date(b.createdAt || b.savingsDate);
     return sortOrder === "newest" ? dateB - dateA : dateA - dateB;
   });
+
+  const getSavingsExportRows = () =>
+    sortedSavings.map((saving) => {
+      const proofUrl = buildProofUrl(saving.proofFile);
+      const memberUuid = getMemberUuid(saving.memberId);
+      return {
+        uuid: memberUuid !== "-" ? memberUuid : saving.uuid || "-",
+        name: getMemberName(saving.memberId),
+        uploadedAt: formatExportDate(saving.savingsDate || saving.createdAt),
+        paymentDate: formatExportDate(saving.paymentDate),
+        period: saving.installmentPeriod || 1,
+        amount: Number(saving.amount || 0),
+        product: getProductName(saving.productId),
+        status: saving.status || "-",
+        proofUrl: proofUrl || "-",
+      };
+    });
+
+  const handleExportExcel = () => {
+    const rows = getSavingsExportRows();
+    if (!rows.length) {
+      toast.info("Tidak ada data simpanan untuk diexport.");
+      return;
+    }
+
+    const generatedAt = format(new Date(), "dd MMM yyyy HH:mm", { locale: id });
+    const tableRows = rows
+      .map(
+        (row) => `
+          <tr>
+            <td>${escapeHtml(row.uuid)}</td>
+            <td>${escapeHtml(row.name)}</td>
+            <td>${escapeHtml(row.uploadedAt)}</td>
+            <td>${escapeHtml(row.paymentDate)}</td>
+            <td>${escapeHtml(row.period)}</td>
+            <td>${row.amount}</td>
+            <td>${escapeHtml(row.product)}</td>
+            <td>${escapeHtml(row.status)}</td>
+            <td>${
+              row.proofUrl && row.proofUrl !== "-"
+                ? `<a href="${escapeHtml(row.proofUrl)}">${escapeHtml(row.proofUrl)}</a>`
+                : "-"
+            }</td>
+          </tr>`,
+      )
+      .join("");
+
+    const documentHtml = `
+      <html>
+        <head>
+          <meta charset="UTF-8" />
+          <style>
+            table { border-collapse: collapse; width: 100%; }
+            th, td { border: 1px solid #d1d5db; padding: 8px; vertical-align: top; }
+            th { background: #fce7f3; color: #9d174d; font-weight: 700; }
+            .right { text-align: right; }
+          </style>
+        </head>
+        <body>
+          <h2>Export Data Simpanan</h2>
+          <p>Dicetak: ${escapeHtml(generatedAt)}</p>
+          <p>Total Data: ${rows.length}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>UUID</th>
+                <th>Nama</th>
+                <th>Tanggal Upload</th>
+                <th>Tanggal Pembayaran</th>
+                <th>Periode</th>
+                <th>Jumlah</th>
+                <th>Produk</th>
+                <th>Status</th>
+                <th>Link Bukti</th>
+              </tr>
+            </thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    const blob = new Blob([`\ufeff${documentHtml}`], {
+      type: "application/vnd.ms-excel;charset=utf-8;",
+    });
+    downloadBlob(blob, `Data_Simpanan_${format(new Date(), "yyyyMMdd_HHmm")}.xls`);
+    toast.success("Excel data simpanan berhasil diunduh.");
+  };
+
+  const handleExportPdf = () => {
+    const rows = getSavingsExportRows();
+    if (!rows.length) {
+      toast.info("Tidak ada data simpanan untuk diexport.");
+      return;
+    }
+
+    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const generatedAt = format(new Date(), "dd MMM yyyy HH:mm", { locale: id });
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text("Export Data Simpanan", 40, 42);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(71, 85, 105);
+    doc.text(`Dicetak: ${generatedAt}`, 40, 60);
+    doc.text(`Total Data: ${rows.length}`, pageWidth - 40, 60, { align: "right" });
+
+    const proofColumnIndex = 8;
+    doc.autoTable({
+      startY: 82,
+      head: [[
+        "UUID",
+        "Nama",
+        "Tanggal Upload",
+        "Tanggal Pembayaran",
+        "Periode",
+        "Jumlah",
+        "Produk",
+        "Status",
+        "Link Bukti",
+      ]],
+      body: rows.map((row) => [
+        row.uuid,
+        row.name,
+        row.uploadedAt,
+        row.paymentDate,
+        String(row.period),
+        formatCurrency(row.amount),
+        row.product,
+        row.status,
+        row.proofUrl,
+      ]),
+      theme: "striped",
+      headStyles: { fillColor: [219, 39, 119], textColor: [255, 255, 255] },
+      styles: { fontSize: 7, cellPadding: 5, valign: "middle" },
+      alternateRowStyles: { fillColor: [253, 242, 248] },
+      columnStyles: {
+        0: { cellWidth: 78 },
+        1: { cellWidth: 116 },
+        2: { cellWidth: 78 },
+        3: { cellWidth: 86 },
+        4: { cellWidth: 44, halign: "center" },
+        5: { cellWidth: 84, halign: "right" },
+        6: { cellWidth: 112 },
+        7: { cellWidth: 64 },
+        8: { cellWidth: 170, textColor: [37, 99, 235] },
+      },
+      didDrawCell: (data) => {
+        if (
+          data.section === "body" &&
+          data.column.index === proofColumnIndex
+        ) {
+          const url = rows[data.row.index]?.proofUrl;
+          if (url && url !== "-") {
+            doc.link(data.cell.x, data.cell.y, data.cell.width, data.cell.height, {
+              url,
+            });
+          }
+        }
+      },
+      margin: { left: 40, right: 40 },
+    });
+
+    doc.save(`Data_Simpanan_${format(new Date(), "yyyyMMdd_HHmm")}.pdf`);
+    toast.success("PDF data simpanan berhasil diunduh.");
+  };
 
   // Pagination logic
   const totalPages = Math.ceil(sortedSavings.length / itemsPerPage);
@@ -771,12 +994,31 @@ const Savings = () => {
         <h1 className="text-2xl sm:text-3xl font-bold text-gray-800">
           🌸 Data Simpanan
         </h1>
-        <button
-          onClick={() => setShowModal(true)}
-          className="bg-gradient-to-r from-pink-500 to-rose-500 text-white px-4 py-2 sm:px-6 sm:py-3 rounded-lg hover:from-pink-600 hover:to-rose-600 transition-all duration-200 font-medium text-sm sm:text-base shadow-lg hover:shadow-xl"
-        >
-          ➕ Tambah Simpanan
-        </button>
+        <div className="flex flex-wrap gap-2 sm:justify-end">
+          <button
+            type="button"
+            onClick={handleExportExcel}
+            disabled={!sortedSavings.length}
+            className="px-4 py-2 sm:px-5 sm:py-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed transition-colors font-medium text-sm sm:text-base"
+          >
+            Export Excel
+          </button>
+          <button
+            type="button"
+            onClick={handleExportPdf}
+            disabled={!sortedSavings.length}
+            className="px-4 py-2 sm:px-5 sm:py-3 rounded-lg border border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 disabled:bg-gray-100 disabled:text-gray-400 disabled:border-gray-200 disabled:cursor-not-allowed transition-colors font-medium text-sm sm:text-base"
+          >
+            Export PDF
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowModal(true)}
+            className="bg-gradient-to-r from-pink-500 to-rose-500 text-white px-4 py-2 sm:px-6 sm:py-3 rounded-lg hover:from-pink-600 hover:to-rose-600 transition-all duration-200 font-medium text-sm sm:text-base shadow-lg hover:shadow-xl"
+          >
+            ➕ Tambah Simpanan
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
