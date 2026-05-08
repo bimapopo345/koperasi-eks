@@ -1674,18 +1674,6 @@
   display: none;
 }
 
-.inv-print-page-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.inv-print-page-table > thead > tr > td,
-.inv-print-page-table > tbody > tr > td {
-  border: 0;
-  padding: 0;
-  vertical-align: top;
-}
-
 .inv-print-japan {
   font-family:
     "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
@@ -2429,7 +2417,7 @@
 @media print {
   @page {
     size: A4;
-    margin: 10mm;
+    margin: 48mm 10mm 12mm;
   }
 
   body * {
@@ -2467,32 +2455,25 @@
     padding: 0 7mm 4mm;
   }
 
-  .inv-print-page-table {
-    border-collapse: collapse;
-    width: 100%;
-  }
-
-  .inv-print-page-table > thead {
-    display: table-header-group;
-  }
-
-  .inv-print-page-table > tbody {
-    display: table-row-group;
-  }
-
-  .inv-print-page-table > thead > tr > td,
-  .inv-print-page-table > tbody > tr > td {
-    border: 0;
-    padding: 0;
-    vertical-align: top;
-  }
-
   .inv-print-top {
+    position: fixed;
+    top: 10mm;
+    right: 17mm;
+    left: 17mm;
+    z-index: 10;
     flex-direction: row;
     align-items: flex-start;
     justify-content: space-between;
     gap: 18mm;
+    min-height: 30mm;
+    padding-bottom: 6mm;
+    border-bottom: 1px solid #cbd5e1;
+    background: #fff;
     text-align: left;
+  }
+
+  .inv-print-top + .inv-print-divider {
+    display: none;
   }
 
   .inv-print-letterhead-logo {
