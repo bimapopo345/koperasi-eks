@@ -160,6 +160,15 @@ function InvoiceLetterhead({ title = "INVOICE" }) {
   );
 }
 
+function PrintRepeatHeader({ title = "INVOICE" }) {
+  return (
+    <div className="inv-print-repeat-head">
+      <InvoiceLetterhead title={title} />
+      <hr className="inv-print-divider" />
+    </div>
+  );
+}
+
 function PrintProjectionTable({
   projections = [],
   currency = "IDR",
@@ -1992,6 +2001,7 @@ export default function InvoiceDetail({
                 />
 
                 <div className="inv-print-terms inv-print-page-break">
+                  <PrintRepeatHeader />
                   <h3>Note/Term of Services</h3>
                   <HtmlBlock html={invoice.terms} />
                 </div>
@@ -2194,6 +2204,7 @@ export default function InvoiceDetail({
                 />
 
                 <div className="inv-print-terms inv-print-page-break">
+                  <PrintRepeatHeader title="請求書" />
                   <h3>備考・条件</h3>
                   <HtmlBlock html={invoice.terms} />
                 </div>

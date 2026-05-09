@@ -1791,6 +1791,10 @@
   margin: 18px 0;
 }
 
+.inv-print-repeat-head {
+  display: none;
+}
+
 .inv-print-bill-row {
   display: grid;
   grid-template-columns: minmax(280px, 1fr) minmax(360px, 0.8fr);
@@ -2530,6 +2534,15 @@
   .inv-print-page-break {
     break-before: page;
     page-break-before: always;
+  }
+
+  .inv-print-repeat-head {
+    display: block;
+    margin-bottom: 18px;
+  }
+
+  .inv-print-terms.inv-print-page-break {
+    margin-top: 0;
   }
 
   .inv-print-projection {
