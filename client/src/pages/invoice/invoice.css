@@ -1791,8 +1791,18 @@
   margin: 18px 0;
 }
 
-.inv-print-repeat-head {
-  display: none;
+.inv-print-page-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+  table-layout: fixed;
+}
+
+.inv-print-page-table > thead > tr > td,
+.inv-print-page-table > tbody > tr > td {
+  border: 0;
+  padding: 0;
+  vertical-align: top;
 }
 
 .inv-print-bill-row {
@@ -2459,6 +2469,31 @@
     padding: 0 7mm 4mm;
   }
 
+  .inv-print-page-table {
+    display: table;
+    width: 100%;
+    table-layout: fixed;
+  }
+
+  .inv-print-page-table > thead {
+    display: table-header-group;
+  }
+
+  .inv-print-page-table > tbody {
+    display: table-row-group;
+  }
+
+  .inv-print-page-table > thead > tr > td,
+  .inv-print-page-table > tbody > tr > td {
+    border: 0;
+    padding: 0;
+  }
+
+  .inv-print-page-table > thead > tr > td {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
   .inv-print-top {
     flex-direction: row;
     align-items: flex-start;
@@ -2534,11 +2569,6 @@
   .inv-print-page-break {
     break-before: page;
     page-break-before: always;
-  }
-
-  .inv-print-repeat-head {
-    display: block;
-    margin-bottom: 18px;
   }
 
   .inv-print-terms.inv-print-page-break {

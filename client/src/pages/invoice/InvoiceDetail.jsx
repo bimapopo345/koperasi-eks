@@ -160,12 +160,23 @@ function InvoiceLetterhead({ title = "INVOICE" }) {
   );
 }
 
-function PrintRepeatHeader({ title = "INVOICE" }) {
+function PrintPageFrame({ title = "INVOICE", children }) {
   return (
-    <div className="inv-print-repeat-head">
-      <InvoiceLetterhead title={title} />
-      <hr className="inv-print-divider" />
-    </div>
+    <table className="inv-print-page-table">
+      <thead>
+        <tr>
+          <td>
+            <InvoiceLetterhead title={title} />
+            <hr className="inv-print-divider" />
+          </td>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>{children}</td>
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
@@ -1858,11 +1869,8 @@ export default function InvoiceDetail({
                 }`}
                 id="printableArea"
               >
-                <InvoiceLetterhead />
-
-                <hr className="inv-print-divider" />
-
-                <div className="inv-print-bill-row">
+                <PrintPageFrame>
+                  <div className="inv-print-bill-row">
                   <address className="inv-print-to">
                     <h6>To,</h6>
                     <h4>{invoice.customerSnapshot?.name || "-"}</h4>
@@ -2000,8 +2008,7 @@ export default function InvoiceDetail({
                   currency={invoice.currency}
                 />
 
-                <div className="inv-print-terms inv-print-page-break">
-                  <PrintRepeatHeader />
+                  <div className="inv-print-terms inv-print-page-break">
                   <h3>Note/Term of Services</h3>
                   <HtmlBlock html={invoice.terms} />
                 </div>
@@ -2039,7 +2046,8 @@ export default function InvoiceDetail({
                       </button>
                     </div>
                   </>
-                ) : null}
+                  ) : null}
+                </PrintPageFrame>
               </section>
 
               <section
@@ -2047,11 +2055,8 @@ export default function InvoiceDetail({
                   printVariant === "japan" ? "" : "is-hidden"
                 }`}
               >
-                <InvoiceLetterhead title="請求書" />
-
-                <hr className="inv-print-divider" />
-
-                <div className="inv-print-bill-row">
+                <PrintPageFrame title="請求書">
+                  <div className="inv-print-bill-row">
                   <address className="inv-print-to">
                     <h6>ご請求先</h6>
                     <h4>{invoice.customerSnapshot?.name || "-"}</h4>
@@ -2203,11 +2208,11 @@ export default function InvoiceDetail({
                   }}
                 />
 
-                <div className="inv-print-terms inv-print-page-break">
-                  <PrintRepeatHeader title="請求書" />
+                  <div className="inv-print-terms inv-print-page-break">
                   <h3>備考・条件</h3>
                   <HtmlBlock html={invoice.terms} />
                 </div>
+                </PrintPageFrame>
               </section>
 
               <section
@@ -2218,11 +2223,7 @@ export default function InvoiceDetail({
                 }`}
               >
                 {paymentReceiptTarget ? (
-                  <>
-                    <InvoiceLetterhead title="PAYMENT RECEIPT" />
-
-                    <hr className="inv-print-divider" />
-
+                  <PrintPageFrame title="PAYMENT RECEIPT">
                     <div className="inv-receipt-body">
                       <div className="inv-receipt-title-row">
                         <div>
@@ -2285,7 +2286,7 @@ export default function InvoiceDetail({
                       <br />
                       {companyProfile.website}
                     </p>
-                  </>
+                  </PrintPageFrame>
                 ) : null}
               </section>
             </div>
