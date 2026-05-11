@@ -275,6 +275,8 @@ function PaymentSearchSelect({
 }) {
   const [search, setSearch] = useState("");
   const [isOpen, setIsOpen] = useState(false);
+  const [menuStyle, setMenuStyle] = useState(null);
+  const inputRef = useRef(null);
 
   const selectedOption = useMemo(
     () => options.find((option) => String(option.value) === String(value)),
@@ -309,6 +311,19 @@ function PaymentSearchSelect({
     setIsOpen(false);
   };
 
+  const openMenu = () => {
+    const rect = inputRef.current?.getBoundingClientRect();
+    if (rect) {
+      setMenuStyle({
+        top: rect.bottom + 6,
+        left: rect.left,
+        right: "auto",
+        width: Math.max(rect.width, 320),
+      });
+    }
+    setIsOpen(true);
+  };
+
   return (
     <div
       className="inv-combobox"
@@ -317,13 +332,14 @@ function PaymentSearchSelect({
       }}
     >
       <input
+        ref={inputRef}
         className="inv-input inv-combobox-input"
         value={search}
         placeholder={placeholder}
-        onFocus={() => setIsOpen(true)}
+        onFocus={openMenu}
         onChange={(event) => {
           setSearch(event.target.value);
-          setIsOpen(true);
+          openMenu();
           if (value) onChange("");
         }}
         onKeyDown={(event) => {
@@ -352,7 +368,7 @@ function PaymentSearchSelect({
       ) : null}
 
       {isOpen ? (
-        <div className="inv-combobox-menu">
+        <div className="inv-combobox-menu" style={menuStyle || undefined}>
           {filteredOptions.length ? (
             filteredOptions.map((option) => (
               <button
@@ -607,7 +623,7 @@ export default function InvoiceDetail({
         return {
           key: `${type}-${category.id}`,
           value: `${type}|${category.id}`,
-          label: `${category.name}${code}`,
+          label: `${String(category.name || "").replace(/^-+\s*/, "")}${code}`,
           meta: "Account",
           search: [category.name, category.code, type]
             .filter(Boolean)

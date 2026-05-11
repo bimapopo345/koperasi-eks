@@ -9,7 +9,10 @@ import {
   updateInvoice,
   validateInvoiceNumber,
 } from "../../api/invoiceApi.jsx";
-import { getInvoiceProducts } from "../../api/invoiceProductApi.jsx";
+import {
+  createInvoiceProduct,
+  getInvoiceProducts,
+} from "../../api/invoiceProductApi.jsx";
 import { getTosList } from "../../api/tosApi.jsx";
 import RichTextEditor from "./RichTextEditor.jsx";
 import "./invoice.css";
@@ -79,6 +82,14 @@ const emptyProjection = (date = "") => ({
   description: "",
   estimateDate: date,
   amount: 0,
+});
+
+const INVOICE_DRAFT_KEY = "koperasi_invoice_create_draft_v1";
+
+const emptyProductForm = () => ({
+  title: "",
+  price: "",
+  description: "",
 });
 
 function MoneyInput({ value, onChange, placeholder = "0" }) {
@@ -395,6 +406,9 @@ export default function InvoiceForm() {
   const [items, setItems] = useState([emptyItem()]);
   const [discounts, setDiscounts] = useState([emptyDiscount()]);
   const [projections, setProjections] = useState([emptyProjection(today)]);
+  const [showProductModal, setShowProductModal] = useState(false);
+  const [productForm, setProductForm] = useState(emptyProductForm());
+  const [creatingProduct, setCreatingProduct] = useState(false);
   const [invoiceNumberCheck, setInvoiceNumberCheck] = useState({
     status: "idle",
     message: "",
@@ -487,11 +501,51 @@ export default function InvoiceForm() {
               : [emptyProjection(toDateInput(invoice.dueDate))],
           );
         } else {
-          setForm((prev) => ({
-            ...prev,
-            invoiceNumber:
-              metaRes?.data?.nextInvoiceNumber || prev.invoiceNumber,
-          }));
+          const savedDraft = (() => {
+            try {
+              return JSON.parse(localStorage.getItem(INVOICE_DRAFT_KEY) || "null");
+            } catch {
+              return null;
+            }
+          })();
+
+          if (savedDraft?.form) {
+            setForm({
+              ...savedDraft.form,
+              invoiceNumber:
+                savedDraft.form.invoiceNumber ||
+                metaRes?.data?.nextInvoiceNumber ||
+                "",
+              issuedDate: savedDraft.form.issuedDate || today,
+              dueDate: savedDraft.form.dueDate || today,
+              currency: savedDraft.form.currency || "IDR",
+              exchangeRate: savedDraft.form.exchangeRate || 1,
+            });
+            setItems(
+              Array.isArray(savedDraft.items) && savedDraft.items.length
+                ? savedDraft.items
+                : [emptyItem()],
+            );
+            setDiscounts(
+              Array.isArray(savedDraft.discounts) &&
+                savedDraft.discounts.length
+                ? savedDraft.discounts
+                : [emptyDiscount()],
+            );
+            setProjections(
+              Array.isArray(savedDraft.projections) &&
+                savedDraft.projections.length
+                ? savedDraft.projections
+                : [emptyProjection(today)],
+            );
+            toast.info("Draft invoice terakhir dipulihkan dari browser.");
+          } else {
+            setForm((prev) => ({
+              ...prev,
+              invoiceNumber:
+                metaRes?.data?.nextInvoiceNumber || prev.invoiceNumber,
+            }));
+          }
         }
       } catch (err) {
         setError(
@@ -506,6 +560,24 @@ export default function InvoiceForm() {
 
     load();
   }, [invoiceNumber, isEdit, today]);
+
+  useEffect(() => {
+    if (isEdit || loading) return;
+    const timer = window.setTimeout(() => {
+      localStorage.setItem(
+        INVOICE_DRAFT_KEY,
+        JSON.stringify({
+          savedAt: new Date().toISOString(),
+          form,
+          items,
+          discounts,
+          projections,
+        }),
+      );
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [discounts, form, isEdit, items, loading, projections]);
 
   useEffect(() => {
     if (isEdit || invoiceNumberLocked || !form.issuedDate) return;
@@ -796,6 +868,9 @@ export default function InvoiceForm() {
       }
 
       toast.success(isEdit ? "Invoice updated" : "Invoice created");
+      if (!isEdit) {
+        localStorage.removeItem(INVOICE_DRAFT_KEY);
+      }
       navigate(
         `/invoice/${response.data?.invoiceNumber || payload.invoiceNumber}`,
       );
@@ -805,6 +880,54 @@ export default function InvoiceForm() {
       );
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const submitProductShortcut = async () => {
+    setCreatingProduct(true);
+    try {
+      const payload = {
+        title: productForm.title,
+        price: normalizeMoney(productForm.price),
+        description: productForm.description,
+      };
+      const response = await createInvoiceProduct(payload);
+      if (!response?.success) {
+        throw new Error(response?.message || "Failed to create product");
+      }
+
+      const newProduct = response.data;
+      setProducts((prev) =>
+        [...prev, newProduct].sort((a, b) =>
+          String(a.title || "").localeCompare(String(b.title || "")),
+        ),
+      );
+      setItems((prev) => {
+        const targetIndex = prev.findIndex(
+          (item) => !item.productId && !item.title,
+        );
+        const index = targetIndex >= 0 ? targetIndex : prev.length;
+        const next = targetIndex >= 0 ? [...prev] : [...prev, emptyItem()];
+        next[index] = {
+          ...next[index],
+          productId: newProduct._id || "",
+          title: newProduct.title || "",
+          description: newProduct.description || "",
+          price: newProduct.price || 0,
+        };
+        return next;
+      });
+      setProductForm(emptyProductForm());
+      setShowProductModal(false);
+      toast.success("Product invoice dibuat dan dipilih ke item.");
+    } catch (err) {
+      toast.error(
+        err?.response?.data?.message ||
+          err.message ||
+          "Failed to create product",
+      );
+    } finally {
+      setCreatingProduct(false);
     }
   };
 
@@ -1002,6 +1125,13 @@ export default function InvoiceForm() {
                   onClick={() => setItems((prev) => [...prev, emptyItem()])}
                 >
                   Add Item
+                </button>
+                <button
+                  type="button"
+                  className="inv-btn-secondary"
+                  onClick={() => setShowProductModal(true)}
+                >
+                  Tambah Product Baru
                 </button>
               </div>
               <div className="inv-page">
@@ -1461,6 +1591,85 @@ export default function InvoiceForm() {
                   Save & Send
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showProductModal ? (
+        <div className="inv-note-modal-backdrop inv-no-print">
+          <div
+            className="inv-product-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="invoice-product-shortcut-title"
+          >
+            <div className="inv-note-modal-head">
+              <h2 id="invoice-product-shortcut-title">
+                Tambah Product Invoice
+              </h2>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowProductModal(false);
+                  setProductForm(emptyProductForm());
+                }}
+                aria-label="Close product modal"
+              >
+                ×
+              </button>
+            </div>
+            <div className="inv-product-modal-body">
+              <label className="inv-label">Product Name</label>
+              <input
+                className="inv-input"
+                value={productForm.title}
+                onChange={(event) =>
+                  setProductForm((prev) => ({
+                    ...prev,
+                    title: event.target.value,
+                  }))
+                }
+                placeholder="Nama product invoice"
+              />
+              <label className="inv-label">Price</label>
+              <MoneyInput
+                value={productForm.price}
+                onChange={(value) =>
+                  setProductForm((prev) => ({ ...prev, price: value }))
+                }
+              />
+              <label className="inv-label">Description</label>
+              <textarea
+                className="inv-textarea"
+                value={productForm.description}
+                onChange={(event) =>
+                  setProductForm((prev) => ({
+                    ...prev,
+                    description: event.target.value,
+                  }))
+                }
+                placeholder="Deskripsi product"
+              />
+            </div>
+            <div className="inv-payment-modal-footer">
+              <button
+                type="button"
+                className="inv-btn-ghost"
+                onClick={() => {
+                  setShowProductModal(false);
+                  setProductForm(emptyProductForm());
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="inv-btn"
+                disabled={creatingProduct}
+                onClick={submitProductShortcut}
+              >
+                {creatingProduct ? "Saving..." : "Save Product"}
+              </button>
             </div>
           </div>
         </div>

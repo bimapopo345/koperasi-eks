@@ -377,7 +377,7 @@
 
 .inv-combobox-menu {
   position: absolute;
-  z-index: 20;
+  z-index: 80;
   top: calc(100% + 6px);
   left: 0;
   right: 0;
@@ -391,7 +391,9 @@
 }
 
 .inv-payment-modal .inv-combobox-menu {
-  z-index: 200;
+  position: fixed;
+  z-index: 10050;
+  width: min(430px, calc(100vw - 32px));
 }
 
 .inv-combobox-option {
@@ -962,6 +964,20 @@
   box-shadow: 0 28px 80px rgba(15, 23, 42, 0.34);
 }
 
+.inv-product-modal {
+  width: min(100%, 560px);
+  overflow: hidden;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.34);
+}
+
+.inv-product-modal-body {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+}
+
 .inv-note-modal-head {
   display: flex;
   align-items: center;
@@ -1304,11 +1320,6 @@
   border-radius: 12px;
   background: #fff;
   padding: 12px;
-}
-
-.inv-split-row .inv-combobox-menu {
-  min-width: 320px;
-  right: auto;
 }
 
 .inv-split-row small {
