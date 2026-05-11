@@ -8,6 +8,7 @@ import {
   updateAccount,
   deleteAccount,
   getSubmenusByMasterType,
+  getAllCategories,
 } from "../../api/accountingApi";
 
 const TABS = ["Assets", "Liabilities", "Income", "Expenses", "Equity"];
@@ -289,6 +290,83 @@ const sortAccountsByCode = (accounts = []) => {
   });
 };
 
+const normalizeAccountCode = (code) => String(code || "").trim();
+
+const getDirectChildSuffixes = (baseCode, accountCodes = []) => {
+  const normalizedBase = normalizeAccountCode(baseCode).replace(/\.$/, "");
+  if (!normalizedBase) return [];
+  const prefix = `${normalizedBase}.`;
+
+  return accountCodes
+    .filter((code) => code.startsWith(prefix))
+    .map((code) => code.slice(prefix.length))
+    .filter((suffix) => suffix && !suffix.includes(".") && /^\d+$/.test(suffix));
+};
+
+const getMostCommonParentCode = (accountCodes = []) => {
+  const topLevelCodes = accountCodes.filter((code) => code && !code.includes("."));
+  if (topLevelCodes.length) return sortAccountsByCode(
+    topLevelCodes.map((accountCode) => ({ accountCode })),
+  )[0]?.accountCode || "";
+
+  const parentCounts = accountCodes.reduce((acc, code) => {
+    const parts = String(code || "").split(".");
+    if (parts.length <= 1) return acc;
+    const parent = parts.slice(0, -1).join(".");
+    acc[parent] = (acc[parent] || 0) + 1;
+    return acc;
+  }, {});
+
+  return Object.entries(parentCounts).sort((a, b) => {
+    if (b[1] !== a[1]) return b[1] - a[1];
+    return compareAccountCodeKeys(
+      a[0].split(".").map(toAccountCodeSegment),
+      b[0].split(".").map(toAccountCodeSegment),
+    );
+  })[0]?.[0] || "";
+};
+
+const inferSuggestionBaseCode = (typedCode, accountCodes = []) => {
+  const normalizedTyped = normalizeAccountCode(typedCode);
+  if (normalizedTyped.endsWith(".")) return normalizedTyped.slice(0, -1);
+  if (normalizedTyped.includes(".")) {
+    return normalizedTyped.split(".").slice(0, -1).join(".");
+  }
+  if (normalizedTyped) return normalizedTyped;
+  return getMostCommonParentCode(accountCodes);
+};
+
+const getNextSuggestedAccountCode = (baseCode, accountCodes = []) => {
+  const normalizedBase = normalizeAccountCode(baseCode).replace(/\.$/, "");
+  if (!normalizedBase) return null;
+
+  const usedSuffixes = getDirectChildSuffixes(normalizedBase, accountCodes);
+  const usedNumbers = usedSuffixes
+    .map((suffix) => Number(suffix))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  const width = Math.max(2, ...usedSuffixes.map((suffix) => suffix.length), 2);
+  const increment =
+    usedNumbers.length > 0 &&
+    usedNumbers.every((value) => value % 100 === 0) &&
+    Math.max(...usedNumbers) >= 100
+      ? 100
+      : 1;
+
+  let nextNumber = increment;
+  const usedSet = new Set(usedNumbers);
+  while (usedSet.has(nextNumber)) {
+    nextNumber += increment;
+  }
+
+  const suffix = String(nextNumber).padStart(width, "0");
+  return {
+    baseCode: normalizedBase,
+    suffix,
+    fullCode: `${normalizedBase}.${suffix}`,
+    usedSuffixes: usedSuffixes.sort((a, b) => Number(a) - Number(b)),
+  };
+};
+
 export default function ChartOfAccounts() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -298,6 +376,7 @@ export default function ChartOfAccounts() {
   const [currentType, setCurrentType] = useState("Assets");
   const [accountCounts, setAccountCounts] = useState({});
   const [accountsBySubtype, setAccountsBySubtype] = useState({});
+  const [globalAccountOptions, setGlobalAccountOptions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Modal state
@@ -323,10 +402,24 @@ export default function ChartOfAccounts() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await getAccountsByType(currentType);
+      const [res, categoriesRes] = await Promise.all([
+        getAccountsByType(currentType),
+        getAllCategories(),
+      ]);
       if (res.success) {
         setAccountCounts(res.accountCounts || {});
         setAccountsBySubtype(res.accountsBySubtype || {});
+      }
+      if (categoriesRes?.success) {
+        setGlobalAccountOptions(
+          (categoriesRes.data || [])
+            .filter((item) => item.type === "account" && item.code)
+            .map((item) => ({
+              _id: item.id,
+              accountCode: item.code,
+              accountName: item.name,
+            })),
+        );
       }
     } catch {
       toast.error("Failed to load chart of accounts");
@@ -350,6 +443,106 @@ export default function ChartOfAccounts() {
       ]),
     [accountsBySubtype],
   );
+
+  const allCurrentTypeAccounts = useMemo(
+    () =>
+      accountSubtypeEntries.flatMap(([, data]) =>
+        (data?.accounts || []).map((account) => ({
+          ...account,
+          _submenuId: data.submenuId || account.submenuId?._id || account.submenuId,
+        })),
+      ),
+    [accountSubtypeEntries],
+  );
+
+  const selectedSubmenu = useMemo(
+    () =>
+      submenus.find((submenu) => String(submenu._id) === String(form.submenuId)),
+    [form.submenuId, submenus],
+  );
+
+  const selectedSubtypeAccounts = useMemo(() => {
+    if (!form.submenuId && !selectedSubmenu?.submenuName) return [];
+
+    const bySubmenuId = allCurrentTypeAccounts.filter(
+      (account) => String(account._submenuId || "") === String(form.submenuId),
+    );
+    if (bySubmenuId.length) return bySubmenuId;
+
+    const selectedName = selectedSubmenu?.submenuName || "";
+    return accountSubtypeEntries.find(([submenuName]) => submenuName === selectedName)?.[1]
+      ?.accounts || [];
+  }, [
+    accountSubtypeEntries,
+    allCurrentTypeAccounts,
+    form.submenuId,
+    selectedSubmenu,
+  ]);
+
+  const existingAccountCodes = useMemo(
+    () =>
+      globalAccountOptions
+        .map((account) => normalizeAccountCode(account.accountCode))
+        .filter(Boolean),
+    [globalAccountOptions],
+  );
+
+  const existingAccountCodeOwner = useMemo(() => {
+    const normalizedCode = normalizeAccountCode(form.accountCode);
+    if (!normalizedCode) return null;
+    return globalAccountOptions.find((account) => {
+      if (editingAccount && String(account._id) === String(editingAccount._id)) {
+        return false;
+      }
+      return normalizeAccountCode(account.accountCode) === normalizedCode;
+    });
+  }, [editingAccount, form.accountCode, globalAccountOptions]);
+
+  const accountCodeExists = useMemo(
+    () => Boolean(existingAccountCodeOwner),
+    [existingAccountCodeOwner],
+  );
+
+  const accountCodeSuggestion = useMemo(() => {
+    if (editingAccount) return null;
+    const scopeCodes = (selectedSubtypeAccounts.length
+      ? selectedSubtypeAccounts
+      : allCurrentTypeAccounts
+    )
+      .map((account) => normalizeAccountCode(account.accountCode))
+      .filter(Boolean);
+    const baseCode = inferSuggestionBaseCode(form.accountCode, scopeCodes);
+    return getNextSuggestedAccountCode(baseCode, scopeCodes);
+  }, [
+    allCurrentTypeAccounts,
+    editingAccount,
+    form.accountCode,
+    selectedSubtypeAccounts,
+  ]);
+
+  const accountCodeAvailabilityMessage = useMemo(() => {
+    const normalizedCode = normalizeAccountCode(form.accountCode);
+    if (!normalizedCode) return "";
+    if (accountCodeExists) {
+      const ownerName = existingAccountCodeOwner?.accountName
+        ? ` oleh "${existingAccountCodeOwner.accountName}"`
+        : "";
+      return `Account ID ${normalizedCode} sudah dipakai${ownerName}. Pilih suffix titik lain supaya tidak double.`;
+    }
+    if (normalizedCode.includes(".")) {
+      const suffix = normalizedCode.split(".").pop();
+      return `Suffix .${suffix} masih tersedia di COA aktif.`;
+    }
+    if (existingAccountCodes.includes(normalizedCode)) {
+      return `Parent ${normalizedCode} sudah ada. Kalau mau buat anakannya, gunakan format ${normalizedCode}.01 atau pilih saran.`;
+    }
+    return "";
+  }, [
+    accountCodeExists,
+    existingAccountCodeOwner,
+    existingAccountCodes,
+    form.accountCode,
+  ]);
 
   // Keep active tab synced when legacy route includes account type
   useEffect(() => {
@@ -603,6 +796,11 @@ export default function ChartOfAccounts() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (accountCodeExists) {
+      toast.error("Account ID sudah dipakai. Gunakan suffix titik lain.");
+      return;
+    }
+
     try {
       const payload = {
         accountName: form.accountName,
@@ -1081,25 +1279,107 @@ export default function ChartOfAccounts() {
                 <label className="block text-sm font-medium text-gray-700 mb-1.5">
                   Account ID
                 </label>
-                <input
-                  type="text"
-                  value={form.accountCode}
-                  onChange={(e) =>
-                    setForm({ ...form, accountCode: e.target.value })
-                  }
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:ring-2 focus:ring-pink-500 focus:border-pink-500 outline-none transition"
-                  placeholder={
-                    editingAccount
-                      ? "Account code"
-                      : "Leave empty for auto-generation"
-                  }
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  {editingAccount
-                    ? "A unique identifier for this account"
-                    : "Optional. A unique identifier for this account. Will be auto-generated if left empty."}
-                </p>
-              </div>
+	                <input
+	                  type="text"
+	                  value={form.accountCode}
+	                  onChange={(e) =>
+	                    setForm({ ...form, accountCode: e.target.value })
+	                  }
+	                  className={`w-full border rounded-lg px-3 py-2.5 text-sm focus:ring-2 outline-none transition ${
+	                    accountCodeExists
+	                      ? "border-red-300 bg-red-50 focus:ring-red-200 focus:border-red-500"
+	                      : "border-gray-300 focus:ring-pink-500 focus:border-pink-500"
+	                  }`}
+	                  placeholder={
+	                    editingAccount
+	                      ? "Account code"
+	                      : "Leave empty for auto-generation"
+	                  }
+	                />
+	                {accountCodeAvailabilityMessage ? (
+	                  <p
+	                    className={`text-xs mt-1 ${
+	                      accountCodeExists ? "text-red-600" : "text-emerald-600"
+	                    }`}
+	                  >
+	                    {accountCodeAvailabilityMessage}
+	                  </p>
+	                ) : (
+	                  <p className="text-xs text-gray-400 mt-1">
+	                    {editingAccount
+	                      ? "A unique identifier for this account"
+	                      : "Optional. A unique identifier for this account. Will be auto-generated if left empty."}
+	                  </p>
+	                )}
+	                {!editingAccount && accountCodeSuggestion ? (
+	                  <div className="mt-3 rounded-xl border border-pink-100 bg-pink-50/70 p-3">
+	                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+	                      <div>
+	                        <p className="text-xs font-semibold uppercase tracking-[0.12em] text-pink-500">
+	                          Saran Account ID
+	                        </p>
+	                        <p className="mt-1 text-sm text-gray-700">
+	                          Base{" "}
+	                          <span className="font-mono font-bold text-gray-900">
+	                            {accountCodeSuggestion.baseCode}
+	                          </span>
+	                          , suffix berikutnya{" "}
+	                          <span className="font-mono font-bold text-pink-700">
+	                            .{accountCodeSuggestion.suffix}
+	                          </span>
+	                        </p>
+	                        <p className="mt-1 font-mono text-base font-bold text-gray-950">
+	                          {accountCodeSuggestion.fullCode}
+	                        </p>
+	                      </div>
+	                      <button
+	                        type="button"
+	                        className="rounded-lg bg-pink-600 px-3 py-2 text-xs font-bold text-white transition hover:bg-pink-700"
+	                        onClick={() =>
+	                          setForm((prev) => ({
+	                            ...prev,
+	                            accountCode: accountCodeSuggestion.fullCode,
+	                          }))
+	                        }
+	                      >
+	                        Pakai saran
+	                      </button>
+	                    </div>
+	                    {accountCodeSuggestion.usedSuffixes.length ? (
+	                      <div className="mt-3">
+	                        <p className="text-xs font-semibold text-gray-500">
+	                          Suffix yang sudah dipakai di{" "}
+	                          <span className="font-mono">
+	                            {accountCodeSuggestion.baseCode}
+	                          </span>
+	                          :
+	                        </p>
+	                        <div className="mt-2 flex flex-wrap gap-1.5">
+	                          {accountCodeSuggestion.usedSuffixes
+	                            .slice(0, 24)
+	                            .map((suffix) => (
+	                              <span
+	                                key={suffix}
+	                                className="rounded-full bg-white px-2 py-1 font-mono text-[11px] font-bold text-gray-500 ring-1 ring-pink-100"
+	                              >
+	                                .{suffix}
+	                              </span>
+	                            ))}
+	                          {accountCodeSuggestion.usedSuffixes.length > 24 ? (
+	                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold text-gray-500 ring-1 ring-pink-100">
+	                              +{accountCodeSuggestion.usedSuffixes.length - 24} lagi
+	                            </span>
+	                          ) : null}
+	                        </div>
+	                      </div>
+	                    ) : (
+	                      <p className="mt-2 text-xs text-gray-500">
+	                        Belum ada suffix titik di base ini.
+	                      </p>
+	                    )}
+	                  </div>
+	                ) : null}
+	              </div>
 
               {/* --- Description --- */}
               <div>
@@ -1126,12 +1406,17 @@ export default function ChartOfAccounts() {
                 >
                   Cancel
                 </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 text-sm font-medium text-white bg-pink-600 rounded-lg hover:bg-pink-700 transition shadow-sm"
-                >
-                  {editingAccount ? "Update" : "Save"}
-                </button>
+	                <button
+	                  type="submit"
+	                  disabled={accountCodeExists}
+	                  className={`px-5 py-2.5 text-sm font-medium text-white rounded-lg transition shadow-sm ${
+	                    accountCodeExists
+	                      ? "bg-gray-300 cursor-not-allowed"
+	                      : "bg-pink-600 hover:bg-pink-700"
+	                  }`}
+	                >
+	                  {editingAccount ? "Update" : "Save"}
+	                </button>
               </div>
             </form>
           </div>

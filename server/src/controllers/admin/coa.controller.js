@@ -353,9 +353,19 @@ export const createAccount = async (req, res) => {
     } else {
       const exists = await CoaAccount.findOne({ accountCode: finalCode });
       if (exists) {
+        const visibility = exists.isActive ? "aktif" : "nonaktif/terhapus";
         return res
           .status(400)
-          .json({ success: false, message: "Account code sudah ada" });
+          .json({
+            success: false,
+            message: `Account code ${finalCode} sudah ada (${visibility}) pada "${exists.accountName || "-"}"`,
+            conflict: {
+              id: exists._id,
+              accountCode: exists.accountCode,
+              accountName: exists.accountName,
+              isActive: exists.isActive,
+            },
+          });
       }
     }
 
@@ -437,9 +447,19 @@ export const updateAccount = async (req, res) => {
         _id: { $ne: account._id },
       });
       if (exists) {
+        const visibility = exists.isActive ? "aktif" : "nonaktif/terhapus";
         return res
           .status(400)
-          .json({ success: false, message: "Account code sudah ada" });
+          .json({
+            success: false,
+            message: `Account code ${normalizedCode} sudah ada (${visibility}) pada "${exists.accountName || "-"}"`,
+            conflict: {
+              id: exists._id,
+              accountCode: exists.accountCode,
+              accountName: exists.accountName,
+              isActive: exists.isActive,
+            },
+          });
       }
     }
 

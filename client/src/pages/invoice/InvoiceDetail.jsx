@@ -102,6 +102,30 @@ const truncateText = (text, maxLength = 54) => {
   return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 };
 
+const formatFileSize = (size = 0) => {
+  const value = Number(size || 0);
+  if (!value) return "0 KB";
+  if (value >= 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${Math.max(1, Math.round(value / 1024))} KB`;
+};
+
+const canPreviewImageFile = (file) => {
+  if (!file) return false;
+  const browserPreviewTypes = [
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "image/bmp",
+  ];
+  const browserPreviewExtensions = /\.(jpe?g|png|gif|webp|bmp)$/i;
+  return (
+    browserPreviewTypes.includes(file.type) ||
+    browserPreviewExtensions.test(file.name || "")
+  );
+};
+
 const sanitizePrintFileName = (value) =>
   String(value || "")
     .replace(/[\\/:*?"<>|]+/g, " ")
@@ -359,6 +383,7 @@ export default function InvoiceDetail({
   const autoPrintRef = useRef(false);
   const invoiceSectionRef = useRef(null);
   const paymentSectionRef = useRef(null);
+  const paymentAttachmentInputRef = useRef(null);
   const previousDocumentTitleRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -373,6 +398,8 @@ export default function InvoiceDetail({
   const [categories, setCategories] = useState([]);
   const [paymentSplits, setPaymentSplits] = useState([]);
   const [paymentAttachment, setPaymentAttachment] = useState(null);
+  const [paymentAttachmentPreviewUrl, setPaymentAttachmentPreviewUrl] =
+    useState("");
   const [paymentSplitMode, setPaymentSplitMode] = useState(false);
   const [paymentReceiptTarget, setPaymentReceiptTarget] = useState(null);
   const [notePreview, setNotePreview] = useState(null);
@@ -475,6 +502,18 @@ export default function InvoiceDetail({
 
     loadAccountingOptions();
   }, [publicView]);
+
+  useEffect(() => {
+    if (!canPreviewImageFile(paymentAttachment)) {
+      setPaymentAttachmentPreviewUrl("");
+      return undefined;
+    }
+
+    const objectUrl = URL.createObjectURL(paymentAttachment);
+    setPaymentAttachmentPreviewUrl(objectUrl);
+
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [paymentAttachment]);
 
   useEffect(() => {
     if (!printOnly || !invoice || autoPrintRef.current) return;
@@ -715,6 +754,13 @@ export default function InvoiceDetail({
   );
   const splitRemaining = paymentAmount - splitUsedAmount;
 
+  const clearPaymentAttachment = () => {
+    setPaymentAttachment(null);
+    if (paymentAttachmentInputRef.current) {
+      paymentAttachmentInputRef.current.value = "";
+    }
+  };
+
   const resetPaymentState = () => {
     setPaymentForm({
       paymentDate: new Date().toISOString().slice(0, 10),
@@ -729,7 +775,7 @@ export default function InvoiceDetail({
       notes: "",
     });
     setPaymentSplits([]);
-    setPaymentAttachment(null);
+    clearPaymentAttachment();
     setPaymentSplitMode(false);
     setEditingPaymentId("");
   };
@@ -811,7 +857,7 @@ export default function InvoiceDetail({
       senderName: "",
     });
     setPaymentSplits([]);
-    setPaymentAttachment(null);
+    clearPaymentAttachment();
     setPaymentSplitMode(false);
     setEditingPaymentId("");
     setAddingPayment(true);
@@ -852,7 +898,7 @@ export default function InvoiceDetail({
             { amount: "", categoryId: "", categoryType: "account" },
           ],
     );
-    setPaymentAttachment(null);
+    clearPaymentAttachment();
     setPaymentSplitMode(Boolean(payment.isSplit));
     setEditingPaymentId(payment._id || "");
     setAddingPayment(true);
@@ -978,6 +1024,7 @@ export default function InvoiceDetail({
   const handlePaymentAttachment = (file) => {
     if (!file) return;
     if (file.size > 6 * 1024 * 1024) {
+      clearPaymentAttachment();
       toast.error("Attachment maksimal 6MB");
       return;
     }
@@ -1004,6 +1051,7 @@ export default function InvoiceDetail({
     ];
     const extension = file.name.split(".").pop()?.toLowerCase() || "";
     if (!allowed.includes(file.type) && !allowedExt.includes(extension)) {
+      clearPaymentAttachment();
       toast.error("Attachment harus JPG, PNG, GIF, TIFF, BMP, HEIC, atau PDF");
       return;
     }
@@ -2675,6 +2723,7 @@ export default function InvoiceDetail({
                           <label className="inv-label">Attachment</label>
                           <div className="inv-file-box">
                             <input
+                              ref={paymentAttachmentInputRef}
                               type="file"
                               accept=".jpg,.jpeg,.png,.pdf,.heic,.tiff,.tif,.bmp,.gif"
                               onChange={(event) =>
@@ -2682,14 +2731,38 @@ export default function InvoiceDetail({
                               }
                             />
                             {paymentAttachment ? (
-                              <div className="inv-file-meta">
-                                <span>{paymentAttachment.name}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => setPaymentAttachment(null)}
-                                >
-                                  Remove
-                                </button>
+                              <div className="inv-file-preview-card">
+                                {paymentAttachmentPreviewUrl ? (
+                                  <div className="inv-file-preview-image">
+                                    <img
+                                      src={paymentAttachmentPreviewUrl}
+                                      alt={`Preview ${paymentAttachment.name}`}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="inv-file-preview-placeholder">
+                                    <strong>Preview tidak tersedia</strong>
+                                    <span>
+                                      File sudah dipilih. PDF/HEIC/TIFF tetap
+                                      bisa disimpan, tapi tidak selalu bisa
+                                      dipreview browser.
+                                    </span>
+                                  </div>
+                                )}
+                                <div className="inv-file-meta">
+                                  <span>
+                                    {paymentAttachment.name}
+                                    <small>
+                                      {formatFileSize(paymentAttachment.size)}
+                                    </small>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={clearPaymentAttachment}
+                                  >
+                                    Remove
+                                  </button>
+                                </div>
                               </div>
                             ) : (
                               <p>
