@@ -126,6 +126,15 @@ const canPreviewImageFile = (file) => {
   );
 };
 
+const canPreviewImageName = (fileName) => /\.(jpe?g|png|gif|webp|bmp)$/i.test(
+  String(fileName || ""),
+);
+
+const getTransactionAttachmentUrl = (fileName) =>
+  fileName
+    ? `${API_URL}/uploads/transactions/${encodeURIComponent(fileName)}`
+    : "";
+
 const sanitizePrintFileName = (value) =>
   String(value || "")
     .replace(/[\\/:*?"<>|]+/g, " ")
@@ -402,6 +411,8 @@ export default function InvoiceDetail({
     useState("");
   const [paymentAttachmentZoomOpen, setPaymentAttachmentZoomOpen] =
     useState(false);
+  const [existingPaymentAttachment, setExistingPaymentAttachment] =
+    useState(null);
   const [paymentSplitMode, setPaymentSplitMode] = useState(false);
   const [paymentReceiptTarget, setPaymentReceiptTarget] = useState(null);
   const [notePreview, setNotePreview] = useState(null);
@@ -588,21 +599,16 @@ export default function InvoiceDetail({
 
   const categoryOptions = useMemo(
     () =>
-      (categories || []).map((category) => {
+      (categories || [])
+        .filter((category) => (category.type || "account") === "account")
+        .map((category) => {
         const type = category.type || "account";
-        const prefix =
-          type === "master" ? "" : type === "submenu" ? "-- " : "---- ";
         const code = category.code ? ` (${category.code})` : "";
         return {
           key: `${type}-${category.id}`,
           value: `${type}|${category.id}`,
-          label: `${prefix}${category.name}${code}`,
-          meta:
-            type === "master"
-              ? "Master"
-              : type === "submenu"
-                ? "Submenu"
-                : "Account",
+          label: `${category.name}${code}`,
+          meta: "Account",
           search: [category.name, category.code, type]
             .filter(Boolean)
             .join(" "),
@@ -779,6 +785,7 @@ export default function InvoiceDetail({
     });
     setPaymentSplits([]);
     clearPaymentAttachment();
+    setExistingPaymentAttachment(null);
     setPaymentSplitMode(false);
     setEditingPaymentId("");
   };
@@ -861,6 +868,7 @@ export default function InvoiceDetail({
     });
     setPaymentSplits([]);
     clearPaymentAttachment();
+    setExistingPaymentAttachment(null);
     setPaymentSplitMode(false);
     setEditingPaymentId("");
     setAddingPayment(true);
@@ -902,6 +910,14 @@ export default function InvoiceDetail({
           ],
     );
     clearPaymentAttachment();
+    setExistingPaymentAttachment(
+      payment.attachment
+        ? {
+            fileName: payment.attachment,
+            originalName: payment.attachmentOriginalName || payment.attachment,
+          }
+        : null,
+    );
     setPaymentSplitMode(Boolean(payment.isSplit));
     setEditingPaymentId(payment._id || "");
     setAddingPayment(true);
@@ -2734,6 +2750,56 @@ export default function InvoiceDetail({
                                 handlePaymentAttachment(event.target.files?.[0])
                               }
                             />
+                            {existingPaymentAttachment && !paymentAttachment ? (
+                              <div className="inv-file-preview-card">
+                                {canPreviewImageName(
+                                  existingPaymentAttachment.fileName,
+                                ) ? (
+                                  <a
+                                    className="inv-file-preview-image"
+                                    href={getTransactionAttachmentUrl(
+                                      existingPaymentAttachment.fileName,
+                                    )}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    <img
+                                      src={getTransactionAttachmentUrl(
+                                        existingPaymentAttachment.fileName,
+                                      )}
+                                      alt={
+                                        existingPaymentAttachment.originalName
+                                      }
+                                    />
+                                    <span>View attachment</span>
+                                  </a>
+                                ) : (
+                                  <div className="inv-file-preview-placeholder">
+                                    <strong>Attachment tersimpan</strong>
+                                    <span>
+                                      {existingPaymentAttachment.originalName}
+                                    </span>
+                                  </div>
+                                )}
+                                <div className="inv-file-meta">
+                                  <span>
+                                    Attachment saat ini
+                                    <small>
+                                      {existingPaymentAttachment.originalName}
+                                    </small>
+                                  </span>
+                                  <a
+                                    href={getTransactionAttachmentUrl(
+                                      existingPaymentAttachment.fileName,
+                                    )}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                  >
+                                    View
+                                  </a>
+                                </div>
+                              </div>
+                            ) : null}
                             {paymentAttachment ? (
                               <div className="inv-file-preview-card">
                                 {paymentAttachmentPreviewUrl ? (
@@ -2777,8 +2843,9 @@ export default function InvoiceDetail({
                               </div>
                             ) : (
                               <p>
-                                File maksimal 6MB: JPG, PNG, GIF, TIFF, BMP,
-                                HEIC, atau PDF.
+                                {existingPaymentAttachment
+                                  ? "Pilih file baru kalau ingin mengganti attachment."
+                                  : "File maksimal 6MB: JPG, PNG, GIF, TIFF, BMP, HEIC, atau PDF."}
                               </p>
                             )}
                           </div>

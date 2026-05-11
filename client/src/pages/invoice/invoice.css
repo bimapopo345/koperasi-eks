@@ -391,7 +391,7 @@
 }
 
 .inv-payment-modal .inv-combobox-menu {
-  z-index: 90;
+  z-index: 200;
 }
 
 .inv-combobox-option {
@@ -1294,8 +1294,9 @@
 }
 
 .inv-split-row {
+  position: relative;
   display: grid;
-  grid-template-columns: minmax(160px, 0.9fr) minmax(200px, 1.1fr) 38px;
+  grid-template-columns: minmax(180px, 0.85fr) minmax(260px, 1.15fr) 38px;
   gap: 12px;
   align-items: end;
   overflow: visible;
@@ -1303,6 +1304,11 @@
   border-radius: 12px;
   background: #fff;
   padding: 12px;
+}
+
+.inv-split-row .inv-combobox-menu {
+  min-width: 320px;
+  right: auto;
 }
 
 .inv-split-row small {
