@@ -400,6 +400,8 @@ export default function InvoiceDetail({
   const [paymentAttachment, setPaymentAttachment] = useState(null);
   const [paymentAttachmentPreviewUrl, setPaymentAttachmentPreviewUrl] =
     useState("");
+  const [paymentAttachmentZoomOpen, setPaymentAttachmentZoomOpen] =
+    useState(false);
   const [paymentSplitMode, setPaymentSplitMode] = useState(false);
   const [paymentReceiptTarget, setPaymentReceiptTarget] = useState(null);
   const [notePreview, setNotePreview] = useState(null);
@@ -756,6 +758,7 @@ export default function InvoiceDetail({
 
   const clearPaymentAttachment = () => {
     setPaymentAttachment(null);
+    setPaymentAttachmentZoomOpen(false);
     if (paymentAttachmentInputRef.current) {
       paymentAttachmentInputRef.current.value = "";
     }
@@ -1023,6 +1026,7 @@ export default function InvoiceDetail({
 
   const handlePaymentAttachment = (file) => {
     if (!file) return;
+    setPaymentAttachmentZoomOpen(false);
     if (file.size > 6 * 1024 * 1024) {
       clearPaymentAttachment();
       toast.error("Attachment maksimal 6MB");
@@ -2733,12 +2737,19 @@ export default function InvoiceDetail({
                             {paymentAttachment ? (
                               <div className="inv-file-preview-card">
                                 {paymentAttachmentPreviewUrl ? (
-                                  <div className="inv-file-preview-image">
+                                  <button
+                                    type="button"
+                                    className="inv-file-preview-image"
+                                    onClick={() =>
+                                      setPaymentAttachmentZoomOpen(true)
+                                    }
+                                  >
                                     <img
                                       src={paymentAttachmentPreviewUrl}
                                       alt={`Preview ${paymentAttachment.name}`}
                                     />
-                                  </div>
+                                    <span>Click untuk zoom</span>
+                                  </button>
                                 ) : (
                                   <div className="inv-file-preview-placeholder">
                                     <strong>Preview tidak tersedia</strong>
@@ -2835,6 +2846,35 @@ export default function InvoiceDetail({
               </button>
             </div>
             <div className="inv-note-modal-body">{notePreview.body}</div>
+          </div>
+        </div>
+      ) : null}
+      {paymentAttachmentZoomOpen && paymentAttachmentPreviewUrl ? (
+        <div
+          className="inv-image-zoom-backdrop inv-no-print"
+          onClick={() => setPaymentAttachmentZoomOpen(false)}
+        >
+          <div
+            className="inv-image-zoom-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Preview ${paymentAttachment?.name || "attachment"}`}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="inv-image-zoom-head">
+              <span>{paymentAttachment?.name || "Attachment preview"}</span>
+              <button
+                type="button"
+                onClick={() => setPaymentAttachmentZoomOpen(false)}
+                aria-label="Close image preview"
+              >
+                ×
+              </button>
+            </div>
+            <img
+              src={paymentAttachmentPreviewUrl}
+              alt={`Preview ${paymentAttachment?.name || "attachment"}`}
+            />
           </div>
         </div>
       ) : null}

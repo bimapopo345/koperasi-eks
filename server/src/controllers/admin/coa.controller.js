@@ -75,6 +75,13 @@ function pickBodyField(body, keys) {
   return undefined;
 }
 
+async function releaseInactiveAccountCode(account) {
+  if (!account || account.isActive || !account.accountCode) return false;
+  account.accountCode = `${account.accountCode}__inactive_${account._id}`;
+  await account.save();
+  return true;
+}
+
 function normalizeMasterType(rawType) {
   if (!rawType || typeof rawType !== "string") return null;
 
@@ -353,19 +360,23 @@ export const createAccount = async (req, res) => {
     } else {
       const exists = await CoaAccount.findOne({ accountCode: finalCode });
       if (exists) {
-        const visibility = exists.isActive ? "aktif" : "nonaktif/terhapus";
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: `Account code ${finalCode} sudah ada (${visibility}) pada "${exists.accountName || "-"}"`,
-            conflict: {
-              id: exists._id,
-              accountCode: exists.accountCode,
-              accountName: exists.accountName,
-              isActive: exists.isActive,
-            },
-          });
+        if (!exists.isActive) {
+          await releaseInactiveAccountCode(exists);
+        } else {
+          const visibility = exists.isActive ? "aktif" : "nonaktif/terhapus";
+          return res
+            .status(400)
+            .json({
+              success: false,
+              message: `Account code ${finalCode} sudah ada (${visibility}) pada "${exists.accountName || "-"}"`,
+              conflict: {
+                id: exists._id,
+                accountCode: exists.accountCode,
+                accountName: exists.accountName,
+                isActive: exists.isActive,
+              },
+            });
+        }
       }
     }
 
@@ -447,19 +458,23 @@ export const updateAccount = async (req, res) => {
         _id: { $ne: account._id },
       });
       if (exists) {
-        const visibility = exists.isActive ? "aktif" : "nonaktif/terhapus";
-        return res
-          .status(400)
-          .json({
-            success: false,
-            message: `Account code ${normalizedCode} sudah ada (${visibility}) pada "${exists.accountName || "-"}"`,
-            conflict: {
-              id: exists._id,
-              accountCode: exists.accountCode,
-              accountName: exists.accountName,
-              isActive: exists.isActive,
-            },
-          });
+        if (!exists.isActive) {
+          await releaseInactiveAccountCode(exists);
+        } else {
+          const visibility = exists.isActive ? "aktif" : "nonaktif/terhapus";
+          return res
+            .status(400)
+            .json({
+              success: false,
+              message: `Account code ${normalizedCode} sudah ada (${visibility}) pada "${exists.accountName || "-"}"`,
+              conflict: {
+                id: exists._id,
+                accountCode: exists.accountCode,
+                accountName: exists.accountName,
+                isActive: exists.isActive,
+              },
+            });
+        }
       }
     }
 
@@ -505,6 +520,7 @@ export const deleteAccount = async (req, res) => {
     }
 
     account.isActive = false;
+    await releaseInactiveAccountCode(account);
     await account.save();
 
     res

@@ -505,6 +505,14 @@ export default function ChartOfAccounts() {
 
   const accountCodeSuggestion = useMemo(() => {
     if (editingAccount) return null;
+    const normalizedTypedCode = normalizeAccountCode(form.accountCode);
+    const shouldSuggestChildCode =
+      !normalizedTypedCode ||
+      normalizedTypedCode.endsWith(".") ||
+      normalizedTypedCode.includes(".") ||
+      existingAccountCodes.includes(normalizedTypedCode);
+    if (!shouldSuggestChildCode) return null;
+
     const scopeCodes = (selectedSubtypeAccounts.length
       ? selectedSubtypeAccounts
       : allCurrentTypeAccounts
@@ -516,6 +524,7 @@ export default function ChartOfAccounts() {
   }, [
     allCurrentTypeAccounts,
     editingAccount,
+    existingAccountCodes,
     form.accountCode,
     selectedSubtypeAccounts,
   ]);
@@ -536,7 +545,7 @@ export default function ChartOfAccounts() {
     if (existingAccountCodes.includes(normalizedCode)) {
       return `Parent ${normalizedCode} sudah ada. Kalau mau buat anakannya, gunakan format ${normalizedCode}.01 atau pilih saran.`;
     }
-    return "";
+    return `Account ID ${normalizedCode} tersedia.`;
   }, [
     accountCodeExists,
     existingAccountCodeOwner,
