@@ -60,6 +60,13 @@ const toDateInput = (value) => {
   return new Date(value).toISOString().slice(0, 10);
 };
 
+const addMonthsToDateInput = (value, months = 1) => {
+  const source = value ? new Date(value) : new Date();
+  if (Number.isNaN(source.getTime())) return toDateInput(new Date());
+  source.setMonth(source.getMonth() + months);
+  return toDateInput(source);
+};
+
 const emptyItem = () => ({
   productId: "",
   title: "",
@@ -631,6 +638,12 @@ export default function InvoiceForm() {
     (runningTotal, discount) => Math.max(runningTotal - discount.amount, 0),
     subtotal,
   );
+  const projectionTotal = useMemo(
+    () =>
+      projections.reduce((sum, item) => sum + normalizeMoney(item.amount), 0),
+    [projections],
+  );
+  const projectionRemaining = Math.max(total - projectionTotal, 0);
   const expectedReceiveIDR = total * (normalizeNumber(form.exchangeRate) || 1);
   const invoiceNumberBlocked = ["checking", "duplicate"].includes(
     invoiceNumberCheck.status,
@@ -676,6 +689,50 @@ export default function InvoiceForm() {
     );
   };
 
+  const addProjectionRow = () => {
+    setProjections((prev) => {
+      const nextIndex = prev.length + 1;
+      const lastDate =
+        [...prev].reverse().find((projection) => projection.estimateDate)
+          ?.estimateDate || form.dueDate;
+      const nextAmount =
+        projectionRemaining > 0
+          ? projectionRemaining
+          : prev.length
+            ? normalizeMoney(prev[prev.length - 1].amount)
+            : 0;
+
+      return [
+        ...prev,
+        {
+          ...emptyProjection(addMonthsToDateInput(lastDate, prev.length ? 1 : 0)),
+          description: `Cicilan ${nextIndex}`,
+          amount: nextAmount,
+        },
+      ];
+    });
+  };
+
+  const normalizeProjectionRows = () => {
+    const rows = projections.map((projection, index) => ({
+      _id: projection._id || undefined,
+      description: projection.description || `Cicilan ${index + 1}`,
+      estimateDate: projection.estimateDate,
+      amount: normalizeMoney(projection.amount),
+    }));
+
+    const invalidIndex = rows.findIndex(
+      (projection) => !projection.estimateDate || projection.amount <= 0,
+    );
+    if (invalidIndex >= 0) {
+      throw new Error(
+        `Projection #${invalidIndex + 1} belum lengkap. Isi tanggal dan amount, atau hapus row tersebut.`,
+      );
+    }
+
+    return rows;
+  };
+
   const buildPayload = () => ({
     invoiceNumber: form.invoiceNumber,
     memberId: form.memberId,
@@ -701,14 +758,7 @@ export default function InvoiceForm() {
             : normalizeMoney(discount.value),
       }))
       .filter((discount) => discount.value > 0),
-    projections: projections
-      .map((projection, index) => ({
-        _id: projection._id || undefined,
-        description: projection.description || `Cicilan ${index + 1}`,
-        estimateDate: projection.estimateDate,
-        amount: normalizeMoney(projection.amount),
-      }))
-      .filter((projection) => projection.estimateDate && projection.amount > 0),
+    projections: normalizeProjectionRows(),
     notes: form.notes,
     terms: form.terms,
     tosId: form.tosId,
@@ -1173,12 +1223,7 @@ export default function InvoiceForm() {
                 <button
                   type="button"
                   className="inv-btn-secondary"
-                  onClick={() =>
-                    setProjections((prev) => [
-                      ...prev,
-                      emptyProjection(form.dueDate),
-                    ])
-                  }
+                  onClick={addProjectionRow}
                 >
                   Add Projection
                 </button>

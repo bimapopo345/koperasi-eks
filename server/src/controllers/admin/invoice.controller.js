@@ -258,7 +258,12 @@ function normalizeProjections(rawProjections, currentProjections = []) {
         `Tanggal proyeksi #${index + 1}`,
       );
       const amount = clampMoney(projection?.amount);
-      if (amount <= 0) return null;
+      if (amount <= 0) {
+        throw new ApiError(
+          400,
+          `Nominal proyeksi #${index + 1} wajib lebih dari 0`,
+        );
+      }
 
       const normalizedProjection = {
         description:
