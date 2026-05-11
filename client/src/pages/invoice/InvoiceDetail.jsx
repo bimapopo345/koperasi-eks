@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import {
@@ -315,14 +316,46 @@ function PaymentSearchSelect({
     const rect = inputRef.current?.getBoundingClientRect();
     if (rect) {
       setMenuStyle({
+        position: "fixed",
         top: rect.bottom + 6,
         left: rect.left,
         right: "auto",
         width: Math.max(rect.width, 320),
+        zIndex: 100000,
       });
     }
     setIsOpen(true);
   };
+
+  const menu = isOpen ? (
+    <div
+      className="inv-combobox-menu inv-combobox-menu-portal"
+      style={menuStyle || undefined}
+    >
+      {filteredOptions.length ? (
+        filteredOptions.map((option) => (
+          <button
+            type="button"
+            key={option.value}
+            className={`inv-combobox-option ${
+              String(option.value) === String(value) ? "active" : ""
+            }`}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              selectOption(option);
+            }}
+          >
+            <span className="inv-combobox-name">{option.label}</span>
+            {option.meta ? (
+              <span className="inv-combobox-meta">{option.meta}</span>
+            ) : null}
+          </button>
+        ))
+      ) : (
+        <div className="inv-combobox-empty">{emptyText}</div>
+      )}
+    </div>
+  ) : null;
 
   return (
     <div
@@ -367,32 +400,7 @@ function PaymentSearchSelect({
         </button>
       ) : null}
 
-      {isOpen ? (
-        <div className="inv-combobox-menu" style={menuStyle || undefined}>
-          {filteredOptions.length ? (
-            filteredOptions.map((option) => (
-              <button
-                type="button"
-                key={option.value}
-                className={`inv-combobox-option ${
-                  String(option.value) === String(value) ? "active" : ""
-                }`}
-                onMouseDown={(event) => {
-                  event.preventDefault();
-                  selectOption(option);
-                }}
-              >
-                <span className="inv-combobox-name">{option.label}</span>
-                {option.meta ? (
-                  <span className="inv-combobox-meta">{option.meta}</span>
-                ) : null}
-              </button>
-            ))
-          ) : (
-            <div className="inv-combobox-empty">{emptyText}</div>
-          )}
-        </div>
-      ) : null}
+      {menu ? createPortal(menu, document.body) : null}
     </div>
   );
 }
