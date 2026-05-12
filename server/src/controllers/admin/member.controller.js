@@ -129,6 +129,8 @@ const createMember = asyncHandler(async (req, res) => {
     livenessRightImage,
     faceMatchScore,
     riplText,
+    riplVersion,
+    riplAgreedAt,
   } = req.body;
 
   // Validate required fields
@@ -210,6 +212,8 @@ const createMember = asyncHandler(async (req, res) => {
     livenessRightImage: livenessRightImage || "",
     faceMatchScore: faceMatchScore ?? null,
     riplText: riplText || "",
+    riplVersion: riplVersion || "",
+    riplAgreedAt: riplAgreedAt ? new Date(riplAgreedAt) : null,
     isVerified: true,
     registrationSource: "admin",
   });
@@ -254,6 +258,8 @@ const updateMember = asyncHandler(async (req, res) => {
     livenessRightImage,
     faceMatchScore,
     riplText,
+    riplVersion,
+    riplAgreedAt,
   } = req.body;
 
   const member = await Member.findOne({ uuid });
@@ -303,6 +309,8 @@ const updateMember = asyncHandler(async (req, res) => {
   if (livenessRightImage !== undefined) member.livenessRightImage = livenessRightImage || "";
   if (faceMatchScore !== undefined) member.faceMatchScore = faceMatchScore ?? null;
   if (riplText !== undefined) member.riplText = riplText || "";
+  if (riplVersion !== undefined) member.riplVersion = riplVersion || "";
+  if (riplAgreedAt !== undefined) member.riplAgreedAt = riplAgreedAt ? new Date(riplAgreedAt) : null;
 
   await member.save();
 

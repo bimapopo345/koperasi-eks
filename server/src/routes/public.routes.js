@@ -431,6 +431,8 @@ const registerKoperasi = asyncHandler(async (req, res) => {
       livenessRightImage,
       faceMatchScore,
       riplText,
+      riplVersion,
+      riplAgreedAt,
     } = req.body;
 
     // Validate required fields
@@ -509,6 +511,8 @@ const registerKoperasi = asyncHandler(async (req, res) => {
       livenessRightImage: livenessRightImage || "",
       faceMatchScore: faceMatchScore || null,
       riplText: riplText || "",
+      riplVersion: riplVersion || "",
+      riplAgreedAt: riplAgreedAt ? new Date(riplAgreedAt) : null,
       productId: productId || null,
       user: user._id,
       isVerified: false,

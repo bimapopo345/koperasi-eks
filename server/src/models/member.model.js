@@ -94,6 +94,15 @@ const memberSchema = new Schema(
       type: String,
       default: "",
     },
+    riplVersion: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    riplAgreedAt: {
+      type: Date,
+      default: null,
+    },
     // Status verifikasi
     isVerified: {
       type: Boolean,

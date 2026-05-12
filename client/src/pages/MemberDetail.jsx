@@ -1399,6 +1399,14 @@ const MemberDetail = () => {
 
         <div className="mt-4 rounded-lg border border-pink-100 bg-pink-50 p-3 text-sm text-gray-700">
           <div className="font-semibold text-pink-700 mb-1">Snapshot RIPL</div>
+          <div className="mb-2 flex flex-wrap gap-2 text-[11px] text-pink-800">
+            <span className="rounded-full bg-white px-2 py-1">
+              Versi: {member.riplVersion || "-"}
+            </span>
+            <span className="rounded-full bg-white px-2 py-1">
+              Disetujui: {member.riplAgreedAt ? format(new Date(member.riplAgreedAt), "dd MMM yyyy HH:mm", { locale: id }) : "-"}
+            </span>
+          </div>
           <div className="whitespace-pre-wrap break-words text-xs sm:text-sm">
             {member.riplText || "Belum ada snapshot RIPL."}
           </div>

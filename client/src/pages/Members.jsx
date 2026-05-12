@@ -65,6 +65,8 @@ const Members = () => {
     birthDate: "",
     email: "",
     riplText: "",
+    riplVersion: "",
+    riplAgreedAt: "",
     signatureImage: "",
     ktpImage: "",
     selfieImage: "",
@@ -234,6 +236,8 @@ const Members = () => {
             birthDate: "",
             email: "",
             riplText: "",
+            riplVersion: "",
+            riplAgreedAt: "",
             signatureImage: "",
             ktpImage: "",
             selfieImage: "",
@@ -271,6 +275,8 @@ const Members = () => {
       birthDate: normalizeDateInputValue(member.birthDate),
       email: member.email || "",
       riplText: member.riplText || "",
+      riplVersion: member.riplVersion || "",
+      riplAgreedAt: member.riplAgreedAt || "",
       signatureImage: member.signatureImage || "",
       ktpImage: member.ktpImage || "",
       selfieImage: member.selfieImage || "",
@@ -1083,6 +1089,27 @@ const Members = () => {
                   <small className="text-gray-500 mt-1 block">
                     💡 Otomatis terisi dari teks RIPL saat student mendaftar via dashboard.
                   </small>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Versi RIPL</label>
+                    <input
+                      type="text"
+                      value={formData.riplVersion}
+                      onChange={(e) => setFormData({ ...formData, riplVersion: e.target.value })}
+                      placeholder="Contoh: tabungan-2026-05-12"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Waktu Setuju RIPL</label>
+                    <input
+                      type="datetime-local"
+                      value={formData.riplAgreedAt ? String(formData.riplAgreedAt).slice(0, 16) : ""}
+                      onChange={(e) => setFormData({ ...formData, riplAgreedAt: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
                 </div>
                 <div className="mb-4 border-t border-gray-200 pt-4">
                   <div className="rounded-2xl border border-slate-200 bg-slate-50/90 p-4">
