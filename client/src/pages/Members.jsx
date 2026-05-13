@@ -49,7 +49,7 @@ const Members = () => {
   // Search & Filter state
   const [searchTerm, setSearchTerm] = useState("");
   const [filterStatus, setFilterStatus] = useState("all"); // all, completed, not_completed
-  const [filterVerification, setFilterVerification] = useState("all"); // all, verified, unverified
+  const [filterVerification, setFilterVerification] = useState("all"); // all, verified, unverified, address-pending
   const [formData, setFormData] = useState({
     uuid: "",
     name: "",
@@ -84,6 +84,8 @@ const Members = () => {
     const filterParam = searchParams.get("filter");
     if (filterParam === "unverified") {
       setFilterVerification("unverified");
+    } else if (filterParam === "address-pending") {
+      setFilterVerification("address-pending");
     }
     fetchMembers();
     fetchProducts();
@@ -422,6 +424,8 @@ const Members = () => {
       result = result.filter(member => member.isVerified === true);
     } else if (filterVerification === "unverified") {
       result = result.filter(member => !member.isVerified);
+    } else if (filterVerification === "address-pending") {
+      result = result.filter(member => member.addressUpdateStatus === "pending");
     }
     
     // Filter by search term
@@ -587,6 +591,7 @@ const Members = () => {
               <option value="all">📋 Semua</option>
               <option value="verified">✅ Terverifikasi</option>
               <option value="unverified">🕐 Belum Verifikasi</option>
+              <option value="address-pending">📍 Alamat Pending</option>
             </select>
           </div>
           
@@ -608,7 +613,11 @@ const Members = () => {
                 )}
                 {filterVerification !== "all" && (
                   <span className={`px-2 py-1 rounded-full text-xs ${filterVerification === "verified" ? "bg-green-100 text-green-800" : "bg-orange-100 text-orange-800"}`}>
-                    {filterVerification === "verified" ? "✅ Terverifikasi" : "🕐 Belum Verifikasi"}
+                    {filterVerification === "verified"
+                      ? "✅ Terverifikasi"
+                      : filterVerification === "address-pending"
+                        ? "📍 Alamat Pending"
+                        : "🕐 Belum Verifikasi"}
                   </span>
                 )}
               </span>
@@ -765,6 +774,11 @@ const Members = () => {
                     {member.registrationSource === "student_dashboard" && (
                       <span className="px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded text-[10px]">
                         via Student
+                      </span>
+                    )}
+                    {member.addressUpdateStatus === "pending" && (
+                      <span className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded text-[10px]">
+                        📍 Alamat pending
                       </span>
                     )}
                   </div>

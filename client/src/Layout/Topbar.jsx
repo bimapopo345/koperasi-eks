@@ -13,6 +13,7 @@ const Topbar = ({ setSidebarOpen }) => {
   
   // Notification state
   const [pendingMembers, setPendingMembers] = useState([]);
+  const [pendingAddressMembers, setPendingAddressMembers] = useState([]);
   const [pendingSavings, setPendingSavings] = useState([]);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const [readNotifIds, setReadNotifIds] = useState(() => {
@@ -37,6 +38,21 @@ const Topbar = ({ setSidebarOpen }) => {
     }
   };
 
+  const fetchPendingAddressMembers = async () => {
+    try {
+      const token = localStorage.getItem("token");
+      const response = await axios.get(`${API_URL}/api/admin/members?addressUpdateStatus=pending`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.data.success) {
+        const members = Array.isArray(response.data.data) ? response.data.data : [];
+        setPendingAddressMembers(members);
+      }
+    } catch (err) {
+      console.error("Failed to fetch pending address updates:", err);
+    }
+  };
+
   // Fetch pending savings as notifications
   const fetchPendingSavings = async () => {
     try {
@@ -55,9 +71,11 @@ const Topbar = ({ setSidebarOpen }) => {
 
   useEffect(() => {
     fetchPendingMembers();
+    fetchPendingAddressMembers();
     fetchPendingSavings();
     const interval = setInterval(() => {
       fetchPendingMembers();
+      fetchPendingAddressMembers();
       fetchPendingSavings();
     }, 30000);
     return () => clearInterval(interval);
@@ -77,6 +95,7 @@ const Topbar = ({ setSidebarOpen }) => {
   // Combined notifications: members first, then savings
   const allNotifications = [
     ...pendingMembers.map(m => ({ ...m, _notifType: "member" })),
+    ...pendingAddressMembers.map(m => ({ ...m, _notifType: "address" })),
     ...pendingSavings.map(s => ({ ...s, _notifType: "savings" })),
   ];
 
@@ -91,6 +110,8 @@ const Topbar = ({ setSidebarOpen }) => {
 
     if (notif._notifType === "member") {
       navigate(`/master/anggota?filter=unverified`);
+    } else if (notif._notifType === "address") {
+      navigate(`/master/anggota?filter=address-pending`);
     } else {
       const memberId = notif.memberId?._id || notif.memberId;
       navigate(`/simpanan?member=${memberId}&status=Pending`);
@@ -188,6 +209,7 @@ const Topbar = ({ setSidebarOpen }) => {
                     allNotifications.map((notif) => {
                       const isRead = readNotifIds.includes(notif._id);
                       const isMember = notif._notifType === "member";
+                      const isAddress = notif._notifType === "address";
                       return (
                         <div
                           key={`${notif._notifType}-${notif._id}`}
@@ -197,7 +219,7 @@ const Topbar = ({ setSidebarOpen }) => {
                           }`}
                         >
                           <div className="flex items-start gap-3">
-                            <div className={`w-2 h-2 rounded-full mt-2 ${!isRead ? (isMember ? "bg-blue-500" : "bg-pink-500") : "bg-gray-300"}`} />
+                            <div className={`w-2 h-2 rounded-full mt-2 ${!isRead ? (isMember ? "bg-blue-500" : isAddress ? "bg-orange-500" : "bg-pink-500") : "bg-gray-300"}`} />
                             <div className="flex-1 min-w-0">
                               {isMember ? (
                                 <>
@@ -207,6 +229,16 @@ const Topbar = ({ setSidebarOpen }) => {
                                   </p>
                                   <p className="text-xs text-gray-500 mt-1">
                                     UUID: {notif.uuid} {notif.product ? `• ${notif.product.title}` : ""}
+                                  </p>
+                                </>
+                              ) : isAddress ? (
+                                <>
+                                  <p className="text-sm font-medium text-gray-900 truncate">
+                                    {notif.name || "Unknown"}
+                                    <span className="text-gray-500 font-normal"> update alamat</span>
+                                  </p>
+                                  <p className="text-xs text-gray-500 mt-1">
+                                    UUID: {notif.uuid}
                                   </p>
                                 </>
                               ) : (
@@ -232,9 +264,11 @@ const Topbar = ({ setSidebarOpen }) => {
                             <span className={`px-2 py-1 text-xs rounded-full whitespace-nowrap ${
                               isMember
                                 ? "bg-blue-100 text-blue-800"
+                                : isAddress
+                                  ? "bg-orange-100 text-orange-800"
                                 : "bg-yellow-100 text-yellow-800"
                             }`}>
-                              {isMember ? "Baru" : "Pending"}
+                              {isMember ? "Baru" : isAddress ? "Alamat" : "Pending"}
                             </span>
                           </div>
                         </div>
@@ -254,6 +288,17 @@ const Topbar = ({ setSidebarOpen }) => {
                         className="flex-1 text-center text-xs text-blue-600 hover:text-blue-800 py-1"
                       >
                         {pendingMembers.length} pendaftaran baru
+                      </button>
+                    )}
+                    {pendingAddressMembers.length > 0 && (
+                      <button
+                        onClick={() => {
+                          navigate("/master/anggota?filter=address-pending");
+                          setShowNotifDropdown(false);
+                        }}
+                        className="flex-1 text-center text-xs text-orange-600 hover:text-orange-800 py-1"
+                      >
+                        {pendingAddressMembers.length} alamat pending
                       </button>
                     )}
                     {pendingSavings.length > 0 && (

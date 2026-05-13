@@ -38,6 +38,19 @@ const donationUpload = multer({
 router.get("/invoices/:invoiceNumber", getPublicInvoiceByNumber);
 router.get("/member-invoices/:uuid", getPublicMemberInvoicesByUuid);
 
+const isBlankAddress = (value) => !String(value || "").trim();
+
+const getPublicAddressState = (member) => ({
+  completeAddress: member.completeAddress || "",
+  addressUpdateStatus: member.addressUpdateStatus || "none",
+  addressUpdateRequestedAt: member.addressUpdateRequestedAt || null,
+  addressUpdateVerifiedAt: member.addressUpdateVerifiedAt || null,
+  requiresAddressCompletion:
+    member.isVerified &&
+    (isBlankAddress(member.completeAddress) ||
+      (member.addressUpdateStatus || "none") === "pending"),
+});
+
 // Public API untuk integrasi eksternal (tanpa auth)
 // GET /api/public/savings - Ambil semua data savings dengan detail lengkap
 const getPublicSavings = asyncHandler(async (req, res) => {
@@ -527,6 +540,7 @@ const registerKoperasi = asyncHandler(async (req, res) => {
         uuid: member.uuid,
         name: member.name,
         isVerified: member.isVerified,
+        ...getPublicAddressState(member),
       },
     });
   } catch (error) {
@@ -571,6 +585,7 @@ const checkMemberStatus = asyncHandler(async (req, res) => {
           uuid: member.uuid,
           name: member.name,
           registeredAt: member.createdAt,
+          ...getPublicAddressState(member),
           product: member.productId ? {
             title: member.productId.title,
             depositAmount: member.productId.depositAmount,

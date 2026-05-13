@@ -12,10 +12,13 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 // Get all members
 const getAllMembers = asyncHandler(async (req, res) => {
   // Filter by verification status
-  const { verified } = req.query;
+  const { verified, addressUpdateStatus } = req.query;
   let filter = {};
   if (verified === "true") filter.isVerified = true;
   else if (verified === "false") filter.isVerified = false;
+  if (addressUpdateStatus) {
+    filter.addressUpdateStatus = addressUpdateStatus;
+  }
 
   const members = await Member.find(filter)
     .populate("user", "username email isActive")
@@ -529,6 +532,11 @@ const verifyMember = asyncHandler(async (req, res) => {
   member.isVerified = true;
   member.verifiedBy = req.user._id;
   member.verifiedAt = new Date();
+  if (member.completeAddress && member.completeAddress.trim()) {
+    member.addressUpdateStatus = "approved";
+    member.addressUpdateVerifiedBy = req.user._id;
+    member.addressUpdateVerifiedAt = new Date();
+  }
   await member.save();
 
   const populatedMember = await Member.findById(member._id)
@@ -562,10 +570,57 @@ const unverifyMember = asyncHandler(async (req, res) => {
   });
 });
 
+// Approve member address update without changing main member verification.
+const approveMemberAddress = asyncHandler(async (req, res) => {
+  const { uuid } = req.params;
+  const member = await Member.findOne({ uuid });
+
+  if (!member) {
+    return res.status(404).json({ success: false, message: "Member tidak ditemukan" });
+  }
+
+  if (!member.completeAddress || !member.completeAddress.trim()) {
+    return res.status(400).json({
+      success: false,
+      message: "Alamat masih kosong. Lengkapi alamat sebelum verifikasi.",
+    });
+  }
+
+  if ((member.addressUpdateStatus || "none") !== "pending") {
+    return res.status(400).json({
+      success: false,
+      message: "Tidak ada perubahan alamat yang menunggu verifikasi",
+    });
+  }
+
+  member.addressUpdateStatus = "approved";
+  member.addressUpdateVerifiedAt = new Date();
+  member.addressUpdateVerifiedBy = req.user._id;
+  await member.save();
+
+  const populatedMember = await Member.findById(member._id)
+    .populate("user", "username email isActive")
+    .populate("product", "title depositAmount termDuration returnProfit description");
+
+  res.status(200).json({
+    success: true,
+    data: populatedMember,
+    message: "Alamat member berhasil diverifikasi",
+  });
+});
+
 // Get pending verification count
 const getPendingCount = asyncHandler(async (req, res) => {
-  const count = await Member.countDocuments({ isVerified: false });
-  res.status(200).json({ success: true, data: { count } });
+  const registrationPending = await Member.countDocuments({ isVerified: false });
+  const addressPending = await Member.countDocuments({ addressUpdateStatus: "pending" });
+  res.status(200).json({
+    success: true,
+    data: {
+      count: registrationPending + addressPending,
+      registrationPending,
+      addressPending,
+    },
+  });
 });
 
 // Migration: set all existing members as verified
@@ -615,6 +670,7 @@ export {
   unmarkAsCompleted,
   verifyMember,
   unverifyMember,
+  approveMemberAddress,
   getPendingCount,
   migrateExistingMembers,
 };

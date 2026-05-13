@@ -9,6 +9,19 @@ const generateToken = (memberId) => {
   });
 };
 
+const isBlankAddress = (value) => !String(value || "").trim();
+
+const getAddressState = (member) => ({
+  completeAddress: member.completeAddress || "",
+  addressUpdateStatus: member.addressUpdateStatus || "none",
+  addressUpdateRequestedAt: member.addressUpdateRequestedAt || null,
+  addressUpdateVerifiedAt: member.addressUpdateVerifiedAt || null,
+  requiresAddressCompletion:
+    member.isVerified &&
+    (isBlankAddress(member.completeAddress) ||
+      (member.addressUpdateStatus || "none") === "pending"),
+});
+
 // Member Login - UUID based authentication
 export const loginMember = asyncHandler(async (req, res) => {
   const { uuid, password } = req.body;
@@ -75,7 +88,7 @@ export const loginMember = asyncHandler(async (req, res) => {
           gender: member.gender,
           phone: member.phone,
           city: member.city,
-          completeAddress: member.completeAddress,
+          ...getAddressState(member),
           productId: member.productId, // Include productId in response
           hasUpgraded: member.hasUpgraded || false,
           currentUpgradeId: member.currentUpgradeId || null,
@@ -126,7 +139,7 @@ export const getCurrentMember = asyncHandler(async (req, res) => {
           gender: member.gender,
           phone: member.phone,
           city: member.city,
-          completeAddress: member.completeAddress,
+          ...getAddressState(member),
           productId: member.productId, // Include productId
           hasUpgraded: member.hasUpgraded || false,
           currentUpgradeId: member.currentUpgradeId || null,
@@ -143,6 +156,49 @@ export const getCurrentMember = asyncHandler(async (req, res) => {
       error: error.message,
     });
   }
+});
+
+// Submit address completion/update from student dashboard.
+export const updateMemberAddress = asyncHandler(async (req, res) => {
+  const member = await Member.findById(req.member.memberId);
+
+  if (!member) {
+    return res.status(404).json({
+      success: false,
+      message: "Member tidak ditemukan",
+    });
+  }
+
+  const completeAddress = String(req.body?.completeAddress || "").trim();
+
+  if (!completeAddress) {
+    return res.status(400).json({
+      success: false,
+      code: "ADDRESS_REQUIRED",
+      message: "Alamat lengkap wajib diisi",
+    });
+  }
+
+  member.completeAddress = completeAddress;
+  member.addressUpdateStatus = "pending";
+  member.addressUpdateRequestedAt = new Date();
+  member.addressUpdateVerifiedAt = null;
+  member.addressUpdateVerifiedBy = null;
+
+  await member.save();
+
+  res.status(200).json({
+    success: true,
+    message: "Alamat berhasil dikirim. Mohon tunggu verifikasi admin.",
+    data: {
+      member: {
+        _id: member._id,
+        uuid: member.uuid,
+        name: member.name,
+        ...getAddressState(member),
+      },
+    },
+  });
 });
 
 // Logout Member

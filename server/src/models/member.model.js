@@ -117,6 +117,25 @@ const memberSchema = new Schema(
       type: Date,
       default: null,
     },
+    addressUpdateStatus: {
+      type: String,
+      enum: ["none", "pending", "approved"],
+      default: "none",
+      index: true,
+    },
+    addressUpdateRequestedAt: {
+      type: Date,
+      default: null,
+    },
+    addressUpdateVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+    addressUpdateVerifiedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     registrationSource: {
       type: String,
       enum: ["admin", "student_dashboard"],

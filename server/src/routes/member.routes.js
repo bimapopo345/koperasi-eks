@@ -3,7 +3,8 @@ import fs from "fs";
 import { 
   loginMember, 
   getCurrentMember, 
-  logoutMember 
+  logoutMember,
+  updateMemberAddress,
 } from "../controllers/member/auth.controller.js";
 import { 
   getMemberSavings, 
@@ -69,6 +70,7 @@ const upload = multer({
 router.post("/auth/login", loginMember);
 router.post("/auth/logout", verifyMemberToken, logoutMember);
 router.get("/auth/me", verifyMemberToken, getCurrentMember);
+router.patch("/profile/address", verifyMemberToken, updateMemberAddress);
 
 // Savings routes
 router.get("/savings", verifyMemberToken, getMemberSavings);

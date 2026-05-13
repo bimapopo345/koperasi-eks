@@ -3,6 +3,20 @@ import { Member } from "../../models/member.model.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
+import fs from "fs/promises";
+
+const isBlankAddress = (value) => !String(value || "").trim();
+
+const discardUploadedProof = async (file) => {
+  if (!file?.path) return;
+  try {
+    await fs.unlink(file.path);
+  } catch (error) {
+    if (error?.code !== "ENOENT") {
+      console.warn("Failed to discard rejected savings proof:", error.message);
+    }
+  }
+};
 
 // Get Member's Savings
 export const getMemberSavings = asyncHandler(async (req, res) => {
@@ -81,6 +95,24 @@ export const createMemberSaving = asyncHandler(async (req, res) => {
       return res.status(404).json({
         success: false,
         message: "Member tidak ditemukan",
+      });
+    }
+
+    if (isBlankAddress(member.completeAddress)) {
+      await discardUploadedProof(req.file);
+      return res.status(409).json({
+        success: false,
+        code: "ADDRESS_REQUIRED",
+        message: "Mohon lengkapi alamat anda sebelum upload pembayaran.",
+      });
+    }
+
+    if ((member.addressUpdateStatus || "none") === "pending") {
+      await discardUploadedProof(req.file);
+      return res.status(409).json({
+        success: false,
+        code: "ADDRESS_PENDING_VERIFICATION",
+        message: "Alamat terbaru sedang menunggu verifikasi admin. Upload pembayaran aktif kembali setelah disetujui.",
       });
     }
 

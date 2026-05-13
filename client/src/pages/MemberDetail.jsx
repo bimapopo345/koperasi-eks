@@ -113,6 +113,32 @@ const MemberDetail = () => {
     }
   };
 
+  const handleApproveAddress = () => {
+    if (!member) return;
+
+    setConfirmDialog({
+      isOpen: true,
+      title: "Verifikasi Alamat",
+      message: `Setujui alamat terbaru untuk ${member.name}? Setelah disetujui, student bisa upload pembayaran lagi.`,
+      type: "success",
+      onConfirm: async () => {
+        setConfirmLoading(true);
+        try {
+          const response = await api.patch(`/api/admin/members/${member.uuid}/address/approve`);
+          if (response.data.success) {
+            toast.success("Alamat member berhasil diverifikasi");
+            fetchMemberDetail();
+          }
+        } catch (err) {
+          toast.error(err.response?.data?.message || "Gagal memverifikasi alamat");
+        } finally {
+          setConfirmLoading(false);
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      },
+    });
+  };
+
   const fetchMemberSavings = async () => {
     try {
       // First, try to fetch savings filtered by memberId for better performance
@@ -1086,6 +1112,36 @@ const MemberDetail = () => {
         </div>
       </div>
 
+      {member.addressUpdateStatus === "pending" && (
+        <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6">
+          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-orange-900 mb-1">
+                📍 Perubahan alamat menunggu verifikasi
+              </h3>
+              <p className="text-sm text-orange-800">
+                Student sudah melengkapi alamat. Verifikasi alamat ini agar upload pembayaran bisa aktif kembali.
+              </p>
+              <p className="text-sm text-gray-900 mt-3 whitespace-pre-wrap break-words">
+                {member.completeAddress || "-"}
+              </p>
+              {member.addressUpdateRequestedAt && (
+                <p className="text-xs text-orange-700 mt-2">
+                  Diajukan: {formatMemberDate(member.addressUpdateRequestedAt)}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleApproveAddress}
+              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-semibold text-sm whitespace-nowrap"
+            >
+              Verifikasi Alamat
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Member Info Card */}
       <div className="bg-white rounded-lg shadow-sm p-6 mb-6 border border-pink-100">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -1145,6 +1201,11 @@ const MemberDetail = () => {
               <div>
                 <label className="text-sm font-medium text-gray-500">Alamat Lengkap</label>
                 <p className="text-sm text-gray-900">{member.completeAddress || "-"}</p>
+                {member.addressUpdateStatus === "pending" && (
+                  <span className="inline-flex mt-1 px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs font-semibold">
+                    Menunggu verifikasi alamat
+                  </span>
+                )}
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-500">No Rekening</label>
