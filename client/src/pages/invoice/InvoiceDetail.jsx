@@ -41,6 +41,9 @@ const formatMoney = (amount, currency = "IDR") => {
   }).format(Number(amount || 0));
 };
 
+const formatDeductionMoney = (amount, currency = "IDR") =>
+  `(${formatMoney(Math.abs(Number(amount || 0)), currency)})`;
+
 const formatDate = (value) => {
   if (!value) return "-";
   return new Date(value).toLocaleDateString("en-US", {
@@ -2281,7 +2284,10 @@ export default function InvoiceDetail({
                             <i>
                               {discount.type === "percentage"
                                 ? `${discount.value}%`
-                                : formatMoney(discount.value, invoice.currency)}
+                                : formatDeductionMoney(
+                                    discount.value,
+                                    invoice.currency,
+                                  )}
                             </i>
                           </td>
                         </tr>
@@ -2470,7 +2476,10 @@ export default function InvoiceDetail({
                             <i>
                               {discount.type === "percentage"
                                 ? `${discount.value}%`
-                                : formatMoney(discount.value, invoice.currency)}
+                                : formatDeductionMoney(
+                                    discount.value,
+                                    invoice.currency,
+                                  )}
                             </i>
                           </td>
                         </tr>
