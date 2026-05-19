@@ -31,6 +31,12 @@ const statusLabel = {
   overdue: "Overdue",
 };
 
+const sortableInvoiceColumns = {
+  status: "Status",
+  due: "Due",
+  issued: "Issued",
+};
+
 function StatCard({ label, value }) {
   return (
     <div className="inv-stat">
@@ -56,6 +62,11 @@ export default function Invoices() {
       status: searchParams.get("status") || "",
       issuedFrom: searchParams.get("issuedFrom") || "",
       issuedTo: searchParams.get("issuedTo") || "",
+      dueFrom: searchParams.get("dueFrom") || "",
+      dueTo: searchParams.get("dueTo") || "",
+      dueState: searchParams.get("dueState") || "",
+      order: searchParams.get("order") || "",
+      by: searchParams.get("by") || "",
       tag: searchParams.get("tag") || "unpaid",
     }),
     [searchParams],
@@ -109,6 +120,32 @@ export default function Invoices() {
     setSearchParams({ tag: "unpaid", page: "1" });
   };
 
+  const setSort = (column) => {
+    const next = new URLSearchParams(searchParams);
+    const nextDirection =
+      filters.order === column && filters.by === "asc" ? "desc" : "asc";
+    next.set("order", column);
+    next.set("by", nextDirection);
+    next.set("page", "1");
+    setSearchParams(next);
+  };
+
+  const renderSortHeader = (column) => (
+    <button
+      type="button"
+      className={`inv-sort-header ${
+        filters.order === column ? "active" : ""
+      }`}
+      onClick={() => setSort(column)}
+      title={`Sort ${sortableInvoiceColumns[column]}`}
+    >
+      <span>{sortableInvoiceColumns[column]}</span>
+      <span aria-hidden="true">
+        {filters.order === column ? (filters.by === "asc" ? "↑" : "↓") : "↕"}
+      </span>
+    </button>
+  );
+
   return (
     <div className="inv-page">
       <div className="inv-card inv-header">
@@ -156,7 +193,7 @@ export default function Invoices() {
       </div>
 
       <div className="inv-card">
-        <div className="inv-filter-row">
+        <div className="inv-filter-row inv-invoice-filter-row">
           <div>
             <label className="inv-label">Customer</label>
             <select
@@ -186,6 +223,39 @@ export default function Invoices() {
               <option value="paid">Paid</option>
               <option value="overdue">Overdue</option>
             </select>
+          </div>
+          <div>
+            <label className="inv-label">Due Status</label>
+            <select
+              className="inv-select"
+              value={filters.dueState}
+              onChange={(event) => setFilter("dueState", event.target.value)}
+            >
+              <option value="">All Due</option>
+              <option value="overdue">Overdue</option>
+              <option value="due_today">Due Today</option>
+              <option value="due_7">Due in 7 Days</option>
+              <option value="due_30">Due in 30 Days</option>
+              <option value="not_due">Not Yet Due</option>
+            </select>
+          </div>
+          <div>
+            <label className="inv-label">Due From</label>
+            <input
+              className="inv-input"
+              type="date"
+              value={filters.dueFrom}
+              onChange={(event) => setFilter("dueFrom", event.target.value)}
+            />
+          </div>
+          <div>
+            <label className="inv-label">Due To</label>
+            <input
+              className="inv-input"
+              type="date"
+              value={filters.dueTo}
+              onChange={(event) => setFilter("dueTo", event.target.value)}
+            />
           </div>
           <div>
             <label className="inv-label">Issued From</label>
@@ -270,9 +340,9 @@ export default function Invoices() {
               <table className="inv-table">
                 <thead>
                   <tr>
-                    <th>Status</th>
-                    <th>Due</th>
-                    <th>Issued</th>
+                    <th>{renderSortHeader("status")}</th>
+                    <th>{renderSortHeader("due")}</th>
+                    <th>{renderSortHeader("issued")}</th>
                     <th>Invoice ID</th>
                     <th>Customer</th>
                     <th>Total</th>

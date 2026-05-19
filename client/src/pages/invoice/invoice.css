@@ -170,6 +170,14 @@
   gap: 10px;
 }
 
+.inv-invoice-filter-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.inv-invoice-filter-row .inv-search-wrap {
+  grid-column: span 2;
+}
+
 .inv-search-wrap {
   position: relative;
 }
@@ -251,6 +259,25 @@
   font-size: 0.76rem;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.inv-sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+
+.inv-sort-header:hover,
+.inv-sort-header.active {
+  color: #0f172a;
 }
 
 .inv-table tbody tr {
@@ -2587,6 +2614,10 @@
 
   .inv-filter-row {
     grid-template-columns: 1fr;
+  }
+
+  .inv-invoice-filter-row .inv-search-wrap {
+    grid-column: span 1;
   }
 
   .inv-samit-hero {

@@ -1087,6 +1087,14 @@ export const getAllInvoices = asyncHandler(async (req, res) => {
   const tag = normalizeString(req.query.tag).toLowerCase();
   const issuedFrom = normalizeString(req.query.issuedFrom);
   const issuedTo = normalizeString(req.query.issuedTo);
+  const dueFrom = normalizeString(req.query.dueFrom);
+  const dueTo = normalizeString(req.query.dueTo);
+  const dueState = normalizeString(req.query.dueState).toLowerCase();
+  const order = normalizeString(
+    req.query.order || req.query.sortBy,
+  ).toLowerCase();
+  const by = normalizeString(req.query.by || req.query.sortDir).toLowerCase();
+  const sortDirection = by === "asc" ? 1 : -1;
 
   const query = {};
   if (memberId && mongoose.Types.ObjectId.isValid(memberId)) {
@@ -1096,6 +1104,11 @@ export const getAllInvoices = asyncHandler(async (req, res) => {
     query.issuedDate = {};
     if (issuedFrom) query.issuedDate.$gte = startOfDay(issuedFrom);
     if (issuedTo) query.issuedDate.$lte = endOfDay(issuedTo);
+  }
+  if (dueFrom || dueTo) {
+    query.dueDate = {};
+    if (dueFrom) query.dueDate.$gte = startOfDay(dueFrom);
+    if (dueTo) query.dueDate.$lte = endOfDay(dueTo);
   }
   if (search) {
     const regex = new RegExp(
@@ -1113,15 +1126,80 @@ export const getAllInvoices = asyncHandler(async (req, res) => {
   const rawInvoices = await Invoice.find(query)
     .sort({ issuedDate: -1, createdAt: -1 })
     .lean();
-  const hydrated = rawInvoices.map((invoice) => serializeInvoice(invoice));
+  const hydrated = rawInvoices.map((invoice) => {
+    const serialized = serializeInvoice(invoice);
+    return {
+      ...serialized,
+      status: computeInvoiceStatus(
+        serialized.status,
+        serialized.dueDate,
+        serialized.total,
+        serialized.totalPaid,
+      ),
+    };
+  });
+  const today = startOfDay(new Date());
 
   const filtered = hydrated.filter((invoice) => {
     if (tag === "draft" && invoice.status !== "draft") return false;
     if (tag === "unpaid" && ["paid", "draft"].includes(invoice.status))
       return false;
     if (statusFilter && invoice.status !== statusFilter) return false;
+    if (dueState) {
+      const dueDate = startOfDay(invoice.dueDate);
+      const daysUntilDue = dateDiffInDays(dueDate, today);
+      const isCollectible =
+        !["draft", "paid"].includes(invoice.status) &&
+        clampMoney(invoice.amountDue) > 0;
+
+      if (dueState === "overdue" && !(isCollectible && daysUntilDue < 0)) {
+        return false;
+      }
+      if (dueState === "due_today" && !(isCollectible && daysUntilDue === 0)) {
+        return false;
+      }
+      if (
+        dueState === "due_7" &&
+        !(isCollectible && daysUntilDue >= 0 && daysUntilDue <= 7)
+      ) {
+        return false;
+      }
+      if (
+        dueState === "due_30" &&
+        !(isCollectible && daysUntilDue >= 0 && daysUntilDue <= 30)
+      ) {
+        return false;
+      }
+      if (dueState === "not_due" && !(isCollectible && daysUntilDue > 0)) {
+        return false;
+      }
+    }
     return true;
   });
+
+  const sortKeyMap = {
+    status: (invoice) =>
+      ({ draft: 1, sent: 2, partial: 3, overdue: 4, paid: 5 }[
+        invoice.status
+      ] || 99),
+    due: (invoice) => new Date(invoice.dueDate).getTime(),
+    duedate: (invoice) => new Date(invoice.dueDate).getTime(),
+    issued: (invoice) => new Date(invoice.issuedDate).getTime(),
+    issueddate: (invoice) => new Date(invoice.issuedDate).getTime(),
+  };
+  const sorter = sortKeyMap[order];
+  if (sorter) {
+    filtered.sort((left, right) => {
+      const leftValue = sorter(left);
+      const rightValue = sorter(right);
+      if (leftValue === rightValue) {
+        return String(left.invoiceNumber || "").localeCompare(
+          String(right.invoiceNumber || ""),
+        );
+      }
+      return leftValue > rightValue ? sortDirection : -sortDirection;
+    });
+  }
 
   const summary = {
     totalInvoices: filtered.length,
