@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate, useParams } from "react-router-dom";
+import jsPDF from "jspdf";
 import { toast } from "react-toastify";
 import {
   addInvoicePayment,
@@ -141,6 +142,36 @@ const sanitizePrintFileName = (value) =>
     .replace(/[\\/:*?"<>|]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+const loadImageAsDataUrl = (src) =>
+  new Promise((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth || image.width;
+      canvas.height = image.naturalHeight || image.height;
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    image.onerror = reject;
+    image.src = src;
+  });
+
+const drawPdfWrappedText = (
+  doc,
+  text,
+  x,
+  y,
+  maxWidth,
+  lineHeight,
+  options = {},
+) => {
+  const lines = doc.splitTextToSize(String(text || "-"), maxWidth);
+  doc.text(lines, x, y, options);
+  return y + lines.length * lineHeight;
+};
 
 const statusLabel = {
   draft: "Draft",
@@ -439,6 +470,7 @@ export default function InvoiceDetail({
     useState(null);
   const [paymentSplitMode, setPaymentSplitMode] = useState(false);
   const [paymentReceiptTarget, setPaymentReceiptTarget] = useState(null);
+  const [paymentReceiptPreview, setPaymentReceiptPreview] = useState(null);
   const [notePreview, setNotePreview] = useState(null);
   const [paymentForm, setPaymentForm] = useState({
     paymentDate: new Date().toISOString().slice(0, 10),
@@ -575,6 +607,15 @@ export default function InvoiceDetail({
       window.removeEventListener("afterprint", resetPaymentReceiptPrint);
   }, [initialPrintVariant]);
 
+  useEffect(
+    () => () => {
+      if (paymentReceiptPreview?.url) {
+        URL.revokeObjectURL(paymentReceiptPreview.url);
+      }
+    },
+    [paymentReceiptPreview?.url],
+  );
+
   const handlePrint = (variant = "standard") => {
     preparePrintDocumentTitle("INVOICE");
     setPaymentReceiptTarget(null);
@@ -583,12 +624,196 @@ export default function InvoiceDetail({
     window.setTimeout(() => window.print(), 80);
   };
 
+  const buildPaymentReceiptPdf = useCallback(
+    async (payment) => {
+      if (!payment || !invoice) return null;
+
+      const doc = new jsPDF({
+        orientation: "portrait",
+        unit: "pt",
+        format: "a4",
+      });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 52;
+      const rightX = pageWidth - margin;
+      const fileName = getInvoicePrintFileName("PAYMENT");
+      const customerName = invoice.customerSnapshot?.name || "-";
+      const customerContact = [
+        invoice.customerSnapshot?.phone || "-",
+        invoice.customerSnapshot?.email || "",
+      ]
+        .filter(Boolean)
+        .join(" | ");
+
+      try {
+        const logoDataUrl = await loadImageAsDataUrl(invoiceLetterheadSrc);
+        doc.addImage(
+          logoDataUrl,
+          "PNG",
+          margin,
+          28,
+          80,
+          80,
+          undefined,
+          "FAST",
+        );
+      } catch (err) {
+        console.warn("Failed to render receipt logo:", err);
+      }
+
+      doc.setTextColor(15, 23, 42);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(28);
+      doc.text("PAYMENT RECEIPT", rightX, 48, { align: "right" });
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(15);
+      doc.text(companyProfile.printName, rightX, 78, { align: "right" });
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      let addressY = 96;
+      const addressLines = doc.splitTextToSize(
+        companyProfile.address.join(" "),
+        330,
+      );
+      doc.text(addressLines, rightX, addressY, { align: "right" });
+      addressY += addressLines.length * 11;
+      doc.text(companyProfile.phone, rightX, addressY + 7, {
+        align: "right",
+      });
+      doc.text(companyProfile.website, rightX, addressY + 22, {
+        align: "right",
+      });
+
+      const dividerY = 142;
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(1);
+      doc.line(margin, dividerY, rightX, dividerY);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(22);
+      doc.text("RECEIPT", margin, dividerY + 38);
+
+      doc.setFontSize(9);
+      doc.text("INVOICE", rightX, dividerY + 34, { align: "right" });
+      doc.setFontSize(13);
+      doc.text(String(invoice.invoiceNumber || "-"), rightX, dividerY + 56, {
+        align: "right",
+      });
+
+      const partyY = dividerY + 96;
+      doc.setFontSize(12);
+      doc.text("To,", margin, partyY);
+      doc.setFontSize(13);
+      doc.text(String(customerName).toUpperCase(), margin, partyY + 22);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      drawPdfWrappedText(
+        doc,
+        customerContact.toUpperCase(),
+        margin,
+        partyY + 42,
+        260,
+        12,
+      );
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text("Paid On,", margin, partyY + 82);
+      doc.setFontSize(13);
+      doc.text(formatPaymentDate(payment.paymentDate), margin, partyY + 104);
+
+      doc.setFontSize(12);
+      doc.text("Payment Method", rightX, partyY, { align: "right" });
+      doc.setFontSize(13);
+      doc.text(payment.method || "Bank", rightX, partyY + 26, {
+        align: "right",
+      });
+
+      const detailY = partyY + 174;
+      doc.setDrawColor(203, 213, 225);
+      doc.line(margin, detailY - 30, rightX, detailY - 30);
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text("Description", margin, detailY);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(12);
+      drawPdfWrappedText(
+        doc,
+        payment.notes || "-",
+        margin,
+        detailY + 24,
+        310,
+        16,
+      );
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text("Payment Amount", rightX, detailY, { align: "right" });
+      doc.setFontSize(17);
+      doc.text(
+        formatMoney(payment.amount, invoice.currency),
+        rightX,
+        detailY + 32,
+        { align: "right" },
+      );
+
+      doc.setDrawColor(203, 213, 225);
+      doc.line(margin, detailY + 88, rightX, detailY + 88);
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text(
+        `Copyright © ${new Date().getFullYear()} ${companyProfile.website}`,
+        pageWidth / 2,
+        pageHeight - 34,
+        { align: "center" },
+      );
+
+      return { doc, fileName };
+    },
+    [getInvoicePrintFileName, invoice],
+  );
+
+  const closePaymentReceiptPreview = useCallback(() => {
+    setPaymentReceiptPreview((current) => {
+      if (current?.url) URL.revokeObjectURL(current.url);
+      return null;
+    });
+  }, []);
+
+  const downloadPaymentReceiptPreview = useCallback(() => {
+    if (!paymentReceiptPreview?.url || !paymentReceiptPreview?.fileName) return;
+    const link = document.createElement("a");
+    link.href = paymentReceiptPreview.url;
+    link.download = `${paymentReceiptPreview.fileName}.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }, [paymentReceiptPreview]);
+
   const handlePaymentReceiptPrint = (payment) => {
     if (!payment) return;
-    preparePrintDocumentTitle("PAYMENT");
-    setPaymentReceiptTarget(payment);
-    setPrintVariant("receipt");
-    window.setTimeout(() => window.print(), 80);
+    buildPaymentReceiptPdf(payment)
+      .then((result) => {
+        if (!result) return;
+        const url = URL.createObjectURL(result.doc.output("blob"));
+        setPaymentReceiptPreview((current) => {
+          if (current?.url) URL.revokeObjectURL(current.url);
+          return {
+            url,
+            fileName: result.fileName,
+          };
+        });
+      })
+      .catch((err) => {
+        console.error("Failed to preview payment receipt:", err);
+        toast.error("Gagal menampilkan preview payment receipt");
+      });
   };
 
   const projectionTotal = useMemo(
@@ -2917,6 +3142,53 @@ export default function InvoiceDetail({
             </section>
           ) : null}
         </>
+      ) : null}
+      {paymentReceiptPreview ? (
+        <div className="inv-pdf-preview-backdrop inv-no-print">
+          <div
+            className="inv-pdf-preview-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="invoice-payment-receipt-preview-title"
+          >
+            <div className="inv-pdf-preview-head">
+              <div>
+                <h2 id="invoice-payment-receipt-preview-title">
+                  Preview Payment Receipt
+                </h2>
+                <span>{paymentReceiptPreview.fileName}.pdf</span>
+              </div>
+              <button
+                type="button"
+                onClick={closePaymentReceiptPreview}
+                aria-label="Close payment receipt preview"
+              >
+                ×
+              </button>
+            </div>
+            <iframe
+              className="inv-pdf-preview-frame"
+              src={paymentReceiptPreview.url}
+              title="Payment receipt PDF preview"
+            />
+            <div className="inv-pdf-preview-actions">
+              <button
+                type="button"
+                className="inv-btn-ghost"
+                onClick={closePaymentReceiptPreview}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="inv-btn"
+                onClick={downloadPaymentReceiptPreview}
+              >
+                Download PDF
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
       {notePreview ? (
         <div className="inv-note-modal-backdrop inv-no-print">
