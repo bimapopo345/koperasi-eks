@@ -48,7 +48,7 @@ const createSavingsSchema = Joi.object({
     "date.base": "Tanggal simpanan harus berupa tanggal yang valid",
     "any.required": "Tanggal simpanan wajib diisi",
   }),
-  paymentDate: Joi.date().optional().messages({
+  paymentDate: Joi.date().allow(null).optional().messages({
     "date.base": "Tanggal pembayaran harus berupa tanggal yang valid",
   }),
   type: Joi.string().valid("Setoran", "Penarikan").default("Setoran").messages({
@@ -125,7 +125,7 @@ const updateSavingsSchema = Joi.object({
   savingsDate: Joi.date().optional().messages({
     "date.base": "Tanggal simpanan harus berupa tanggal yang valid",
   }),
-  paymentDate: Joi.date().optional().messages({
+  paymentDate: Joi.date().allow(null).optional().messages({
     "date.base": "Tanggal pembayaran harus berupa tanggal yang valid",
   }),
   type: Joi.string().valid("Setoran", "Penarikan").optional().messages({
@@ -139,7 +139,7 @@ const updateSavingsSchema = Joi.object({
       "string.base": "Status harus berupa string",
       "any.only": "Status harus salah satu dari: Pending, Approved, Rejected, Partial",
     }),
-  description: Joi.string().max(500).optional().messages({
+  description: Joi.string().max(500).optional().allow("").messages({
     "string.base": "Deskripsi harus berupa string",
     "string.max": "Deskripsi maksimal 500 karakter",
   }),

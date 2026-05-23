@@ -415,9 +415,6 @@ const Savings = () => {
     if (submitLoading) return;
     setSubmitLoading(true);
 
-    // Debug: log form data before sending
-    console.log("Form data being submitted:", formData);
-
     // Get token first
     const token = localStorage.getItem("token");
     
@@ -437,7 +434,6 @@ const Savings = () => {
           formDataToSend.append(key, formData[key]);
         }
       });
-      headers["Content-Type"] = "multipart/form-data";
     } else {
       // Use JSON for non-file submissions
       const dataToSend = { ...formData };
@@ -452,9 +448,6 @@ const Savings = () => {
       formDataToSend = dataToSend;
       headers["Content-Type"] = "application/json";
     }
-
-    console.log("Data being sent:", formDataToSend);
-    console.log("Headers:", headers);
 
     try {
       if (editingId) {

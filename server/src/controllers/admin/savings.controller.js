@@ -197,27 +197,31 @@ const createSavings = asyncHandler(async (req, res) => {
 const updateSavings = asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  // Ambil semua field dari form data
-  const updateData = {};
+  const existingSaving = await Savings.findById(id);
+  if (!existingSaving) {
+    throw new ApiError(404, "Data simpanan tidak ditemukan");
+  }
 
-  // Ambil semua field yang dikirim
-  const fields = [
-    "installmentPeriod",
-    "memberId",
-    "productId",
-    "amount",
-    "savingsDate",
-    "paymentDate",
-    "type",
-    "description",
-    "status",
-  ];
-
-  fields.forEach((field) => {
-    if (req.body[field] !== undefined) {
-      updateData[field] = req.body[field];
+  const bodyData = { ...req.body };
+  ["amount", "installmentPeriod"].forEach((key) => {
+    if (bodyData[key] !== undefined && bodyData[key] !== "") {
+      const parsed = Number(bodyData[key]);
+      if (!Number.isNaN(parsed)) {
+        bodyData[key] = parsed;
+      }
     }
   });
+
+  if (bodyData.paymentDate === "") {
+    bodyData.paymentDate = null;
+  }
+
+  const { error, value } = updateSavingsSchema.validate(bodyData);
+  if (error) {
+    throw new ApiError(400, error.details[0].message);
+  }
+
+  const updateData = { ...value };
 
   // Handle file upload jika ada
   if (req.file) {
@@ -237,34 +241,18 @@ const updateSavings = asyncHandler(async (req, res) => {
     if (!product) {
       throw new ApiError(404, "Produk tidak ditemukan");
     }
-
-    // Validasi amount terhadap product
-    if (updateData.amount && updateData.amount < product.depositAmount) {
-      throw new ApiError(
-        400,
-        `Jumlah simpanan minimal ${product.depositAmount}`
-      );
-    }
   }
 
-  // Check for duplicate installment period when updating
-  if (
-    updateData.installmentPeriod &&
-    updateData.memberId &&
-    updateData.productId
-  ) {
-    const existingSavings = await Savings.findOne({
-      memberId: updateData.memberId,
-      productId: updateData.productId,
-      installmentPeriod: updateData.installmentPeriod,
-      _id: { $ne: id }, // Exclude current savings
-    });
-
-    if (existingSavings) {
-      throw new ApiError(
-        400,
-        `Kamu sudah pernah menambahkan data periode ${updateData.installmentPeriod} untuk produk ini`
-      );
+  const productIdForPaymentType = updateData.productId || existingSaving.productId;
+  const amountForPaymentType =
+    updateData.amount !== undefined ? updateData.amount : existingSaving.amount;
+  if (productIdForPaymentType && amountForPaymentType !== undefined) {
+    const product = await Product.findById(productIdForPaymentType);
+    if (product) {
+      updateData.paymentType =
+        Number(amountForPaymentType) < Number(product.depositAmount)
+          ? "Partial"
+          : "Full";
     }
   }
 

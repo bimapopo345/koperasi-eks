@@ -72,4 +72,20 @@ app.get("/", (req, res) => {
   res.send("Welcome to the Express Server!");
 });
 
+app.use((err, req, res, next) => {
+  const statusCode = err.statusCode || err.status || 500;
+  const message =
+    err.message || (statusCode >= 500 ? "Internal Server Error" : "Bad Request");
+
+  if (statusCode >= 500) {
+    console.error("Unhandled server error:", err);
+  }
+
+  res.status(statusCode).json({
+    success: false,
+    message,
+    errors: err.errors || [],
+  });
+});
+
 export { app };
