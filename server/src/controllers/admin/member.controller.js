@@ -6,66 +6,49 @@ import { LoanPayment } from "../../models/loanPayment.model.js";
 import { ProductUpgrade } from "../../models/productUpgrade.model.js";
 import mongoose from "mongoose";
 import fs from "fs/promises";
-import { resolveUploadedFilePath } from "../../utils/uploadsDir.js";
+import { resolveUploadedFilePath, saveBase64ImageToFile } from "../../utils/uploadsDir.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 
-// Get all members
+// Get all members — optimized: exclude heavy base64 images from list, single aggregate for savings
 const getAllMembers = asyncHandler(async (req, res) => {
   // Filter by verification status
-  const { verified, addressUpdateStatus } = req.query;
+  const { verified, addressUpdateStatus, isCompleted, productId } = req.query;
   let filter = {};
   if (verified === "true") filter.isVerified = true;
   else if (verified === "false") filter.isVerified = false;
-  if (addressUpdateStatus) {
-    filter.addressUpdateStatus = addressUpdateStatus;
-  }
+  if (addressUpdateStatus) filter.addressUpdateStatus = addressUpdateStatus;
+  if (isCompleted === "true") filter.isCompleted = true;
+  else if (isCompleted === "false") filter.isCompleted = false;
+  if (productId) filter.productId = productId;
 
   const members = await Member.find(filter)
+    .select("-ktpImage -selfieImage -livenessLeftImage -livenessRightImage -signatureImage -riplText")
     .populate("user", "username email isActive")
     .populate("product", "title depositAmount termDuration returnProfit description")
     .populate({
       path: "currentUpgradeId",
       populate: [
         { path: "oldProductId", select: "title depositAmount" },
-        { path: "newProductId", select: "title depositAmount" }
-      ]
+        { path: "newProductId", select: "title depositAmount" },
+      ],
     })
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .lean();
 
-  // Calculate total savings for each member
-  const membersWithSavings = await Promise.all(
-    members.map(async (member) => {
-      // Method 1: Try to find by current member._id
-      let approvedSavings = await Savings.find({
-        memberId: member._id,
-        type: "Setoran",
-        status: "Approved",
-      });
+  // Batched savings total — single aggregate, no N+1
+  const memberIds = members.map((m) => m._id);
+  const savingsAgg = memberIds.length
+    ? await Savings.aggregate([
+        { $match: { memberId: { $in: memberIds }, type: "Setoran", status: "Approved" } },
+        { $group: { _id: "$memberId", total: { $sum: "$amount" } } },
+      ])
+    : [];
+  const savingsMap = new Map(savingsAgg.map((s) => [String(s._id), s.total]));
 
-      // Method 2: If no savings found, try to find by populating member and matching UUID
-      if (approvedSavings.length === 0) {
-        const allSavings = await Savings.find({
-          type: "Setoran",
-          status: "Approved"
-        }).populate('memberId', 'uuid name');
-        
-        approvedSavings = allSavings.filter(saving => 
-          saving.memberId && saving.memberId.uuid === member.uuid
-        );
-      }
-
-      // Calculate total using simple reduce
-      const totalSavings = approvedSavings.reduce(
-        (sum, saving) => sum + saving.amount,
-        0
-      );
-
-      return {
-        ...member.toObject(),
-        totalSavings: totalSavings,
-      };
-    })
-  );
+  const membersWithSavings = members.map((m) => ({
+    ...m,
+    totalSavings: savingsMap.get(String(m._id)) || 0,
+  }));
 
   res.status(200).json({
     success: true,
@@ -190,6 +173,14 @@ const createMember = asyncHandler(async (req, res) => {
       return `MEMBER_${timestamp}_${random}`;
     })();
 
+  // Long-term fix: base64 -> file path /uploads/members/
+  const tmpUuid = memberUUID || `MEMBER_${Date.now()}`;
+  const storedKtp = saveBase64ImageToFile(ktpImage || "", "members", `${tmpUuid}-ktp`);
+  const storedSelfie = saveBase64ImageToFile(selfieImage || "", "members", `${tmpUuid}-selfie`);
+  const storedLeft = saveBase64ImageToFile(livenessLeftImage || "", "members", `${tmpUuid}-left`);
+  const storedRight = saveBase64ImageToFile(livenessRightImage || "", "members", `${tmpUuid}-right`);
+  const storedSig = saveBase64ImageToFile(signatureImage || "", "members", `${tmpUuid}-sig`);
+
   // Create member — admin-created members are auto-verified
   const member = new Member({
     name,
@@ -208,11 +199,11 @@ const createMember = asyncHandler(async (req, res) => {
     nik: nik || "",
     bankName: bankName || "",
     accountHolderName: accountHolderName || "",
-    signatureImage: signatureImage || "",
-    ktpImage: ktpImage || "",
-    selfieImage: selfieImage || "",
-    livenessLeftImage: livenessLeftImage || "",
-    livenessRightImage: livenessRightImage || "",
+    signatureImage: storedSig,
+    ktpImage: storedKtp,
+    selfieImage: storedSelfie,
+    livenessLeftImage: storedLeft,
+    livenessRightImage: storedRight,
     faceMatchScore: faceMatchScore ?? null,
     riplText: riplText || "",
     riplVersion: riplVersion || "",
@@ -305,11 +296,26 @@ const updateMember = asyncHandler(async (req, res) => {
   if (nik !== undefined) member.nik = nik;
   if (bankName !== undefined) member.bankName = bankName;
   if (accountHolderName !== undefined) member.accountHolderName = accountHolderName;
-  if (signatureImage !== undefined) member.signatureImage = signatureImage || "";
-  if (ktpImage !== undefined) member.ktpImage = ktpImage || "";
-  if (selfieImage !== undefined) member.selfieImage = selfieImage || "";
-  if (livenessLeftImage !== undefined) member.livenessLeftImage = livenessLeftImage || "";
-  if (livenessRightImage !== undefined) member.livenessRightImage = livenessRightImage || "";
+  if (signatureImage !== undefined) {
+    const stored = signatureImage ? saveBase64ImageToFile(signatureImage, "members", `${uuid}-sig`) : "";
+    member.signatureImage = stored;
+  }
+  if (ktpImage !== undefined) {
+    const stored = ktpImage ? saveBase64ImageToFile(ktpImage, "members", `${uuid}-ktp`) : "";
+    member.ktpImage = stored;
+  }
+  if (selfieImage !== undefined) {
+    const stored = selfieImage ? saveBase64ImageToFile(selfieImage, "members", `${uuid}-selfie`) : "";
+    member.selfieImage = stored;
+  }
+  if (livenessLeftImage !== undefined) {
+    const stored = livenessLeftImage ? saveBase64ImageToFile(livenessLeftImage, "members", `${uuid}-left`) : "";
+    member.livenessLeftImage = stored;
+  }
+  if (livenessRightImage !== undefined) {
+    const stored = livenessRightImage ? saveBase64ImageToFile(livenessRightImage, "members", `${uuid}-right`) : "";
+    member.livenessRightImage = stored;
+  }
   if (faceMatchScore !== undefined) member.faceMatchScore = faceMatchScore ?? null;
   if (riplText !== undefined) member.riplText = riplText || "";
   if (riplVersion !== undefined) member.riplVersion = riplVersion || "";
@@ -671,13 +677,15 @@ const exportMembersExcel = asyncHandler(async (req, res) => {
   }
 
   const members = await Member.find(filter)
+    .select("-ktpImage -selfieImage -livenessLeftImage -livenessRightImage -signatureImage -riplText")
     .populate("user", "username email")
     .populate("product", "title depositAmount")
     .populate({
       path: "currentUpgradeId",
       populate: [{ path: "newProductId", select: "title" }],
     })
-    .sort({ createdAt: -1 });
+    .sort({ createdAt: -1 })
+    .lean();
 
   const memberIds = members.map((m) => m._id);
   const savingsAgg = memberIds.length
