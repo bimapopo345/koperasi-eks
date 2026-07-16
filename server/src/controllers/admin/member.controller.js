@@ -6,7 +6,7 @@ import { LoanPayment } from "../../models/loanPayment.model.js";
 import { ProductUpgrade } from "../../models/productUpgrade.model.js";
 import mongoose from "mongoose";
 import fs from "fs/promises";
-import { resolveUploadedFilePath, saveBase64ImageToFile } from "../../utils/uploadsDir.js";
+import { resolveUploadedFilePath } from "../../utils/uploadsDir.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 
 // Get all members — optimized: exclude heavy base64 images from list, single aggregate for savings
@@ -173,15 +173,8 @@ const createMember = asyncHandler(async (req, res) => {
       return `MEMBER_${timestamp}_${random}`;
     })();
 
-  // Long-term fix: base64 -> file path /uploads/members/
-  const tmpUuid = memberUUID || `MEMBER_${Date.now()}`;
-  const storedKtp = saveBase64ImageToFile(ktpImage || "", "members", `${tmpUuid}-ktp`);
-  const storedSelfie = saveBase64ImageToFile(selfieImage || "", "members", `${tmpUuid}-selfie`);
-  const storedLeft = saveBase64ImageToFile(livenessLeftImage || "", "members", `${tmpUuid}-left`);
-  const storedRight = saveBase64ImageToFile(livenessRightImage || "", "members", `${tmpUuid}-right`);
-  const storedSig = saveBase64ImageToFile(signatureImage || "", "members", `${tmpUuid}-sig`);
-
   // Create member — admin-created members are auto-verified
+  // Keep image fields as sent (base64/URL/path) — same as before; list endpoint excludes them
   const member = new Member({
     name,
     gender,
@@ -199,11 +192,11 @@ const createMember = asyncHandler(async (req, res) => {
     nik: nik || "",
     bankName: bankName || "",
     accountHolderName: accountHolderName || "",
-    signatureImage: storedSig,
-    ktpImage: storedKtp,
-    selfieImage: storedSelfie,
-    livenessLeftImage: storedLeft,
-    livenessRightImage: storedRight,
+    signatureImage: signatureImage || "",
+    ktpImage: ktpImage || "",
+    selfieImage: selfieImage || "",
+    livenessLeftImage: livenessLeftImage || "",
+    livenessRightImage: livenessRightImage || "",
     faceMatchScore: faceMatchScore ?? null,
     riplText: riplText || "",
     riplVersion: riplVersion || "",
@@ -296,26 +289,11 @@ const updateMember = asyncHandler(async (req, res) => {
   if (nik !== undefined) member.nik = nik;
   if (bankName !== undefined) member.bankName = bankName;
   if (accountHolderName !== undefined) member.accountHolderName = accountHolderName;
-  if (signatureImage !== undefined) {
-    const stored = signatureImage ? saveBase64ImageToFile(signatureImage, "members", `${uuid}-sig`) : "";
-    member.signatureImage = stored;
-  }
-  if (ktpImage !== undefined) {
-    const stored = ktpImage ? saveBase64ImageToFile(ktpImage, "members", `${uuid}-ktp`) : "";
-    member.ktpImage = stored;
-  }
-  if (selfieImage !== undefined) {
-    const stored = selfieImage ? saveBase64ImageToFile(selfieImage, "members", `${uuid}-selfie`) : "";
-    member.selfieImage = stored;
-  }
-  if (livenessLeftImage !== undefined) {
-    const stored = livenessLeftImage ? saveBase64ImageToFile(livenessLeftImage, "members", `${uuid}-left`) : "";
-    member.livenessLeftImage = stored;
-  }
-  if (livenessRightImage !== undefined) {
-    const stored = livenessRightImage ? saveBase64ImageToFile(livenessRightImage, "members", `${uuid}-right`) : "";
-    member.livenessRightImage = stored;
-  }
+  if (signatureImage !== undefined) member.signatureImage = signatureImage || "";
+  if (ktpImage !== undefined) member.ktpImage = ktpImage || "";
+  if (selfieImage !== undefined) member.selfieImage = selfieImage || "";
+  if (livenessLeftImage !== undefined) member.livenessLeftImage = livenessLeftImage || "";
+  if (livenessRightImage !== undefined) member.livenessRightImage = livenessRightImage || "";
   if (faceMatchScore !== undefined) member.faceMatchScore = faceMatchScore ?? null;
   if (riplText !== undefined) member.riplText = riplText || "";
   if (riplVersion !== undefined) member.riplVersion = riplVersion || "";
