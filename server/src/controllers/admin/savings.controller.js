@@ -34,6 +34,7 @@ const getAllSavings = asyncHandler(async (req, res) => {
   const savings = await Savings.find(query)
     .populate("memberId", "name email phone")
     .populate("productId", "title depositAmount returnProfit termDuration")
+    .populate("accountId", "accountName accountCode")
     .sort({ createdAt: -1 })
     .limit(limit)
     .skip((page - 1) * limit);
