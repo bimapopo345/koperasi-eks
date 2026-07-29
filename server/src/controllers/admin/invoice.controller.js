@@ -988,12 +988,80 @@ async function normalizeInvoicePaymentInput(req, invoice, options = {}) {
   if (amount <= 0) {
     throw new ApiError(400, "Nominal pembayaran tidak valid");
   }
-  const projectionMarker = resolveInvoiceProjectionForPayment(
-    invoice,
-    body,
-    amount,
-    excludePaymentId,
-  );
+
+  const existingCoveredIds = parseFlexibleArray(
+    existingPayment?.coveredProjectionIds,
+  )
+    .map((id) => normalizeObjectId(id))
+    .filter(Boolean);
+  const existingBreakdown = Array.isArray(
+    existingPayment?.coveredProjectionBreakdown,
+  )
+    ? existingPayment.coveredProjectionBreakdown
+    : [];
+  const isMultiCoverEdit =
+    existingCoveredIds.length > 1 || existingBreakdown.length > 1;
+
+  let projectionMarker = null;
+  if (isMultiCoverEdit) {
+    // Multi-cover: amount is total across covered cicilan, not one projection remaining.
+    const idSource =
+      existingCoveredIds.length > 0
+        ? existingCoveredIds
+        : existingBreakdown
+            .map((row) => normalizeObjectId(row?.projectionId))
+            .filter(Boolean);
+    let multiRemaining = 0;
+    for (const projId of idSource) {
+      const match = (invoice.projections || [])
+        .map((projection, index) => ({ projection, projectionIndex: index + 1 }))
+        .find(({ projection }) => sameObjectId(projection._id, projId));
+      if (!match) continue;
+      const { projection, projectionIndex } = match;
+      const paidElsewhere = clampMoney(
+        (invoice.payments || [])
+          .filter(
+            (payment) =>
+              !excludePaymentId ||
+              String(payment._id) !== String(excludePaymentId),
+          )
+          .reduce(
+            (sum, payment) =>
+              sum +
+              paymentContributionToProjection(
+                payment,
+                projection,
+                projectionIndex,
+              ),
+            0,
+          ),
+      );
+      multiRemaining += clampMoney(
+        Math.max(clampMoney(projection.amount) - paidElsewhere, 0),
+      );
+    }
+    multiRemaining = clampMoney(multiRemaining);
+    if (amount > multiRemaining + 0.01) {
+      throw new ApiError(
+        400,
+        `Nominal melebihi sisa total cicilan tercakup. Sisa: ${multiRemaining}`,
+      );
+    }
+    projectionMarker = {
+      projectionId: existingPayment?.projectionId || idSource[0] || null,
+      projectionIndex: existingPayment?.projectionIndex || null,
+      projectionDescription: existingPayment?.projectionDescription || "",
+      projectionDueDate: existingPayment?.projectionDueDate || null,
+      remainingAmount: multiRemaining,
+    };
+  } else {
+    projectionMarker = resolveInvoiceProjectionForPayment(
+      invoice,
+      body,
+      amount,
+      excludePaymentId,
+    );
+  }
   if (!accountId) {
     throw new ApiError(400, "Record Account wajib dipilih");
   }
