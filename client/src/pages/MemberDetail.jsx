@@ -1365,7 +1365,7 @@ const MemberDetail = () => {
 
   // Calculate totals
   const totalSetoran = savings
-    .filter(s => s.type === "Setoran" && s.status === "Approved")
+    .filter(s => s.type === "Setoran" && ["Approved", "Partial"].includes(s.status))
     .reduce((sum, s) => sum + s.amount, 0);
   
   const totalPenarikan = savings
@@ -1428,9 +1428,12 @@ const MemberDetail = () => {
       let status = 'belum_bayar';
       let totalPaid = 0;
       
-      // Calculate total approved amount for this period FIRST
-      const approvedTransactions = periodTransactions.filter(t => t.status === 'Approved');
-      totalPaid = approvedTransactions.reduce((sum, t) => sum + t.amount, 0);
+      // Approved dan Partial sama-sama merupakan pembayaran yang sudah
+      // diterima untuk progres periode. Pending/Rejected tidak dihitung.
+      const paidTransactions = periodTransactions.filter(t =>
+        ['Approved', 'Partial'].includes(t.status)
+      );
+      totalPaid = paidTransactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
       
       // Calculate required amount based on upgrade status
       let requiredAmount = member.product.depositAmount || 0;
@@ -1517,7 +1520,7 @@ const MemberDetail = () => {
         remainingAmount: Math.max(0, requiredAmount - totalPaid),
         transactions,
         percentage: requiredAmount > 0
-          ? (totalPaid / requiredAmount) * 100
+          ? Math.min(100, (totalPaid / requiredAmount) * 100)
           : (creditApplied > 0 ? 100 : 0),
         overpaymentAmount: Math.max(0, totalPaid - requiredAmount)
       });
