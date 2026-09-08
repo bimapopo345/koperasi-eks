@@ -6,25 +6,13 @@ import api from "../api/index.jsx";
 import { loanApi, loanPaymentApi } from "../api/loanApi.jsx";
 import Pagination from "../components/Pagination.jsx";
 import ConfirmDialog from "../components/ConfirmDialog.jsx";
+import MemberDocumentImage from "../components/MemberDocumentImage.jsx";
 import { toast } from "react-toastify";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { renderMutasiAccountHeader } from "../utils/mutasiPdfLayout.js";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
-
-const getMemberImageUrl = (val) => {
-  if (!val) return "";
-  const raw = String(val).trim();
-  if (!raw) return "";
-  if (raw.startsWith("data:")) return raw;
-  if (/^https?:\/\//i.test(raw)) return raw;
-  if (raw.startsWith("/uploads/")) {
-    const base = API_URL.replace(/\/+$/, "");
-    return `${base}${raw}`;
-  }
-  return raw;
-};
 
 const formatMemberDate = (value) => {
   if (!value) return "-";
@@ -1574,11 +1562,12 @@ const MemberDetail = () => {
 
   const openRegistrationAttachmentPreview = (item) => {
     if (!item?.value) return;
-    setCurrentProofImage(getMemberImageUrl(item.value));
+    setCurrentProofImage(null);
     setCurrentTransactionInfo({
       isAttachmentPreview: true,
       label: item.label,
       hint: item.hint,
+      attachmentValue: item.value,
     });
     setShowProofModal(true);
   };
@@ -2196,13 +2185,15 @@ const MemberDetail = () => {
                   onClick={() => openRegistrationAttachmentPreview(item)}
                   className="group block w-full text-left"
                 >
-                  <img
-                    src={getMemberImageUrl(item.value)}
+                  <MemberDocumentImage
+                    value={item.value}
                     alt={item.label}
+                    apiBase={API_URL}
                     className={`h-48 w-full rounded-xl border border-slate-200 bg-slate-50 transition-transform duration-300 group-hover:scale-[1.01] ${
                       item.fit === "contain" ? "object-contain p-3" : "object-cover"
                     }`}
                     loading="lazy"
+                    showOriginalLink={false}
                   />
                 </button>
               ) : (
@@ -3056,7 +3047,19 @@ const MemberDetail = () => {
 
             {/* Modal Body */}
             <div className="p-4">
-              {currentProofImage ? (
+              {currentTransactionInfo?.isAttachmentPreview ? (
+                <div className="text-center">
+                  <MemberDocumentImage
+                    value={currentTransactionInfo.attachmentValue}
+                    alt={currentTransactionInfo.label}
+                    apiBase={API_URL}
+                    className="max-w-full max-h-[60vh] object-contain mx-auto rounded-lg shadow-lg"
+                    fallbackClassName="min-h-[45vh]"
+                    loadingClassName="min-h-[45vh]"
+                    showOriginalLink
+                  />
+                </div>
+              ) : currentProofImage ? (
                 <div className="text-center">
                   {/* Check if file is PDF or Word document */}
                   {currentProofImage.toLowerCase().match(/\.pdf(\?|$)/) ? (
