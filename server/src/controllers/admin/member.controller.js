@@ -15,6 +15,36 @@ import {
   summarizeRegistrationDocuments,
   validateRegistrationPayload,
 } from "../../utils/memberRegistration.js";
+import {
+  getEffectiveMembershipStatus,
+  normalizeMembershipStatus,
+} from "../../utils/membershipStatus.js";
+
+const addMembershipStatusFilter = (filter, requestedStatus) => {
+  const status = normalizeMembershipStatus(requestedStatus);
+  if (!status) return;
+
+  const membershipClause = status === "active"
+    ? {
+        $or: [
+          { membershipStatus: "active" },
+          { membershipStatus: { $exists: false } },
+          { membershipStatus: null },
+        ],
+      }
+    : { membershipStatus: status };
+
+  if (filter.$or) {
+    filter.$and = [...(filter.$and || []), { $or: filter.$or }, membershipClause];
+    delete filter.$or;
+  } else if (filter.$and) {
+    filter.$and.push(membershipClause);
+  } else if (membershipClause.$or) {
+    filter.$or = membershipClause.$or;
+  } else {
+    filter.membershipStatus = status;
+  }
+};
 
 // Get all members — optimized: exclude heavy base64 images from list, single aggregate for savings
 const getAllMembers = asyncHandler(async (req, res) => {
@@ -26,6 +56,7 @@ const getAllMembers = asyncHandler(async (req, res) => {
     identityVerifyStatus,
     isCompleted,
     productId,
+    membershipStatus,
   } = req.query;
   let filter = {};
   if (verified === "true") filter.isVerified = true;
@@ -43,6 +74,7 @@ const getAllMembers = asyncHandler(async (req, res) => {
   if (isCompleted === "true") filter.isCompleted = true;
   else if (isCompleted === "false") filter.isCompleted = false;
   if (productId) filter.productId = productId;
+  addMembershipStatusFilter(filter, membershipStatus);
 
   const members = await Member.find(filter)
     .select("-ktpImage -selfieImage -livenessLeftImage -livenessRightImage -signatureImage -riplText")
@@ -71,6 +103,8 @@ const getAllMembers = asyncHandler(async (req, res) => {
   const membersWithSavings = members.map((m) => ({
     ...m,
     registrationStatus: getEffectiveRegistrationStatus(m),
+    membershipStatus: getEffectiveMembershipStatus(m),
+    membershipStatusRaw: normalizeMembershipStatus(m.membershipStatus) || null,
     totalSavings: savingsMap.get(String(m._id)) || 0,
   }));
 
@@ -104,6 +138,8 @@ const getMemberByUuid = asyncHandler(async (req, res) => {
 
   // Add upgrade info if member has upgraded
   const memberData = member.toObject();
+  memberData.membershipStatus = getEffectiveMembershipStatus(member);
+  memberData.membershipStatusRaw = normalizeMembershipStatus(member.membershipStatus) || null;
   if (member.hasUpgraded && member.currentUpgradeId) {
     memberData.upgradeInfo = member.currentUpgradeId;
   }
@@ -141,6 +177,7 @@ const createMember = asyncHandler(async (req, res) => {
     riplText,
     riplVersion,
     riplAgreedAt,
+    membershipStatus,
   } = req.body;
 
   // Validate required fields
@@ -149,6 +186,10 @@ const createMember = asyncHandler(async (req, res) => {
       success: false,
       message: "Nama dan jenis kelamin harus diisi",
     });
+  }
+
+  if (membershipStatus !== undefined && membershipStatus !== "" && !normalizeMembershipStatus(membershipStatus)) {
+    return res.status(400).json({ success: false, message: "Status keanggotaan tidak valid" });
   }
 
   // Check if UUID already exists if provided
@@ -228,6 +269,7 @@ const createMember = asyncHandler(async (req, res) => {
     isVerified: true,
     registrationStatus: "approved",
     registrationSource: "admin",
+    membershipStatus: normalizeMembershipStatus(membershipStatus) || "active",
   });
 
   await member.save();
@@ -272,6 +314,7 @@ const updateMember = asyncHandler(async (req, res) => {
     riplText,
     riplVersion,
     riplAgreedAt,
+    membershipStatus,
   } = req.body;
 
   const member = await Member.findOne({ uuid });
@@ -281,6 +324,10 @@ const updateMember = asyncHandler(async (req, res) => {
       success: false,
       message: "Member tidak ditemukan",
     });
+  }
+
+  if (membershipStatus !== undefined && membershipStatus !== "" && !normalizeMembershipStatus(membershipStatus)) {
+    return res.status(400).json({ success: false, message: "Status keanggotaan tidak valid" });
   }
 
   // Check if new UUID is already used by another member
@@ -338,6 +385,11 @@ const updateMember = asyncHandler(async (req, res) => {
   if (riplText !== undefined) member.riplText = riplText || "";
   if (riplVersion !== undefined) member.riplVersion = riplVersion || "";
   if (riplAgreedAt !== undefined) member.riplAgreedAt = riplAgreedAt ? new Date(riplAgreedAt) : null;
+  if (membershipStatus !== undefined) {
+    member.membershipStatus = membershipStatus === ""
+      ? undefined
+      : normalizeMembershipStatus(membershipStatus);
+  }
 
   await member.save();
 
@@ -553,6 +605,15 @@ const verifyMember = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: "Member sudah diverifikasi" });
   }
 
+  const requestedMembershipStatus = req.body?.membershipStatus;
+  if (
+    requestedMembershipStatus !== undefined &&
+    requestedMembershipStatus !== "" &&
+    !normalizeMembershipStatus(requestedMembershipStatus)
+  ) {
+    return res.status(400).json({ success: false, message: "Status keanggotaan tidak valid" });
+  }
+
   const registrationStatus = getEffectiveRegistrationStatus(member);
   if (registrationStatus === "rejected") {
     return res.status(409).json({
@@ -576,6 +637,10 @@ const verifyMember = asyncHandler(async (req, res) => {
 
   const actorId = req.user?.userId || req.user?._id;
   member.isVerified = true;
+  member.membershipStatus =
+    normalizeMembershipStatus(requestedMembershipStatus) ||
+    normalizeMembershipStatus(member.membershipStatus) ||
+    (isStudentRegistration(member) ? "draft" : "active");
   if (isStudentRegistration(member)) member.registrationStatus = "approved";
   member.verifiedBy = actorId;
   member.verifiedAt = new Date();
@@ -951,6 +1016,7 @@ const exportMembersExcel = asyncHandler(async (req, res) => {
     isCompleted,
     productId,
     search,
+    membershipStatus,
   } = req.query;
   let filter = {};
   if (verified === "true") filter.isVerified = true;
@@ -983,6 +1049,7 @@ const exportMembersExcel = asyncHandler(async (req, res) => {
     if (filter.$and) filter.$and.push(searchFilter);
     else filter.$or = searchFilter.$or;
   }
+  addMembershipStatusFilter(filter, membershipStatus);
 
   const members = await Member.find(filter)
     .select("-ktpImage -selfieImage -livenessLeftImage -livenessRightImage -signatureImage -riplText")
@@ -1055,6 +1122,7 @@ const exportMembersExcel = asyncHandler(async (req, res) => {
     "Upgrade Produk",
     "Total Tabungan (IDR)",
     "Status Verifikasi",
+    "Status Keanggotaan",
     "Status Alamat",
     "Alasan Tolak Alamat",
     "Status Lunas",
@@ -1089,6 +1157,7 @@ const exportMembersExcel = asyncHandler(async (req, res) => {
       m.currentUpgradeId?.newProductId?.title || (m.hasUpgraded ? "Ya" : ""),
       total,
       m.isVerified ? "Terverifikasi" : "Belum",
+      getEffectiveMembershipStatus(m),
       m.addressUpdateStatus,
       m.addressUpdateRejectionReason || "",
       m.isCompleted ? "Lunas" : "Belum Lunas",
