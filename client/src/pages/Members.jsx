@@ -13,13 +13,16 @@ const getRegistrationStatus = (member) => {
 };
 
 const MEMBERSHIP_STATUS_META = {
+  legacy: { label: "Lama — belum diatur", badgeClass: "bg-slate-100 text-slate-700" },
   draft: { label: "Draft — tabungan belum dibuka", badgeClass: "bg-amber-100 text-amber-800" },
   active: { label: "Aktif", badgeClass: "bg-emerald-100 text-emerald-800" },
   inactive: { label: "Nonaktif — tabungan ditutup", badgeClass: "bg-slate-200 text-slate-700" },
 };
 
 const getMembershipStatus = (member) => {
-  const status = String(member?.membershipStatus || "").toLowerCase();
+  const status = String(
+    member?.membershipStatusClassification || member?.membershipStatusRaw || "",
+  ).toLowerCase();
   return Object.prototype.hasOwnProperty.call(MEMBERSHIP_STATUS_META, status) ? status : "active";
 };
 
@@ -345,6 +348,7 @@ const Members = () => {
           livenessRightImage: full.livenessRightImage || "",
           faceMatchScore: full.faceMatchScore ?? null,
           membershipStatus: full.membershipStatusRaw || "",
+          membershipStatusClassification: full.membershipStatusClassification || "legacy",
         }));
       }
     } catch (err) {
@@ -845,6 +849,7 @@ const Members = () => {
               className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-pink-500 focus:border-pink-500 text-sm"
             >
               <option value="all">📋 Semua</option>
+              <option value="legacy">⚪ Lama / Belum Diatur</option>
               <option value="draft">🟡 Draft</option>
               <option value="active">🟢 Aktif</option>
               <option value="inactive">⚫ Nonaktif</option>

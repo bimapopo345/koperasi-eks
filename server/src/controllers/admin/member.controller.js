@@ -17,19 +17,21 @@ import {
 } from "../../utils/memberRegistration.js";
 import {
   getEffectiveMembershipStatus,
+  getMembershipClassification,
+  normalizeMembershipClassification,
   normalizeMembershipStatus,
 } from "../../utils/membershipStatus.js";
 
 const addMembershipStatusFilter = (filter, requestedStatus) => {
-  const status = normalizeMembershipStatus(requestedStatus);
+  const status = normalizeMembershipClassification(requestedStatus);
   if (!status) return;
 
-  const membershipClause = status === "active"
+  const membershipClause = status === "legacy"
     ? {
         $or: [
-          { membershipStatus: "active" },
           { membershipStatus: { $exists: false } },
           { membershipStatus: null },
+          { membershipStatus: "" },
         ],
       }
     : { membershipStatus: status };
@@ -105,6 +107,7 @@ const getAllMembers = asyncHandler(async (req, res) => {
     registrationStatus: getEffectiveRegistrationStatus(m),
     membershipStatus: getEffectiveMembershipStatus(m),
     membershipStatusRaw: normalizeMembershipStatus(m.membershipStatus) || null,
+    membershipStatusClassification: getMembershipClassification(m),
     totalSavings: savingsMap.get(String(m._id)) || 0,
   }));
 
@@ -140,6 +143,7 @@ const getMemberByUuid = asyncHandler(async (req, res) => {
   const memberData = member.toObject();
   memberData.membershipStatus = getEffectiveMembershipStatus(member);
   memberData.membershipStatusRaw = normalizeMembershipStatus(member.membershipStatus) || null;
+  memberData.membershipStatusClassification = getMembershipClassification(member);
   if (member.hasUpgraded && member.currentUpgradeId) {
     memberData.upgradeInfo = member.currentUpgradeId;
   }
@@ -1157,7 +1161,7 @@ const exportMembersExcel = asyncHandler(async (req, res) => {
       m.currentUpgradeId?.newProductId?.title || (m.hasUpgraded ? "Ya" : ""),
       total,
       m.isVerified ? "Terverifikasi" : "Belum",
-      getEffectiveMembershipStatus(m),
+      getMembershipClassification(m),
       m.addressUpdateStatus,
       m.addressUpdateRejectionReason || "",
       m.isCompleted ? "Lunas" : "Belum Lunas",
