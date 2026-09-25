@@ -56,6 +56,20 @@ export function buildTransactionSort(sortBy) {
   return TRANSACTION_SORTS[normalizeText(sortBy)] || TRANSACTION_SORTS.date_desc;
 }
 
+export function buildRunningBalanceHistoryFilter(accountIds, visibleTransactions) {
+  const validAccountIds = (accountIds || []).filter(Boolean);
+  const earliestTimestamp = (visibleTransactions || []).reduce((earliest, transaction) => {
+    const timestamp = new Date(transaction?.transactionDate).getTime();
+    return Number.isFinite(timestamp) ? Math.min(earliest, timestamp) : earliest;
+  }, Number.POSITIVE_INFINITY);
+  if (validAccountIds.length === 0 || !Number.isFinite(earliestTimestamp)) return null;
+
+  return {
+    accountId: { $in: validAccountIds },
+    transactionDate: { $gte: new Date(earliestTimestamp) },
+  };
+}
+
 /**
  * Build the Mongo filter used by the transaction list endpoint.
  *
@@ -77,6 +91,7 @@ export function buildTransactionListFilter({
   categoryClauses = [],
   splitTransactionIds = [],
   categoryFilterActive = false,
+  additionalCategoryFilters = [],
   searchClauses = [],
 } = {}) {
   const filter = {};
@@ -122,21 +137,28 @@ export function buildTransactionListFilter({
     if (maxAmount !== null) filter.amount.$lte = maxAmount;
   }
 
-  const categoryConditions = categoryClauses
-    .filter((clause) => clause?.categoryId && clause?.categoryType)
-    .map((clause) => ({
-      categoryId: clause.categoryId,
-      categoryType: clause.categoryType,
-    }));
+  const categoryFilters = [
+    { clauses: categoryClauses, splitTransactionIds, active: categoryFilterActive },
+    ...additionalCategoryFilters,
+  ];
+  for (const categoryFilter of categoryFilters) {
+    const categoryConditions = (categoryFilter.clauses || [])
+      .filter((clause) => clause?.categoryId && clause?.categoryType)
+      .map((clause) => ({
+        categoryId: clause.categoryId,
+        categoryType: clause.categoryType,
+      }));
+    const categorySplitIds = (categoryFilter.splitTransactionIds || []).filter(Boolean);
 
-  if (splitTransactionIds.length > 0) {
-    categoryConditions.push({ _id: { $in: splitTransactionIds } });
-  }
+    if (categorySplitIds.length > 0) {
+      categoryConditions.push({ _id: { $in: categorySplitIds } });
+    }
 
-  if (categoryFilterActive || categoryConditions.length > 0) {
-    disjunctions.push(categoryConditions.length > 0
-      ? categoryConditions
-      : [{ _id: { $in: [] } }]);
+    if (categoryFilter.active || categoryConditions.length > 0) {
+      disjunctions.push(categoryConditions.length > 0
+        ? categoryConditions
+        : [{ _id: { $in: [] } }]);
+    }
   }
 
   const validSearchClauses = searchClauses.filter((clause) => clause && Object.keys(clause).length > 0);

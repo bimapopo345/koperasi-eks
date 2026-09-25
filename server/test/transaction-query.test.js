@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   buildTransactionListFilter,
   buildTransactionSort,
+  buildRunningBalanceHistoryFilter,
   normalizeTransactionPagination,
 } from "../src/utils/transactionQuery.js";
 import { buildTransactionDrilldown } from "../src/utils/transactionDrilldown.js";
@@ -71,6 +72,26 @@ test("builds transaction filters that apply across the full matching dataset", (
   assert.ok(conditions.some((condition) => condition.$or?.some((clause) => clause.senderName instanceof RegExp)));
 });
 
+test("keeps report category and page category filters as separate requirements", () => {
+  const filter = buildTransactionListFilter({
+    categoryClauses: [{ categoryId: "report-category", categoryType: "account" }],
+    categoryFilterActive: true,
+    additionalCategoryFilters: [
+      {
+        clauses: [{ categoryId: "page-category", categoryType: "submenu" }],
+        splitTransactionIds: ["page-split-parent"],
+        active: true,
+      },
+    ],
+  });
+  const categoryGroups = (filter.$and || [filter]).filter((condition) => Array.isArray(condition.$or));
+
+  assert.equal(categoryGroups.length, 2);
+  assert.ok(categoryGroups[0].$or.some((clause) => clause.categoryId === "report-category"));
+  assert.ok(categoryGroups[1].$or.some((clause) => clause.categoryId === "page-category"));
+  assert.ok(categoryGroups[1].$or.some((clause) => clause._id?.$in?.includes("page-split-parent")));
+});
+
 test("defaults transaction pagination to ten and supports only requested sizes", () => {
   assert.deepEqual(normalizeTransactionPagination("1", undefined), {
     page: 1,
@@ -102,6 +123,22 @@ test("uses a stable database sort and falls back safely for unknown sort keys", 
     createdAt: -1,
     _id: -1,
   });
+});
+
+test("limits running-balance history to all transactions on or after the oldest visible date", () => {
+  const filter = buildRunningBalanceHistoryFilter(
+    ["account-1", "account-2"],
+    [
+      { transactionDate: "2026-08-12T14:00:00.000Z" },
+      { transactionDate: "2026-08-10T09:00:00.000Z" },
+    ],
+  );
+
+  assert.deepEqual(filter, {
+    accountId: { $in: ["account-1", "account-2"] },
+    transactionDate: { $gte: new Date("2026-08-10T09:00:00.000Z") },
+  });
+  assert.deepEqual(buildRunningBalanceHistoryFilter(["account-1"], []), null);
 });
 
 test("limits a split drill-down to the selected account and amount", () => {
