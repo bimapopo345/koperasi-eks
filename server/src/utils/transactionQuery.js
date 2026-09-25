@@ -15,6 +15,47 @@ function parseDateBoundary(value, endOfDay = false) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function parseAmountBoundary(value) {
+  if (value === undefined || value === null || String(value).trim() === "") return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : null;
+}
+
+function containsText(value) {
+  const text = normalizeText(value).slice(0, 120);
+  if (!text) return null;
+  return new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+}
+
+export function normalizeTransactionPagination(pageValue, limitValue) {
+  const parsedPage = Number.parseInt(pageValue, 10);
+  const page = Number.isFinite(parsedPage) ? Math.max(parsedPage, 1) : 1;
+  const requestedLimit = normalizeText(limitValue).toLowerCase();
+
+  if (requestedLimit === "all") {
+    return { page: 1, limit: null, isAll: true };
+  }
+
+  const parsedLimit = Number.parseInt(requestedLimit, 10);
+  const limit = [10, 25, 50].includes(parsedLimit) ? parsedLimit : 10;
+  return { page, limit, isAll: false };
+}
+
+const TRANSACTION_SORTS = {
+  date_desc: { transactionDate: -1, createdAt: -1, _id: -1 },
+  date_asc: { transactionDate: 1, createdAt: 1, _id: 1 },
+  amount_desc: { amount: -1, transactionDate: -1, createdAt: -1, _id: -1 },
+  amount_asc: { amount: 1, transactionDate: -1, createdAt: -1, _id: -1 },
+  desc_asc: { description: 1, transactionDate: -1, createdAt: -1, _id: -1 },
+  desc_desc: { description: -1, transactionDate: -1, createdAt: -1, _id: -1 },
+  reviewed_desc: { reviewed: -1, transactionDate: -1, createdAt: -1, _id: -1 },
+  reviewed_asc: { reviewed: 1, transactionDate: -1, createdAt: -1, _id: -1 },
+};
+
+export function buildTransactionSort(sortBy) {
+  return TRANSACTION_SORTS[normalizeText(sortBy)] || TRANSACTION_SORTS.date_desc;
+}
+
 /**
  * Build the Mongo filter used by the transaction list endpoint.
  *
@@ -24,16 +65,34 @@ function parseDateBoundary(value, endOfDay = false) {
  */
 export function buildTransactionListFilter({
   account = "",
+  accountIds = [],
+  accountFilterActive = false,
   dateFrom = "",
   dateTo = "",
+  transactionType = "",
+  description = "",
+  reviewed,
+  amountMin,
+  amountMax,
   categoryClauses = [],
   splitTransactionIds = [],
   categoryFilterActive = false,
+  searchClauses = [],
 } = {}) {
   const filter = {};
+  const additionalConditions = [];
+  const disjunctions = [];
   const accountValue = normalizeText(account);
 
   if (accountValue) filter.accountId = accountValue;
+
+  if (accountFilterActive) {
+    const accountCondition = {
+      accountId: { $in: accountIds.filter(Boolean) },
+    };
+    if (filter.accountId) additionalConditions.push(accountCondition);
+    else Object.assign(filter, accountCondition);
+  }
 
   const startDate = parseDateBoundary(dateFrom);
   const endDate = parseDateBoundary(dateTo, true);
@@ -41,6 +100,26 @@ export function buildTransactionListFilter({
     filter.transactionDate = {};
     if (startDate) filter.transactionDate.$gte = startDate;
     if (endDate) filter.transactionDate.$lte = endDate;
+  }
+
+  const normalizedType = normalizeText(transactionType);
+  if (normalizedType === "Deposit" || normalizedType === "Withdrawal") {
+    filter.transactionType = normalizedType;
+  }
+
+  const descriptionPattern = containsText(description);
+  if (descriptionPattern) filter.description = descriptionPattern;
+
+  if (reviewed !== undefined && reviewed !== null && reviewed !== "") {
+    filter.reviewed = reviewed === true || ["1", "true", "yes", "on"].includes(String(reviewed).trim().toLowerCase());
+  }
+
+  const minAmount = parseAmountBoundary(amountMin);
+  const maxAmount = parseAmountBoundary(amountMax);
+  if (minAmount !== null || maxAmount !== null) {
+    filter.amount = {};
+    if (minAmount !== null) filter.amount.$gte = minAmount;
+    if (maxAmount !== null) filter.amount.$lte = maxAmount;
   }
 
   const categoryConditions = categoryClauses
@@ -55,9 +134,21 @@ export function buildTransactionListFilter({
   }
 
   if (categoryFilterActive || categoryConditions.length > 0) {
-    filter.$or = categoryConditions.length > 0
+    disjunctions.push(categoryConditions.length > 0
       ? categoryConditions
-      : [{ _id: { $in: [] } }];
+      : [{ _id: { $in: [] } }]);
+  }
+
+  const validSearchClauses = searchClauses.filter((clause) => clause && Object.keys(clause).length > 0);
+  if (validSearchClauses.length > 0) disjunctions.push(validSearchClauses);
+
+  if (disjunctions.length === 1) filter.$or = disjunctions[0];
+  else if (disjunctions.length > 1) {
+    additionalConditions.push(...disjunctions.map((conditions) => ({ $or: conditions })));
+  }
+
+  if (additionalConditions.length > 0) {
+    return { $and: [filter, ...additionalConditions] };
   }
 
   return filter;
