@@ -64,4 +64,5 @@
 - [x] Read production through the existing API container and compare 2025/2026 results, COA hierarchy, inactive historical postings, split audit, and derived-vs-stored COA balances.
 - [x] Verify the Balance Sheet has the documented Rp0.02 residual and do not mutate source rows.
 - [x] Test P&L/Balance Sheet year filters and CSV export against the same payload calculation.
-- [ ] Finish diff review, commit only intended report/COA files and tests, then push a non-deploying feature branch. Do not manually deploy.
+- [x] Review and commit only intended report/COA files and tests; preserve the unrelated Dana Darurat edit.
+- [x] Push `main` as explicitly requested. GitHub Actions run `37574232881` failed before starting any job steps because the GitHub account is locked due to a billing issue; no deployment occurred and no manual deploy was run.
