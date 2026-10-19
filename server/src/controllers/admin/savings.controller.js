@@ -5,7 +5,6 @@ import mongoose from "mongoose";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
-import { resolveUploadedFilePath } from "../../utils/uploadsDir.js";
 import {
   createSavingsSchema,
   updateSavingsSchema,
@@ -346,39 +345,13 @@ const updateSavings = asyncHandler(async (req, res) => {
 });
 
 // Delete savings
-const deleteSavings = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-
-  const savings = await Savings.findById(id);
-  if (!savings) {
-    throw new ApiError(404, "Data simpanan tidak ditemukan");
-  }
-
-  // Reverse linked accounting transaction if any
-  if (savings.transactionId || savings.status === "Approved") {
-    await reverseSavingsAccountingTransaction(savings);
-  }
-
-  // Delete proof file if exists
-  if (savings.proofFile) {
-    try {
-      const fs = await import("fs");
-      const filePath = resolveUploadedFilePath(savings.proofFile, {
-        defaultSubdir: "simpanan",
-      });
-
-      if (filePath && fs.existsSync(filePath)) {
-        fs.unlinkSync(filePath);
-      }
-    } catch (error) {
-      // Continue with deletion even if file removal fails
-    }
-  }
-
-  await Savings.findByIdAndDelete(id);
-
-  res.status(200).json(new ApiResponse(200, null, "Simpanan dan bukti berhasil dihapus"));
-});
+const deleteSavingsHandler = (deletionWorkflow) =>
+  asyncHandler(async (req, res) => {
+    await deletionWorkflow.execute(req.params.id);
+    return res
+      .status(200)
+      .json(new ApiResponse(200, null, "Simpanan dan bukti berhasil dihapus"));
+  });
 
 // Get savings by member
 const getSavingsByMember = asyncHandler(async (req, res) => {
@@ -796,7 +769,7 @@ export {
   getSavingsById,
   createSavingsHandler,
   updateSavings,
-  deleteSavings,
+  deleteSavingsHandler,
   getSavingsByMember,
   getSavingsSummary,
   getLastInstallmentPeriod,
