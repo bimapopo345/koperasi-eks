@@ -4,11 +4,6 @@ import { asyncHandler } from "../../utils/asyncHandler.js";
 import { ApiResponse } from "../../utils/ApiResponse.js";
 import { ApiError } from "../../utils/ApiError.js";
 import { getEffectiveMembershipStatus } from "../../utils/membershipStatus.js";
-import {
-  createMongooseMemberSavingsSubmission,
-} from "../../modules/savings/infrastructure/mongooseMemberSavingsSubmission.js";
-
-const memberSavingsSubmission = createMongooseMemberSavingsSubmission();
 
 // Get Member's Savings
 export const getMemberSavings = asyncHandler(async (req, res) => {
@@ -55,23 +50,24 @@ export const getMemberSavings = asyncHandler(async (req, res) => {
 });
 
 // Create New Saving for Member
-export const createMemberSaving = asyncHandler(async (req, res) => {
-  try {
-    const result = await memberSavingsSubmission.execute({
-      memberId: req.member.memberId,
-      input: req.body,
-      proofFile: req.file,
-    });
-    return res.status(result.statusCode).json(result.body);
-  } catch (error) {
-    console.error("Create member saving error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Terjadi kesalahan server",
-      error: error.message,
-    });
-  }
-});
+export const createMemberSavingHandler = (memberSavingsSubmission) =>
+  asyncHandler(async (req, res) => {
+    try {
+      const result = await memberSavingsSubmission.execute({
+        memberId: req.member.memberId,
+        input: req.body,
+        proofFile: req.file,
+      });
+      return res.status(result.statusCode).json(result.body);
+    } catch (error) {
+      console.error("Create member saving error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Terjadi kesalahan server",
+        error: error.message,
+      });
+    }
+  });
 
 // Get Specific Saving by ID
 export const getMemberSavingById = asyncHandler(async (req, res) => {
