@@ -96,124 +96,46 @@ const getSavingsById = asyncHandler(async (req, res) => {
 });
 
 // Create new savings
-const createSavings = asyncHandler(async (req, res) => {
-  // Parse body data (handle both JSON and FormData)
-  let bodyData = { ...req.body };
-  
-  console.log("Raw request body:", req.body);
-  console.log("Request file:", req.file);
-  console.log("Content-Type:", req.get('Content-Type'));
-  
-  // Convert string numbers to actual numbers (FormData sends everything as strings)
-  Object.keys(bodyData).forEach(key => {
-    if (key === 'amount' || key === 'installmentPeriod') {
-      if (bodyData[key] && typeof bodyData[key] === 'string') {
-        const num = Number(bodyData[key]);
-        if (!isNaN(num)) {
-          bodyData[key] = num;
+const createSavingsHandler = (savingsCreator) =>
+  asyncHandler(async (req, res) => {
+    let bodyData = { ...req.body };
+
+    console.log("Raw request body:", req.body);
+    console.log("Request file:", req.file);
+    console.log("Content-Type:", req.get("Content-Type"));
+
+    Object.keys(bodyData).forEach((key) => {
+      if (
+        (key === "amount" || key === "installmentPeriod")
+        && bodyData[key]
+        && typeof bodyData[key] === "string"
+      ) {
+        const number = Number(bodyData[key]);
+        if (!Number.isNaN(number)) {
+          bodyData[key] = number;
         }
       }
+    });
+
+    console.log("Processed body data:", bodyData);
+    console.log("installmentPeriod:", bodyData.installmentPeriod, typeof bodyData.installmentPeriod);
+
+    const { error, value } = createSavingsSchema.validate(bodyData);
+    if (error) {
+      console.log("Validation error:", error.details[0].message);
+      console.log("Failed validation for:", error.details[0].path);
+      console.log("Validation details:", error.details);
+      throw new ApiError(400, error.details[0].message);
     }
+
+    const savings = await savingsCreator.execute(
+      value,
+      req.file ? req.file.filename : null,
+    );
+    return res
+      .status(201)
+      .json(new ApiResponse(201, savings, "Data simpanan berhasil dibuat"));
   });
-
-  console.log("Processed body data:", bodyData);
-  console.log("installmentPeriod:", bodyData.installmentPeriod, typeof bodyData.installmentPeriod);
-
-  const { error, value } = createSavingsSchema.validate(bodyData);
-  if (error) {
-    console.log("Validation error:", error.details[0].message);
-    console.log("Failed validation for:", error.details[0].path);
-    console.log("Validation details:", error.details);
-    throw new ApiError(400, error.details[0].message);
-  }
-
-  const {
-    installmentPeriod,
-    memberId,
-    productId,
-    amount,
-    savingsDate,
-    paymentDate,
-    type,
-    description,
-    status,
-    paymentType,
-    notes,
-    accountId,
-    categoryId,
-    categoryType,
-    isSplit,
-  } = value;
-
-  // Validate member exists
-  const member = await Member.findById(memberId);
-  if (!member) {
-    throw new ApiError(404, "Anggota tidak ditemukan");
-  }
-
-  // Validate product exists
-  const product = await Product.findById(productId);
-  if (!product) {
-    throw new ApiError(404, "Produk tidak ditemukan");
-  }
-
-  // Allow flexible amounts for partial payments
-  // Validation removed to support partial payment system
-  // if (amount < product.depositAmount) {
-  //   throw new ApiError(400, `Jumlah simpanan minimal ${product.depositAmount}`);
-  // }
-
-  // Allow multiple submissions per period for partial/rejected payments
-  // Check for existing approved savings for same period
-  const existingApprovedSavings = await Savings.findOne({
-    memberId,
-    productId,
-    installmentPeriod,
-    status: "Approved"
-  });
-
-  // Calculate partial sequence for this period
-  const existingSavingsCount = await Savings.countDocuments({
-    memberId,
-    productId,
-    installmentPeriod,
-  });
-
-  const partialSequence = existingSavingsCount + 1;
-
-  // Determine payment type based on amount vs product deposit
-  const calculatedPaymentType = amount < product.depositAmount ? "Partial" : "Full";
-  
-  console.log("Product deposit amount:", product.depositAmount);
-  console.log("Payment amount:", amount);
-  console.log("Calculated payment type:", calculatedPaymentType);
-
-  const savings = new Savings({
-    installmentPeriod,
-    memberId,
-    productId,
-    amount,
-    savingsDate: savingsDate || new Date(),
-    paymentDate: paymentDate || null,
-    type: type || "Setoran",
-    description: description || `Pembayaran Simpanan Periode - ${installmentPeriod} ${partialSequence > 1 ? `(#${partialSequence})` : ''}`,
-    status: status || "Pending",
-    paymentType: calculatedPaymentType, // Always use calculated payment type
-    partialSequence: partialSequence,
-    notes: notes || "",
-    proofFile: req.file ? req.file.filename : null, // Only store filename, not full path
-    accountId: accountId || null,
-    categoryId: categoryId || null,
-    categoryType: categoryType || null,
-    isSplit: Boolean(isSplit),
-  });
-
-  await savings.save();
-
-  res
-    .status(201)
-    .json(new ApiResponse(201, savings, "Data simpanan berhasil dibuat"));
-});
 
 // Update savings
 const updateSavings = asyncHandler(async (req, res) => {
@@ -872,7 +794,7 @@ const getStudentDashboardSavings = asyncHandler(async (req, res) => {
 export {
   getAllSavings,
   getSavingsById,
-  createSavings,
+  createSavingsHandler,
   updateSavings,
   deleteSavings,
   getSavingsByMember,
