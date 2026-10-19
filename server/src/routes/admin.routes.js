@@ -45,11 +45,12 @@ import {
   getLastInstallmentPeriod 
 } from "../controllers/admin/savings.controller.js";
 import { 
-  approveSavings, 
-  rejectSavings, 
-  markAsPartial,
+  createSavingsApprovalHandlers,
   getSavingsPeriodSummary 
 } from "../controllers/admin/savingsApproval.controller.js";
+import {
+  createMongooseSavingsReviewWorkflow,
+} from "../modules/savings/infrastructure/mongooseSavingsReviewWorkflow.js";
 import {
   getDonationOverview,
   getDonationCampaigns,
@@ -110,6 +111,11 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 const router = express.Router();
+const {
+  approveSavings,
+  rejectSavings,
+  markAsPartial,
+} = createSavingsApprovalHandlers(createMongooseSavingsReviewWorkflow());
 
 // Authentication routes
 router.post("/auth/login", loginUser);
