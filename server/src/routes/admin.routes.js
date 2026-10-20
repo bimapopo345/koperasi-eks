@@ -40,7 +40,7 @@ import {
   getAllSavings, 
   getSavingsById, 
   createSavingsHandler,
-  updateSavings, 
+  updateSavingsHandler,
   deleteSavingsHandler,
   getLastInstallmentPeriod 
 } from "../controllers/admin/savings.controller.js";
@@ -50,6 +50,9 @@ import {
 import {
   createMongooseAdminSavingsDeletion,
 } from "../modules/savings/infrastructure/mongooseAdminSavingsDeletion.js";
+import {
+  createMongooseAdminSavingsUpdate,
+} from "../modules/savings/infrastructure/mongooseAdminSavingsUpdate.js";
 import { 
   createSavingsApprovalHandlers,
   getSavingsPeriodSummary 
@@ -118,6 +121,7 @@ const upload = multer({ storage: storage });
 
 const router = express.Router();
 const createSavings = createSavingsHandler(createMongooseAdminSavingsCreator());
+const updateSavings = updateSavingsHandler(createMongooseAdminSavingsUpdate());
 const deleteSavings = deleteSavingsHandler(createMongooseAdminSavingsDeletion());
 const {
   approveSavings,
