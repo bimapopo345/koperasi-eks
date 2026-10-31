@@ -13,6 +13,9 @@ const invoiceReportFields = {
   "customerSnapshot.name": 1,
   currency: 1,
   status: 1,
+  dueDate: 1,
+  total: 1,
+  totalPaid: 1,
   projections: 1,
   "payments._id": 1,
   "payments.paymentDate": 1,
@@ -24,7 +27,9 @@ const invoiceReportFields = {
 };
 
 const invoiceQueryForFilters = (filters) => {
-  const query = { status: { $ne: "draft" } };
+  const query = filters.invoiceStatuses?.includes("draft")
+    ? {}
+    : { status: { $ne: "draft" } };
 
   if (filters.mode === "monthly") {
     const start = startOfDate(filters.startDate);
@@ -51,14 +56,14 @@ export const invoiceProjectionReportRepository = {
       .lean();
   },
 
-  async listAvailableYears() {
+  async listAvailableYears(filters = {}) {
+    const match = { "projections.estimateDate": { $type: "date" } };
+    if (!filters.invoiceStatuses?.includes("draft")) {
+      match.status = { $ne: "draft" };
+    }
+
     const rows = await Invoice.aggregate([
-      {
-        $match: {
-          status: { $ne: "draft" },
-          "projections.estimateDate": { $type: "date" },
-        },
-      },
+      { $match: match },
       { $unwind: "$projections" },
       { $group: { _id: { $year: "$projections.estimateDate" } } },
       { $sort: { _id: 1 } },
