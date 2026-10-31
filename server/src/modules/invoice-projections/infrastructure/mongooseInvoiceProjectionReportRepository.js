@@ -26,8 +26,8 @@ const invoiceReportFields = {
   "payments.coveredProjectionBreakdown": 1,
 };
 
-const invoiceQueryForFilters = (filters) => {
-  const query = filters.invoiceStatuses?.includes("draft")
+export const buildInvoiceProjectionQuery = (filters) => {
+  const query = filters.invoiceStatuses?.length
     ? {}
     : { status: { $ne: "draft" } };
 
@@ -48,22 +48,25 @@ const invoiceQueryForFilters = (filters) => {
   return query;
 };
 
+export const buildAvailableInvoiceYearsMatch = (filters = {}) => {
+  const match = { "projections.estimateDate": { $type: "date" } };
+  if (!filters.invoiceStatuses?.length) {
+    match.status = { $ne: "draft" };
+  }
+  return match;
+};
+
 export const invoiceProjectionReportRepository = {
   findReportInvoices(filters) {
-    return Invoice.find(invoiceQueryForFilters(filters))
+    return Invoice.find(buildInvoiceProjectionQuery(filters))
       .select(invoiceReportFields)
       .sort({ "customerSnapshot.name": 1, invoiceNumber: 1 })
       .lean();
   },
 
   async listAvailableYears(filters = {}) {
-    const match = { "projections.estimateDate": { $type: "date" } };
-    if (!filters.invoiceStatuses?.includes("draft")) {
-      match.status = { $ne: "draft" };
-    }
-
     const rows = await Invoice.aggregate([
-      { $match: match },
+      { $match: buildAvailableInvoiceYearsMatch(filters) },
       { $unwind: "$projections" },
       { $group: { _id: { $year: "$projections.estimateDate" } } },
       { $sort: { _id: 1 } },

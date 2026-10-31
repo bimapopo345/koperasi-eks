@@ -112,10 +112,10 @@ const getInvoiceStatus = (invoice, asOfDate) =>
     new Date(asOfDate),
   );
 
-const matchesInvoiceStatusFilter = (invoiceStatus, selectedStatuses = []) =>
-  selectedStatuses.length
-    ? selectedStatuses.includes(invoiceStatus)
-    : invoiceStatus !== "draft";
+const matchesInvoiceStatusFilter = (invoice, invoiceStatus, selectedStatuses = []) => {
+  if (selectedStatuses.length) return selectedStatuses.includes(invoiceStatus);
+  return String(invoice?.status || "").toLowerCase() !== "draft";
+};
 
 function buildMonthlyReport(invoices, filters) {
   const rows = [];
@@ -127,7 +127,7 @@ function buildMonthlyReport(invoices, filters) {
 
   invoices.forEach((invoice) => {
       const invoiceStatus = getInvoiceStatus(invoice, asOfDate);
-      if (!matchesInvoiceStatusFilter(invoiceStatus, filters.invoiceStatuses)) return;
+      if (!matchesInvoiceStatusFilter(invoice, invoiceStatus, filters.invoiceStatuses)) return;
       const projections = Array.isArray(invoice.projections) ? invoice.projections : [];
       const payments = Array.isArray(invoice.payments) ? invoice.payments : [];
       const { allocations, unallocatedPayments } =
@@ -262,7 +262,7 @@ function buildYearlyReport(invoices, filters) {
   invoices.forEach((invoice) => {
       const invoiceStatus = getInvoiceStatus(invoice, asOfDate);
       const hasStatusFilter = Boolean(filters.invoiceStatuses?.length);
-      if (!matchesInvoiceStatusFilter(invoiceStatus, filters.invoiceStatuses)) return;
+      if (!matchesInvoiceStatusFilter(invoice, invoiceStatus, filters.invoiceStatuses)) return;
       const projections = Array.isArray(invoice.projections) ? invoice.projections : [];
       const payments = Array.isArray(invoice.payments) ? invoice.payments : [];
       const inRangeProjections = projections

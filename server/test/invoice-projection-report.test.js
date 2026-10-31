@@ -203,6 +203,43 @@ test("monthly invoice status selection uses OR and can explicitly include Draft"
   assert.ok(report.rows.every((row) => row.status !== row.invoiceStatus));
 });
 
+test("selected Partial includes a raw Draft invoice with a payment by effective invoice status", async () => {
+  const buildInvoiceProjectionReport = await loadReportBuilder();
+  const rawDraftWithPayment = {
+    _id: "draft-partial",
+    invoiceNumber: "DRAFT-PARTIAL",
+    customerSnapshot: { name: "Draft Partial" },
+    currency: "IDR",
+    status: "draft",
+    dueDate: "2026-02-28T00:00:00.000Z",
+    total: 100,
+    totalPaid: 25,
+    projections: [
+      { _id: "p-draft-partial", estimateDate: "2026-01-20T00:00:00.000Z", amount: 100 },
+    ],
+    payments: [
+      { _id: "pay-draft-partial", paymentDate: "2026-01-21T00:00:00.000Z", amount: 25, projectionId: "p-draft-partial" },
+    ],
+  };
+
+  const filters = {
+    mode: "monthly",
+    startDate: "2026-01-01",
+    endDate: "2026-01-31",
+    asOfDate: "2026-01-31T23:59:59.999Z",
+  };
+  const defaultReport = buildInvoiceProjectionReport([rawDraftWithPayment], filters);
+  const partialReport = buildInvoiceProjectionReport([rawDraftWithPayment], {
+    ...filters,
+    invoiceStatuses: ["partial"],
+  });
+
+  assert.equal(defaultReport.rows.length, 0);
+  assert.equal(partialReport.rows.length, 1);
+  assert.equal(partialReport.rows[0].invoiceStatus, "partial");
+  assert.equal(partialReport.rows[0].status, "Partial");
+});
+
 test("yearly status selection can include paid invoices with zero outstanding without changing default", async () => {
   const buildInvoiceProjectionReport = await loadReportBuilder();
   const filters = {
